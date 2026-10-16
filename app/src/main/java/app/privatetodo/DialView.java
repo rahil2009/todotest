@@ -241,7 +241,6 @@ final class DialView extends LinearLayout {
         if (Build.VERSION.SDK_INT >= 29) {
             p.setTextColor(INK);
             p.setTextSize(20 * density);
-            p.setSelectionDivider(new ColorDrawable(ACCENT));
             p.setSelectionDividerHeight(dp(2));
         }
         p.setOnValueChangedListener((v, o, n) -> changed());
