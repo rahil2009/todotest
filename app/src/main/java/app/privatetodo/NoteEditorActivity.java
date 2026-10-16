@@ -1,0 +1,477 @@
+package app.privatetodo;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.SpannableString;
+import android.text.Spanned;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * Rich-text note editor. Toolbar: heading, bold, italic, underline, strikethrough, highlight colours,
+ * inline code, code block, bullets. With text selected a style applies to the selection; with just a
+ * cursor it applies to what you type next. Saves by itself when you leave.
+ */
+public class NoteEditorActivity extends Activity {
+    static final String EXTRA_ID = "note_id";
+
+    private static final int BULLET_KEY = -1;
+    private static final int CHECK_KEY = -2;
+
+    private TaskDb db;
+    private float density;
+    private long noteId;
+    private boolean dirty;
+    private boolean deleted;
+
+    private EditText title;
+    private RichEditText body;
+    private TextView dateLabel;
+    private LinearLayout colorRow;
+    private final Map<Integer, TextView> buttons = new HashMap<>();
+
+    // Styles chosen with only a cursor (apply to the next typed text). 0 = off, 1 = on, colour for highlight.
+    private final Map<Integer, Integer> pending = new HashMap<>();
+    private boolean busy;
+    private boolean typing;
+    private int insStart;
+    private int insCount;
+    private int expectCursor = -1;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        Pal.init(this);
+        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        super.onCreate(savedInstanceState);
+        density = getResources().getDisplayMetrics().density;
+        RichText.init(this);
+        db = new TaskDb(this);
+        noteId = getIntent().getLongExtra(EXTRA_ID, 0);
+        setContentView(build());
+
+        Note n = noteId > 0 ? db.note(noteId) : null;
+        if (n == null) {
+            noteId = 0;
+            dateLabel.setText("New note");
+            body.requestFocus();
+        } else {
+            title.setText(n.title);
+            RichText.fromJson(n.body, body.getText());
+            dateLabel.setText("Edited " + Reminders.when(this, n.updated));
+        }
+        dirty = false;
+        refreshToolbar();
+    }
+
+    @Override
+    protected void onPause() {
+        saveNow();
+        super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        db.close();
+        super.onDestroy();
+    }
+
+    // ------------------------------------------------------------------ UI
+
+    private View build() {
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setBackgroundColor(Pal.bg);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(dp(12), dp(12), dp(12), 0);
+        IconView back = new IconView(this, IconView.BACK);
+        back.setContentDescription("Back");
+        back.setOnClickListener(v -> finish());
+        header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        title = new EditText(this);
+        title.setHint("Title");
+        title.setHintTextColor(Pal.muted);
+        title.setTextColor(Pal.ink);
+        title.setTextSize(22);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setBackground(null);
+        title.setSingleLine(true);
+        title.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        title.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        title.setOnEditorActionListener((tv, a, ev) -> {
+            body.requestFocus();
+            return true;
+        });
+        title.addTextChangedListener(new SimpleWatcher() {
+            @Override
+            public void afterTextChanged(Editable e) {
+                dirty = true;
+            }
+        });
+        header.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1f));
+
+        IconView trash = new IconView(this, IconView.TRASH);
+        trash.setContentDescription("Delete note");
+        trash.setOnClickListener(v -> confirmDelete());
+        header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        root.addView(header);
+
+        dateLabel = new TextView(this);
+        dateLabel.setTextSize(13);
+        dateLabel.setTextColor(Pal.muted);
+        dateLabel.setPadding(dp(64), 0, dp(16), dp(4));
+        root.addView(dateLabel);
+
+        body = new RichEditText(this);
+        body.setHint("Start writing…");
+        body.setHintTextColor(Pal.muted);
+        body.setTextColor(Pal.ink);
+        body.setTextSize(17);
+        body.setLineSpacing(0, 1.15f);
+        body.setBackground(null);
+        body.setGravity(Gravity.TOP | Gravity.START);
+        body.setMinHeight(dp(420));
+        body.setPadding(dp(20), dp(8), dp(20), dp(24));
+        body.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        body.addTextChangedListener(new SimpleWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence c, int a, int b, int n) {
+                typing = true;
+            }
+
+            @Override
+            public void onTextChanged(CharSequence c, int start, int before, int count) {
+                insStart = start;
+                insCount = count;
+            }
+
+            @Override
+            public void afterTextChanged(Editable e) {
+                afterEdit(e);
+            }
+        });
+        body.setCheckTapListener(ls -> {
+            busy = true;
+            RichText.flipCheck(body.getText(), ls);
+            busy = false;
+            dirty = true;
+        });
+        body.setSelectionListener((s, e) -> {
+            if (!typing && !busy && !(s == e && s == expectCursor)) pending.clear();
+            refreshToolbar();
+        });
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        root.addView(buildColorRow());
+        root.addView(buildToolbar());
+        return root;
+    }
+
+    private View buildColorRow() {
+        colorRow = new LinearLayout(this);
+        colorRow.setOrientation(LinearLayout.HORIZONTAL);
+        colorRow.setGravity(Gravity.CENTER_VERTICAL);
+        colorRow.setPadding(dp(16), dp(8), dp(16), dp(8));
+        colorRow.setBackgroundColor(Pal.raised);
+        colorRow.setVisibility(View.GONE);
+        TextView label = new TextView(this);
+        label.setText("Highlight");
+        label.setTextColor(Pal.muted);
+        label.setTextSize(13);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        label.setPadding(0, 0, dp(12), 0);
+        colorRow.addView(label);
+        for (final int color : RichText.HL_COLORS) {
+            colorRow.addView(swatch(color, null), swatchLp());
+        }
+        colorRow.addView(swatch(Pal.chip, "✕"), swatchLp()); // no highlight
+        return colorRow;
+    }
+
+    private LinearLayout.LayoutParams swatchLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(36), dp(36));
+        lp.rightMargin = dp(10);
+        return lp;
+    }
+
+    private TextView swatch(final int color, String mark) {
+        TextView t = new TextView(this);
+        t.setGravity(Gravity.CENTER);
+        t.setTextColor(Pal.muted);
+        t.setTextSize(14);
+        if (mark != null) {
+            t.setText(mark);
+            t.setContentDescription("No highlight");
+        } else {
+            t.setContentDescription("Highlight colour");
+        }
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(color);
+        t.setBackground(g);
+        t.setOnClickListener(v -> {
+            highlight(mark == null ? color : 0);
+            colorRow.setVisibility(View.GONE);
+        });
+        return t;
+    }
+
+    private View buildToolbar() {
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(8), dp(6), dp(8), dp(6));
+
+        addButton(bar, RichText.HEAD, "H", Typeface.BOLD, "Heading");
+        addButton(bar, RichText.BOLD, "B", Typeface.BOLD, "Bold");
+        addButton(bar, RichText.ITALIC, "I", Typeface.ITALIC, "Italic");
+        addButton(bar, RichText.UNDER, "U", Typeface.NORMAL, "Underline");
+        addButton(bar, RichText.STRIKE, "S", Typeface.NORMAL, "Strikethrough");
+        TextView hl = addButton(bar, RichText.HILITE, "A", Typeface.BOLD, "Highlight colour");
+        SpannableString marked = new SpannableString("A");
+        marked.setSpan(new RichText.Hl(RichText.HL_COLORS[0]), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        hl.setText(marked);
+        addButton(bar, RichText.CODE, "`", Typeface.NORMAL, "Inline code").setTypeface(Typeface.MONOSPACE);
+        addButton(bar, RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block").setTypeface(Typeface.MONOSPACE);
+        addButton(bar, BULLET_KEY, "•", Typeface.BOLD, "Bullet list");
+        addButton(bar, CHECK_KEY, "(\u2713)", Typeface.BOLD, "To-do list");
+
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setBackgroundColor(Pal.raised);
+        scroll.addView(bar);
+        return scroll;
+    }
+
+    private TextView addButton(LinearLayout bar, final int key, String label, int style, String desc) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(17);
+        t.setTypeface(Typeface.DEFAULT, style);
+        t.setGravity(Gravity.CENTER);
+        t.setMinWidth(dp(48));
+        t.setMinHeight(dp(44));
+        t.setContentDescription(desc);
+        if (key == RichText.UNDER) t.setPaintFlags(t.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        if (key == RichText.STRIKE) t.setPaintFlags(t.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+        t.setOnClickListener(v -> onTool(key));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+        lp.rightMargin = dp(4);
+        bar.addView(t, lp);
+        buttons.put(key, t);
+        return t;
+    }
+
+    // --------------------------------------------------------- formatting
+
+    private int selStart() {
+        return Math.max(0, Math.min(body.getSelectionStart(), body.getSelectionEnd()));
+    }
+
+    private int selEnd() {
+        return Math.max(0, Math.max(body.getSelectionStart(), body.getSelectionEnd()));
+    }
+
+    private void onTool(int key) {
+        if (key == RichText.HILITE) {
+            colorRow.setVisibility(colorRow.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            return;
+        }
+        Editable e = body.getText();
+        int s = selStart();
+        int en = selEnd();
+        if (key == BULLET_KEY || key == CHECK_KEY) {
+            busy = true;
+            int c = RichText.toggleList(e, s, en, key == CHECK_KEY);
+            busy = false;
+            body.setSelection(Math.min(c, e.length()));
+            dirty = true;
+            refreshToolbar();
+            return;
+        }
+        boolean lineType = key == RichText.HEAD || key == RichText.BLOCK;
+        if (s == en) {
+            int a = RichText.lineStart(e, s);
+            int b = RichText.lineEnd(e, s);
+            if (lineType && b > a) { // a line with text: format the whole line
+                RichText.apply(e, key, a, b, 0, !RichText.active(e, key, a, b));
+            } else {
+                pending.put(key, isOn(key, s, en) ? 0 : 1);
+            }
+        } else {
+            if (lineType) {
+                s = RichText.lineStart(e, s);
+                en = RichText.lineEnd(e, en);
+            }
+            RichText.apply(e, key, s, en, 0, !RichText.active(e, key, s, en));
+        }
+        dirty = true;
+        refreshToolbar();
+    }
+
+    private void highlight(int color) {
+        Editable e = body.getText();
+        int s = selStart();
+        int en = selEnd();
+        if (s == en) {
+            pending.put(RichText.HILITE, color);
+        } else {
+            RichText.apply(e, RichText.HILITE, s, en, color, color != 0);
+            dirty = true;
+        }
+        refreshToolbar();
+    }
+
+    private boolean isOn(int key, int s, int en) {
+        if (s == en && pending.containsKey(key)) return pending.get(key) != 0;
+        return RichText.active(body.getText(), key, s, en);
+    }
+
+    private void refreshToolbar() {
+        if (body == null || buttons.isEmpty()) return;
+        int s = selStart();
+        int en = selEnd();
+        for (Map.Entry<Integer, TextView> b : buttons.entrySet()) {
+            int key = b.getKey();
+            boolean on;
+            if (key == BULLET_KEY) {
+                on = RichText.prefixAt(body.getText(), RichText.lineStart(body.getText(), s))
+                        == RichText.P_BULLET;
+            } else if (key == CHECK_KEY) {
+                on = RichText.prefixAt(body.getText(), RichText.lineStart(body.getText(), s))
+                        >= RichText.P_CHECK_OFF;
+            } else if (key == RichText.HILITE) {
+                on = isOn(key, s, en);
+            } else {
+                on = isOn(key, s, en);
+            }
+            style(b.getValue(), on);
+        }
+    }
+
+    private void style(TextView t, boolean on) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(12));
+        g.setColor(on ? Pal.sel : 0);
+        t.setBackground(g);
+        // The highlight button keeps its own dark-on-yellow look.
+        if (!(t.getText() instanceof Spanned)) t.setTextColor(on ? Pal.onSel : Pal.ink);
+    }
+
+    /** Runs after every text change: applies "next typed text" styles and continues bullet lists. */
+    private void afterEdit(Editable e) {
+        if (busy) {
+            typing = false;
+            return;
+        }
+        busy = true;
+        try {
+            dirty = true;
+            if (insCount > 0) {
+                for (Map.Entry<Integer, Integer> p : pending.entrySet()) {
+                    int v = p.getValue();
+                    RichText.apply(e, p.getKey(), insStart, insStart + insCount, v, v != 0);
+                }
+            }
+            boolean moved = false;
+            if (insCount == 1 && insStart < e.length() && e.charAt(insStart) == '\n') {
+                int ps = RichText.lineStart(e, insStart); // the line that Enter just ended
+                int kind = RichText.prefixAt(e, ps);
+                if (kind != RichText.P_NONE) {
+                    if (insStart - ps == 2) { // Enter on an empty item ends the list
+                        e.delete(ps, insStart + 1);
+                        expectCursor = ps;
+                    } else {
+                        // New line continues the list; a to-do item continues as an unticked one.
+                        String next = kind == RichText.P_BULLET ? RichText.BULLET : RichText.CHECK_OFF;
+                        e.insert(insStart + 1, next);
+                        RichText.apply(e, RichText.STRIKE, insStart + 1, insStart + 1 + next.length(),
+                                0, false);
+                        expectCursor = insStart + 1 + next.length();
+                    }
+                    body.setSelection(Math.min(expectCursor, e.length()));
+                    moved = true;
+                }
+            }
+            if (!moved) expectCursor = insStart + insCount;
+        } finally {
+            busy = false;
+            typing = false;
+            insCount = 0;
+        }
+        refreshToolbar();
+    }
+
+    // ------------------------------------------------------------ saving
+
+    private void saveNow() {
+        if (deleted || !dirty) return;
+        String t = title.getText().toString().trim();
+        Editable b = body.getText();
+        boolean empty = t.isEmpty() && b.toString().trim().isEmpty();
+        if (empty) {
+            if (noteId > 0) {
+                db.deleteNote(noteId);
+                noteId = 0;
+            }
+        } else {
+            noteId = db.saveNote(noteId, t, RichText.toJson(b), b.toString());
+            dateLabel.setText("Edited " + Reminders.when(this, System.currentTimeMillis()));
+        }
+        dirty = false;
+    }
+
+    private void confirmDelete() {
+        new AlertDialog.Builder(this)
+                .setTitle("Delete this note?")
+                .setMessage("This permanently deletes it from this device.")
+                .setPositiveButton("Delete", (d, w) -> {
+                    if (noteId > 0) db.deleteNote(noteId);
+                    deleted = true;
+                    finish();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private int dp(int v) {
+        return Math.round(v * density);
+    }
+
+    /** TextWatcher with empty defaults. */
+    private abstract static class SimpleWatcher implements TextWatcher {
+        @Override
+        public void beforeTextChanged(CharSequence c, int a, int b, int n) {
+        }
+
+        @Override
+        public void onTextChanged(CharSequence c, int a, int b, int n) {
+        }
+
+        @Override
+        public void afterTextChanged(Editable e) {
+        }
+    }
+}

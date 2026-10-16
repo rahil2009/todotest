@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_background">#0B6B5D</color>
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:statusBarColor">#EEF1EF</item>
+        <item name="android:navigationBarColor">#EEF1EF</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#0B6B5D</item>
+    </style>
+    <!-- Dark mode: used when the phone is in dark mode or Settings > Appearance > Dark is chosen. -->
+    <style name="AppThemeDark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:statusBarColor">#111513</item>
+        <item name="android:navigationBarColor">#111513</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:colorAccent">#6FCDBD</item>
+        <item name="android:colorBackgroundFloating">#252C2A</item>
+    </style>
+</resources>

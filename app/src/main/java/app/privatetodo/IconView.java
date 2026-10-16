@@ -1,0 +1,178 @@
+package app.privatetodo;
+
+import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.Paint;
+import android.graphics.Path;
+import android.view.View;
+
+/** Tiny canvas-drawn icons so the app needs no image assets or libraries. */
+final class IconView extends View {
+    static final int CHECK = 0;
+    static final int CROSS = 1;
+    static final int BADGE = 3;
+    static final int BELL = 4;
+    static final int GEAR = 5;
+    static final int SEARCH = 6;
+    static final int CLOCK = 7;
+    static final int SEND = 8;
+    static final int BACK = 9;
+    static final int NOTE = 10;
+    static final int TRASH = 11;
+    static final int PLUS = 12;
+
+    private final int kind;
+    private boolean on;
+    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Path path = new Path();
+    private final android.graphics.RectF rect = new android.graphics.RectF();
+    private final float d;
+
+    IconView(Context c, int kind) {
+        super(c);
+        this.kind = kind;
+        this.d = c.getResources().getDisplayMetrics().density;
+        if (kind != BADGE) setClickable(true);
+        paint.setStrokeCap(Paint.Cap.ROUND);
+        paint.setStrokeJoin(Paint.Join.ROUND);
+    }
+
+    /** CHECK: ticked. BELL: show the "needs attention" dot. SEARCH: show the close (X) state. */
+    void setOn(boolean on) {
+        this.on = on;
+        invalidate();
+    }
+
+    private void stroke(float width, int color) {
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(width * d);
+        paint.setColor(color);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        float cx = getWidth() / 2f;
+        float cy = getHeight() / 2f;
+        switch (kind) {
+            case CHECK:
+                if (on) {
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(Pal.accent);
+                    canvas.drawCircle(cx, cy, 12 * d, paint);
+                    drawTick(canvas, cx, cy, 1f, Pal.onAccent, 2.2f);
+                } else {
+                    stroke(2, Pal.muted);
+                    canvas.drawCircle(cx, cy, 11 * d, paint);
+                }
+                break;
+            case CROSS:
+                stroke(2, Pal.muted);
+                canvas.drawLine(cx - 5 * d, cy - 5 * d, cx + 5 * d, cy + 5 * d, paint);
+                canvas.drawLine(cx + 5 * d, cy - 5 * d, cx - 5 * d, cy + 5 * d, paint);
+                break;
+            case BELL:
+                stroke(1.8f, Pal.ink);
+                path.reset();
+                path.moveTo(cx - 6 * d, cy + 4 * d);
+                path.lineTo(cx - 6 * d, cy - 1 * d);
+                path.cubicTo(cx - 6 * d, cy - 9 * d, cx + 6 * d, cy - 9 * d, cx + 6 * d, cy - 1 * d);
+                path.lineTo(cx + 6 * d, cy + 4 * d);
+                path.close();
+                canvas.drawPath(path, paint);
+                canvas.drawLine(cx - 8 * d, cy + 4 * d, cx + 8 * d, cy + 4 * d, paint);
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(cx, cy + 7.5f * d, 1.8f * d, paint);
+                if (on) {
+                    paint.setColor(Pal.overdue);
+                    canvas.drawCircle(cx + 7 * d, cy - 8 * d, 4 * d, paint);
+                }
+                break;
+            case GEAR:
+                stroke(1.9f, Pal.ink);
+                canvas.drawCircle(cx, cy, 3.2f * d, paint);
+                canvas.drawCircle(cx, cy, 7 * d, paint);
+                for (int i = 0; i < 8; i++) {
+                    double a = Math.PI / 4 * i;
+                    float cs = (float) Math.cos(a);
+                    float sn = (float) Math.sin(a);
+                    canvas.drawLine(cx + cs * 7 * d, cy + sn * 7 * d,
+                            cx + cs * 10 * d, cy + sn * 10 * d, paint);
+                }
+                break;
+            case SEARCH:
+                stroke(2, Pal.ink);
+                if (on) { // close search
+                    canvas.drawLine(cx - 6 * d, cy - 6 * d, cx + 6 * d, cy + 6 * d, paint);
+                    canvas.drawLine(cx + 6 * d, cy - 6 * d, cx - 6 * d, cy + 6 * d, paint);
+                } else {
+                    canvas.drawCircle(cx - 2 * d, cy - 2 * d, 6.5f * d, paint);
+                    canvas.drawLine(cx + 2.8f * d, cy + 2.8f * d, cx + 8 * d, cy + 8 * d, paint);
+                }
+                break;
+            case CLOCK:
+                stroke(1.8f, Pal.muted);
+                canvas.drawCircle(cx, cy, 9 * d, paint);
+                canvas.drawLine(cx, cy, cx, cy - 5 * d, paint);
+                canvas.drawLine(cx, cy, cx + 4 * d, cy + 2 * d, paint);
+                break;
+            case SEND:
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Pal.accent);
+                canvas.drawCircle(cx, cy, 17 * d, paint);
+                stroke(2.2f, Pal.onAccent);
+                canvas.drawLine(cx, cy + 6 * d, cx, cy - 6 * d, paint);
+                canvas.drawLine(cx - 5 * d, cy - 1 * d, cx, cy - 6 * d, paint);
+                canvas.drawLine(cx + 5 * d, cy - 1 * d, cx, cy - 6 * d, paint);
+                break;
+            case BACK:
+                stroke(2.4f, Pal.ink);
+                canvas.drawLine(cx + 3 * d, cy - 7 * d, cx - 4 * d, cy, paint);
+                canvas.drawLine(cx - 4 * d, cy, cx + 3 * d, cy + 7 * d, paint);
+                break;
+            case NOTE: // notebook with a spine and ruled lines
+                stroke(1.8f, Pal.ink);
+                rect.set(cx - 7 * d, cy - 9 * d, cx + 7 * d, cy + 9 * d);
+                canvas.drawRoundRect(rect, 2.5f * d, 2.5f * d, paint);
+                canvas.drawLine(cx - 3 * d, cy - 9 * d, cx - 3 * d, cy + 9 * d, paint);
+                canvas.drawLine(cx, cy - 3 * d, cx + 4 * d, cy - 3 * d, paint);
+                canvas.drawLine(cx, cy + 1 * d, cx + 4 * d, cy + 1 * d, paint);
+                break;
+            case TRASH:
+                stroke(1.9f, Pal.muted);
+                canvas.drawLine(cx - 7 * d, cy - 5 * d, cx + 7 * d, cy - 5 * d, paint);
+                canvas.drawLine(cx - 2.5f * d, cy - 5 * d, cx - 2.5f * d, cy - 8 * d, paint);
+                canvas.drawLine(cx + 2.5f * d, cy - 5 * d, cx + 2.5f * d, cy - 8 * d, paint);
+                canvas.drawLine(cx - 2.5f * d, cy - 8 * d, cx + 2.5f * d, cy - 8 * d, paint);
+                path.reset();
+                path.moveTo(cx - 5.5f * d, cy - 5 * d);
+                path.lineTo(cx - 4.5f * d, cy + 8 * d);
+                path.lineTo(cx + 4.5f * d, cy + 8 * d);
+                path.lineTo(cx + 5.5f * d, cy - 5 * d);
+                canvas.drawPath(path, paint);
+                break;
+            case PLUS:
+                stroke(2.4f, Pal.onAccent);
+                canvas.drawLine(cx - 7 * d, cy, cx + 7 * d, cy, paint);
+                canvas.drawLine(cx, cy - 7 * d, cx, cy + 7 * d, paint);
+                break;
+            default: // BADGE
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Pal.accent);
+                canvas.drawCircle(cx, cy, Math.min(cx, cy), paint);
+                drawTick(canvas, cx, cy, 2.4f, Pal.onAccent, 1.5f);
+                break;
+        }
+    }
+
+    private void drawTick(Canvas canvas, float cx, float cy, float scale, int color, float stroke) {
+        path.reset();
+        path.moveTo(cx - 4.5f * d * scale, cy + 0.5f * d * scale);
+        path.lineTo(cx - 1.5f * d * scale, cy + 3.5f * d * scale);
+        path.lineTo(cx + 5f * d * scale, cy - 3.5f * d * scale);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(stroke * d * (scale > 1.5f ? 1.6f : 1f));
+        paint.setColor(color);
+        canvas.drawPath(path, paint);
+    }
+}
