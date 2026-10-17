@@ -19,6 +19,7 @@ import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -169,6 +170,7 @@ public class NoteEditorActivity extends Activity {
         scale = Prefs.noteScale(this);
         body.setTextSize(17 * scale);
         body.setTableTapListener(tb -> editTable(tb));
+        body.setTableChangedListener(() -> dirty = true);
         body.setZoomListener((f, done) -> {
             if (done) {
                 Prefs.setNoteScale(this, scale);
@@ -358,16 +360,50 @@ public class NoteEditorActivity extends Activity {
             buildGrid();
         }));
         tools.addView(toolChip("\u2212 Row", () -> {
-            if (tmpCells.length <= 2) return;
-            tmpCells = java.util.Arrays.copyOf(tmpCells, tmpCells.length - 1);
-            buildGrid();
+            if (tmpCells.length <= 2) {
+                Toast.makeText(this, "A table keeps its header and one row", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            final int last = tmpCells.length - 1;
+            StringBuilder what = new StringBuilder();
+            for (String cell : tmpCells[last]) {
+                String shown = RichText.Tbl.label(cell).trim();
+                if (!shown.isEmpty()) what.append(what.length() > 0 ? " \u00B7 " : "").append(shown);
+            }
+            new Dlg.Builder(this)
+                    .setTitle("Delete the last row?")
+                    .setMessage(what.length() == 0 ? "Row " + (last + 1) + " is empty."
+                            : "Row " + (last + 1) + ": " + what)
+                    .setPositiveButton("Delete", (d, w) -> {
+                        tmpCells = java.util.Arrays.copyOf(tmpCells, last);
+                        buildGrid();
+                    })
+                    .setNegativeButton("Keep", null)
+                    .show();
         }));
         tools.addView(toolChip("\u2212 Column", () -> {
-            if (tmpCells[0].length <= 2) return;
-            for (int r = 0; r < tmpCells.length; r++) {
-                tmpCells[r] = java.util.Arrays.copyOf(tmpCells[r], tmpCells[r].length - 1);
+            if (tmpCells[0].length <= 2) {
+                Toast.makeText(this, "A table keeps at least two columns", Toast.LENGTH_SHORT).show();
+                return;
             }
-            buildGrid();
+            final int last = tmpCells[0].length - 1;
+            StringBuilder what = new StringBuilder();
+            for (String[] row : tmpCells) {
+                String shown = RichText.Tbl.label(row[last]).trim();
+                if (!shown.isEmpty()) what.append(what.length() > 0 ? " \u00B7 " : "").append(shown);
+            }
+            new Dlg.Builder(this)
+                    .setTitle("Delete the last column?")
+                    .setMessage(what.length() == 0 ? "Column " + (last + 1) + " is empty."
+                            : "Column " + (last + 1) + ": " + what)
+                    .setPositiveButton("Delete", (d, w) -> {
+                        for (int r = 0; r < tmpCells.length; r++) {
+                            tmpCells[r] = java.util.Arrays.copyOf(tmpCells[r], last);
+                        }
+                        buildGrid();
+                    })
+                    .setNegativeButton("Keep", null)
+                    .show();
         }));
         root.addView(tools);
 
@@ -420,18 +456,8 @@ public class NoteEditorActivity extends Activity {
             for (int k = 0; k < tmpCells[r].length; k++) {
                 final int rr = r;
                 final int kk = k;
-                EditText et = new EditText(this);
-                et.setText(tmpCells[r][k]);
-                et.setSingleLine(true);
-                et.setTextSize(15);
-                et.setTextColor(Pal.ink);
-                et.setHint(r == 0 ? "Header" : "");
-                et.setHintTextColor(Pal.muted);
-                et.setMaxLines(1);
-                et.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
-                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-                et.setTypeface(r == 0 ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-                et.setPadding(dp(10), 0, dp(10), 0);
+                LinearLayout cell = new LinearLayout(this);
+                cell.setGravity(Gravity.CENTER_VERTICAL);
                 GradientDrawable g = new GradientDrawable();
                 g.setCornerRadius(dp(8));
                 if (r == 0) {
@@ -439,20 +465,72 @@ public class NoteEditorActivity extends Activity {
                 } else {
                     g.setColor(Pal.chip);
                 }
-                et.setBackground(g);
+                cell.setBackground(g);
+
+                final EditText et = new EditText(this);
+                et.setText(RichText.Tbl.label(tmpCells[r][k]));
+                et.setSingleLine(true);
+                et.setTextSize(15);
+                et.setTextColor(Pal.ink);
+                et.setHint(r == 0 ? "Header" : "");
+                et.setHintTextColor(Pal.muted);
+                et.setMaxLines(1);
+                et.setBackground(null);
+                et.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+                et.setTypeface(r == 0 ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+                et.setPadding(dp(8), 0, dp(8), 0);
+                final TextView tickBtn = r == 0 ? null : new TextView(this);
+                if (tickBtn != null) {
+                    tickBtn.setGravity(Gravity.CENTER);
+                    tickBtn.setContentDescription("Tick box in this cell");
+                    paintTick(tickBtn, RichText.Tbl.tick(tmpCells[r][k]));
+                    tickBtn.setOnClickListener(v -> {
+                        Hap.tick(v);
+                        int st = (RichText.Tbl.tick(tmpCells[rr][kk]) + 1) % 3; // none -> box -> ticked -> none
+                        tmpCells[rr][kk] = RichText.Tbl.compose(st, et.getText().toString());
+                        paintTick(tickBtn, st);
+                    });
+                    cell.addView(tickBtn, new LinearLayout.LayoutParams(dp(36), dp(46)));
+                }
                 et.addTextChangedListener(new SimpleWatcher() {
                     @Override
                     public void afterTextChanged(Editable s) {
-                        tmpCells[rr][kk] = s.toString();
+                        tmpCells[rr][kk] = RichText.Tbl.compose(RichText.Tbl.tick(tmpCells[rr][kk]), s.toString());
                     }
                 });
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(128), dp(46));
+                cell.addView(et, new LinearLayout.LayoutParams(0, dp(46), 1f));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(160), dp(46));
                 lp.setMargins(0, 0, dp(6), dp(6));
-                row.addView(et, lp);
+                row.addView(cell, lp);
             }
             tmpGrid.addView(row);
         }
         Fonts.apply(tmpGrid);
+    }
+
+    /** The little tick control in a table cell: faint = none, ring = box, filled = ticked. */
+    private void paintTick(TextView t, int state) {
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        int size = dp(22);
+        g.setSize(size, size);
+        if (state == 2) {
+            g.setColor(Pal.accent);
+            t.setText("\u2713");
+            t.setTextColor(Pal.onAccent);
+        } else if (state == 1) {
+            g.setColor(0);
+            g.setStroke(dp(2), Pal.muted);
+            t.setText("");
+        } else {
+            g.setColor(0);
+            g.setStroke(dp(1), (Pal.muted & 0x00FFFFFF) | 0x55000000);
+            t.setText("");
+        }
+        t.setTextSize(13);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setBackground(new android.graphics.drawable.InsetDrawable(g, dp(7), dp(12), dp(7), dp(12)));
     }
 
     private View labelled(String label, View v) {

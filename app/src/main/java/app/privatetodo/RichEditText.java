@@ -141,6 +141,11 @@ final class RichEditText extends EditText {
     }
 
     private TableTapListener tableListener;
+    private Runnable changedListener;
+
+    void setTableChangedListener(Runnable r) {
+        changedListener = r;
+    }
 
     void setTableTapListener(TableTapListener l) {
         tableListener = l;
@@ -159,6 +164,15 @@ final class RichEditText extends EditText {
         int line = l.getLineForVertical((int) (y - getTotalPaddingTop() + getScrollY()));
         RichText.Tbl t = RichText.tableOnLine(getText(), l.getLineStart(line));
         if (t == null) return false;
+        // a tap on a tick box inside the table flips it right here
+        float xl = x - getTotalPaddingLeft() + getScrollX();
+        float yl = y - (l.getLineTop(line) + getTotalPaddingTop() - getScrollY());
+        if (t.toggleAt(xl, yl, getPaint())) {
+            RichText.refresh(getText(), t);
+            invalidate();
+            if (changedListener != null) changedListener.run();
+            return true;
+        }
         tableListener.onTableTap(t);
         return true;
     }

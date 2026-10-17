@@ -103,6 +103,29 @@ public class SettingsActivity extends Activity {
         col.addView(sectionLabel("Alarms"));
         col.addView(soundCard(Prefs.ALARM));
 
+        // ---- full-screen alert: glow + test
+        col.addView(sectionLabel("Full-screen alert"));
+        LinearLayout alertCard = card();
+        LinearLayout glowRow = new LinearLayout(this);
+        glowRow.setOrientation(LinearLayout.HORIZONTAL);
+        glowRow.setGravity(Gravity.CENTER_VERTICAL);
+        glowRow.setMinimumHeight(dp(64));
+        LinearLayout glowText = new LinearLayout(this);
+        glowText.setOrientation(LinearLayout.VERTICAL);
+        glowText.addView(text("Edge glow", 16, Pal.ink, true));
+        glowText.addView(text("A soft colour light that travels round the screen edge while an alarm rings", 13, Pal.muted, false));
+        glowRow.addView(glowText, new LinearLayout.LayoutParams(0, -2, 1f));
+        ToggleView glowSwitch = new ToggleView(this);
+        glowSwitch.set(Prefs.glow(this), false);
+        glowSwitch.setListener(on -> Prefs.setGlow(this, on));
+        glowRow.addView(glowSwitch, new LinearLayout.LayoutParams(dp(52), dp(32)));
+        alertCard.addView(glowRow);
+        alertCard.addView(backupRow("Test full-screen alert",
+                "Shows the alarm screen right now with sample data", v -> testAlert(0)));
+        alertCard.addView(backupRow("Test on the lock screen",
+                "Rings in 10 seconds: press the power button to lock the phone first", v -> testAlert(10)));
+        col.addView(alertCard);
+
         // ---- backup
         col.addView(sectionLabel("Backup"));
         LinearLayout backupCard = card();
@@ -238,6 +261,39 @@ public class SettingsActivity extends Activity {
         }
         String picked = SoundPicker.result(this, req, result, data);
         if (picked != null) applySound(pickKind, picked);
+    }
+
+    /** Makes a throw-away task with sample subtasks and rings it; AlarmActivity deletes it afterwards. */
+    private void testAlert(int delaySeconds) {
+        TaskDb db = new TaskDb(this);
+        long id;
+        try {
+            long old = Prefs.testId(this);
+            if (old >= 0) {
+                Reminders.cancel(this, old);
+                Reminders.cancelNotification(this, old);
+                db.delete(old);
+            }
+            long due = System.currentTimeMillis() + delaySeconds * 1000L;
+            id = db.add("Test reminder \u2014 check the glow", due, 0, 0, true);
+            db.setAlarmMode(id, true, true);
+            java.util.List<Sub> subs = new java.util.ArrayList<>();
+            subs.add(new Sub(0, id, "Try snooze for 5 min", false));
+            subs.add(new Sub(0, id, "Open a link: example.com", false));
+            subs.add(new Sub(0, id, "Tap Done when finished", false));
+            db.replaceSubs(id, subs);
+            Prefs.setTestId(this, id);
+            if (delaySeconds > 0) Reminders.schedule(this, db.get(id));
+        } finally {
+            db.close();
+        }
+        if (delaySeconds > 0) {
+            Toast.makeText(this, "Lock the phone now \u2014 it rings in " + delaySeconds + " seconds",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        RingService.start(this, id, true);
+        startActivity(new Intent(this, AlarmActivity.class).putExtra(Reminders.EXTRA_ID, id));
     }
 
     private LinearLayout backupRow(String title, String sub, View.OnClickListener l) {

@@ -181,6 +181,14 @@ public class MainActivity extends Activity {
         clearDone = trash;
         header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
+        IconView pomodoro = new IconView(this, IconView.POMODORO);
+        pomodoro.setContentDescription("Pomodoro focus timer");
+        pomodoro.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, PomodoroActivity.class));
+        });
+        header.addView(pomodoro, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
         IconView plan = new IconView(this, IconView.PLAN);
         plan.setContentDescription("Plan");
         plan.setOnClickListener(v -> {

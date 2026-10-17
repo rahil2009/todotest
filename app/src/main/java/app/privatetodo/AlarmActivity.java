@@ -68,7 +68,13 @@ public class AlarmActivity extends Activity {
             finish();
             return;
         }
-        setContentView(build(t, subs));
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.setBackgroundColor(BG);
+        frame.addView(build(t, subs), new android.widget.FrameLayout.LayoutParams(-1, -1));
+        if (Prefs.glow(this)) {
+            frame.addView(new GlowView(this), new android.widget.FrameLayout.LayoutParams(-1, -1));
+        }
+        setContentView(frame);
         Fonts.apply(getWindow().getDecorView());
     }
 
@@ -208,6 +214,24 @@ public class AlarmActivity extends Activity {
         glp.topMargin = dp(8);
         panel.addView(go, glp);
         return panel;
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        // the Settings test button makes a throw-away task; remove it once its alert is closed
+        if (isFinishing() && id >= 0 && id == Prefs.testId(this)) {
+            Prefs.setTestId(this, -1);
+            Reminders.cancel(this, id);
+            Reminders.cancelNotification(this, id);
+            RingService.stopFor(this, id);
+            TaskDb db = new TaskDb(this);
+            try {
+                db.delete(id);
+            } finally {
+                db.close();
+            }
+        }
     }
 
     /** Stops the ringing but leaves the task as it is. */

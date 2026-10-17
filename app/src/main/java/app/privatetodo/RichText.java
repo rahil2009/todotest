@@ -213,6 +213,42 @@ final class RichText {
             return tableWidth > 0 ? tableWidth : Math.round(300 * density);
         }
 
+        /** 0 = no tick box in this cell, 1 = empty box, 2 = ticked. */
+        static int tick(String cell) {
+            if (cell == null) return 0;
+            if (cell.startsWith(CHECK_OFF) || cell.equals("\u2610")) return 1;
+            if (cell.startsWith(CHECK_ON) || cell.equals("\u2611")) return 2;
+            return 0;
+        }
+
+        static String label(String cell) {
+            if (tick(cell) == 0) return cell == null ? "" : cell;
+            return cell.length() <= 2 ? "" : cell.substring(2);
+        }
+
+        static String compose(int state, String label) {
+            if (state == 0) return label;
+            return (state == 2 ? CHECK_ON : CHECK_OFF) + label;
+        }
+
+        /** Flips a tick box at (xl, yl) measured from the table's top-left; true if one was hit. */
+        boolean toggleAt(float xl, float yl, Paint p) {
+            int rows = rows();
+            int cols = cols();
+            if (rows == 0 || cols == 0) return false;
+            float rh = rowH(p);
+            float colW = width() / (float) cols;
+            int r = (int) (yl / rh);
+            int k = (int) (xl / colW);
+            if (r < 0 || r >= rows || k < 0 || k >= cols) return false;
+            int st = tick(cells[r][k]);
+            if (st == 0) return false;
+            float into = xl - k * colW;
+            if (into > p.getTextSize() * 0.5f + p.getTextSize() * 1.3f + 10 * density) return false;
+            cells[r][k] = compose(st == 1 ? 2 : 1, label(cells[r][k]));
+            return true;
+        }
+
         private int rowH(Paint p) {
             return Math.round(p.getTextSize() * 1.25f + p.getTextSize() * 0.9f);
         }
@@ -278,11 +314,47 @@ final class RichText {
                 Paint.FontMetrics fm = tp.getFontMetrics();
                 float base = t0 + r * rh + rh / 2f - (fm.ascent + fm.descent) / 2f;
                 for (int k = 0; k < cols; k++) {
-                    String cell = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
+                    String raw = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
+                    int st = tick(raw);
+                    String cell = label(raw);
+                    float tx = x + k * colW + pad;
+                    if (st > 0) { // tick box that fits inside the cell
+                        float size = tp.getTextSize();
+                        float rad2 = size * 0.42f;
+                        float cx2 = tx + rad2;
+                        float cy2 = t0 + r * rh + rh / 2f;
+                        Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
+                        ring.setStrokeCap(Paint.Cap.ROUND);
+                        ring.setStrokeJoin(Paint.Join.ROUND);
+                        if (st == 2) {
+                            ring.setColor(Pal.accent);
+                            ring.setStyle(Paint.Style.FILL);
+                            c.drawCircle(cx2, cy2, rad2, ring);
+                            ring.setStyle(Paint.Style.STROKE);
+                            ring.setStrokeWidth(size * 0.11f);
+                            ring.setColor(Pal.onAccent);
+                            android.graphics.Path kk = new android.graphics.Path();
+                            kk.moveTo(cx2 - rad2 * 0.45f, cy2 + rad2 * 0.02f);
+                            kk.lineTo(cx2 - rad2 * 0.1f, cy2 + rad2 * 0.38f);
+                            kk.lineTo(cx2 + rad2 * 0.48f, cy2 - rad2 * 0.34f);
+                            c.drawPath(kk, ring);
+                        } else {
+                            ring.setStyle(Paint.Style.STROKE);
+                            ring.setStrokeWidth(size * 0.09f);
+                            ring.setColor(Pal.muted);
+                            c.drawCircle(cx2, cy2, rad2, ring);
+                        }
+                        tx += size * 1.1f + size * 0.2f;
+                    }
                     if (cell.isEmpty()) continue;
-                    CharSequence cut = android.text.TextUtils.ellipsize(cell, tp, colW - 2 * pad,
+                    tp.setStrikeThruText(st == 2);
+                    tp.setColor(st == 2 ? Pal.muted : Pal.ink);
+                    float room = x + (k + 1) * colW - pad - tx;
+                    CharSequence cut = android.text.TextUtils.ellipsize(cell, tp, Math.max(10, room),
                             android.text.TextUtils.TruncateAt.END);
-                    c.drawText(cut, 0, cut.length(), x + k * colW + pad, base, tp);
+                    c.drawText(cut, 0, cut.length(), tx, base, tp);
+                    tp.setStrikeThruText(false);
+                    tp.setColor(Pal.ink);
                 }
             }
             p.setColor(oldColor);

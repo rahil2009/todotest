@@ -24,6 +24,7 @@ final class IconView extends View {
     static final int LOCK = 13;
     static final int SWIPE_DONE = 14;
     static final int PLAN = 15;
+    static final int POMODORO = 16;
 
     private final int kind;
     private boolean on;
@@ -172,6 +173,20 @@ final class IconView extends View {
                 canvas.drawCircle(cx - 3.5f * d, cy + 3 * d, 1.2f * d, paint);
                 canvas.drawCircle(cx + 3.5f * d, cy + 3 * d, 1.2f * d, paint);
                 canvas.drawCircle(cx - 3.5f * d, cy + 6.3f * d, 1.2f * d, paint);
+                break;
+            case POMODORO: // tomato with a leaf crown and a tiny clock hand
+                stroke(1.8f, Pal.ink);
+                canvas.drawCircle(cx, cy + 2 * d, 8 * d, paint);
+                path.reset();
+                path.moveTo(cx, cy - 6 * d);
+                path.lineTo(cx - 4 * d, cy - 8.5f * d);
+                path.moveTo(cx, cy - 6 * d);
+                path.lineTo(cx + 4 * d, cy - 8.5f * d);
+                path.moveTo(cx, cy - 6 * d);
+                path.lineTo(cx, cy - 10.5f * d);
+                canvas.drawPath(path, paint);
+                canvas.drawLine(cx, cy + 2 * d, cx, cy - 2 * d, paint);
+                canvas.drawLine(cx, cy + 2 * d, cx + 3 * d, cy + 3.5f * d, paint);
                 break;
             case LOCK: // padlock, used in the "stored only on this device" line
                 stroke(1.7f, Pal.muted);

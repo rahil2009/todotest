@@ -66,6 +66,24 @@ final class Prefs {
         sp(c).edit().putFloat("note_scale", v).apply();
     }
 
+    /** Animated edge glow on the full-screen alert (on by default). */
+    static boolean glow(Context c) {
+        return sp(c).getBoolean("glow", true);
+    }
+
+    static void setGlow(Context c, boolean v) {
+        sp(c).edit().putBoolean("glow", v).apply();
+    }
+
+    /** Id of the throw-away task used by the Settings test button, or -1. */
+    static long testId(Context c) {
+        return sp(c).getLong("test_id", -1);
+    }
+
+    static void setTestId(Context c, long v) {
+        sp(c).edit().putLong("test_id", v).apply();
+    }
+
     private static String key(String what, int kind) {
         return what + (kind == ALARM ? "_alarm" : "_notif");
     }
