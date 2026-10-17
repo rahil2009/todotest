@@ -40,9 +40,9 @@ final class HabitDb extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE log (habit INTEGER NOT NULL, day INTEGER NOT NULL, amount INTEGER NOT NULL,"
                 + "PRIMARY KEY (habit, day))");
         // a starting set: water first, reading as 30 minutes
-        seed(db, "Drink Water", "🥤", COLORS[0], 1000, "ml", 250, 0);
-        seed(db, "Read", "📘", COLORS[1], 30, "min", 10, 1);
-        seed(db, "Exercise", "🏋️", COLORS[2], 0, "", 1, 2);
+        seed(db, "Drink Water", "🥤", COLORS[0], 1000, "ml", 250, 0, "100,500");
+        seed(db, "Read", "📘", COLORS[1], 30, "min", 10, 1, "5,15");
+        seed(db, "Exercise", "🏋️", COLORS[2], 0, "", 1, 2, "");
     }
 
     private void seed(SQLiteDatabase db, String name, String emoji, int color, int goal, String unit,
