@@ -109,23 +109,62 @@ public class SettingsActivity extends Activity {
         col.addView(sectionLabel("Smart dates"));
         col.addView(smartCard());
 
+        // ---- habit units
+        col.addView(sectionLabel("Habit units"));
+        col.addView(unitsCard());
+
         // ---- full-screen alert: glow + test
         col.addView(sectionLabel("Full-screen alert"));
         LinearLayout alertCard = card();
-        LinearLayout glowRow = new LinearLayout(this);
-        glowRow.setOrientation(LinearLayout.HORIZONTAL);
-        glowRow.setGravity(Gravity.CENTER_VERTICAL);
-        glowRow.setMinimumHeight(dp(64));
-        LinearLayout glowText = new LinearLayout(this);
-        glowText.setOrientation(LinearLayout.VERTICAL);
-        glowText.addView(text("Edge glow", 16, Pal.ink, true));
-        glowText.addView(text("A soft colour light that travels round the screen edge while an alarm rings", 13, Pal.muted, false));
-        glowRow.addView(glowText, new LinearLayout.LayoutParams(0, -2, 1f));
-        ToggleView glowSwitch = new ToggleView(this);
-        glowSwitch.set(Prefs.glow(this), false);
-        glowSwitch.setListener(on -> Prefs.setGlow(this, on));
-        glowRow.addView(glowSwitch, new LinearLayout.LayoutParams(dp(52), dp(32)));
-        alertCard.addView(glowRow);
+        alertCard.addView(text("Animation", 16, Pal.ink, true));
+        alertCard.addView(text("Plays behind the alarm screen. Tap one to preview it.", 13, Pal.muted, false));
+        final android.widget.FrameLayout preview = new android.widget.FrameLayout(this);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(0xFF111513);
+        pbg.setCornerRadius(dp(18));
+        preview.setBackground(pbg);
+        preview.setClipToOutline(true);
+        final TextView[] fxChips = new TextView[AlertFx.NAMES.length];
+        final Runnable showFx = () -> {
+            preview.removeAllViews();
+            int cur = Prefs.alertAnim(this);
+            View fx = AlertFx.create(this, cur);
+            if (fx != null) preview.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));
+            TextView clock = text("9:41", 40, 0xFFFFFFFF, true);
+            clock.setGravity(Gravity.CENTER);
+            preview.addView(clock, new android.widget.FrameLayout.LayoutParams(-1, -1));
+            for (int i = 0; i < fxChips.length; i++) {
+                boolean on = i == cur;
+                fxChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                fxChips[i].setBackground(cg);
+            }
+        };
+        FlowLayout fxRow = new FlowLayout(this, dp(6), dp(6));
+        for (int i = 0; i < AlertFx.NAMES.length; i++) {
+            final int mode = i;
+            TextView chip = text(AlertFx.NAMES[i], 14, Pal.muted, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(14), 0, dp(14), 0);
+            chip.setMinHeight(dp(40));
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                Prefs.setAlertAnim(this, mode);
+                showFx.run();
+            });
+            fxChips[i] = chip;
+            fxRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(40)));
+        }
+        LinearLayout.LayoutParams frlp = new LinearLayout.LayoutParams(-1, -2);
+        frlp.topMargin = dp(10);
+        alertCard.addView(fxRow, frlp);
+        LinearLayout.LayoutParams plp2 = new LinearLayout.LayoutParams(-1, dp(150));
+        plp2.topMargin = dp(10);
+        plp2.bottomMargin = dp(6);
+        alertCard.addView(preview, plp2);
+        showFx.run();
         alertCard.addView(backupRow("Test full-screen alert",
                 "Shows the alarm screen right now with sample data", v -> testAlert(0)));
         alertCard.addView(backupRow("Test on the lock screen",
@@ -386,6 +425,32 @@ public class SettingsActivity extends Activity {
                         SmartDate.parse(SettingsActivity.this, in, System.currentTimeMillis())));
             }
         });
+        return card;
+    }
+
+    /** The units offered when you set up a habit, each with its one-tap amounts. */
+    private LinearLayout unitsCard() {
+        LinearLayout card = card();
+        card.addView(text("Units and quick amounts for habits, e.g. ml with +100 +250 +500. "
+                + "Tap one to change it.", 13, Pal.muted, false));
+        final Runnable[] redraw = new Runnable[1];
+        final java.util.List<String[]> list = HabitEditor.units(this);
+        for (int i = 0; i < list.size(); i++) {
+            final int idx = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(48));
+            row.addView(text(list.get(i)[0], 15, Pal.accent, true), new LinearLayout.LayoutParams(dp(90), -2));
+            String am = list.get(i)[1].isEmpty() ? "no quick amounts" : "+" + list.get(i)[1].replaceAll("[,;\\s]+", "  +");
+            row.addView(text(am, 14, Pal.ink, false), new LinearLayout.LayoutParams(0, -2, 1f));
+            row.setOnClickListener(v -> HabitEditor.editUnit(this, idx, () -> recreate()));
+            card.addView(row);
+        }
+        TextView add = text("+ Add unit", 15, Pal.accent, true);
+        add.setMinHeight(dp(48));
+        add.setGravity(Gravity.CENTER_VERTICAL);
+        add.setOnClickListener(v -> HabitEditor.editUnit(this, -1, () -> recreate()));
+        card.addView(add);
         return card;
     }
 

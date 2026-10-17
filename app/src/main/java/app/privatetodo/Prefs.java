@@ -122,6 +122,30 @@ final class Prefs {
         return sp(c).getBoolean("glow", true);
     }
 
+    // ---- habit units ("name=quick amounts" per line); edited in Settings > Habit units
+
+    static final String DEFAULT_UNITS = "ml=100,250,500\nL=1,2\nmin=5,10,15\nhr=1\ncount=1,2,5\ncups=1,2\n"
+            + "glasses=1,2\npages=5,10,20\nsteps=500,1000,2000\nkm=1,2,5\nreps=5,10,20\nkcal=50,100,200\ng=10,50,100";
+
+    static String habitUnits(Context c) {
+        return sp(c).getString("habit_units", DEFAULT_UNITS);
+    }
+
+    static void setHabitUnits(Context c, String v) {
+        sp(c).edit().putString("habit_units", v).apply();
+    }
+
+    /** Which AlertFx style plays behind the full-screen alert (0 = off). Starts from the old glow switch. */
+    static int alertAnim(Context c) {
+        SharedPreferences s = sp(c);
+        if (s.contains("alert_anim")) return s.getInt("alert_anim", AlertFx.EDGE);
+        return s.getBoolean("glow", true) ? AlertFx.EDGE : AlertFx.OFF;
+    }
+
+    static void setAlertAnim(Context c, int v) {
+        sp(c).edit().putInt("alert_anim", v).apply();
+    }
+
     static void setGlow(Context c, boolean v) {
         sp(c).edit().putBoolean("glow", v).apply();
     }

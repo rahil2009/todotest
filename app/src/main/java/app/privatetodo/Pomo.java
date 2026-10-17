@@ -79,6 +79,10 @@ final class Pomo {
         return s.getLong("left", minutes(c, s.getInt("phase", FOCUS)) * 60_000L);
     }
 
+    static long endAt(Context c) {
+        return sp(c).getLong("end", 0);
+    }
+
     static long taskId(Context c) {
         return sp(c).getLong("task", -1);
     }

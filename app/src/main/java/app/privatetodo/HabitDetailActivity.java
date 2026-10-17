@@ -122,7 +122,9 @@ public class HabitDetailActivity extends Activity {
         sn.setPadding(dp(8), 0, 0, 0);
         sr.addView(sn);
         streakCard.addView(sr);
-        streakCard.addView(text("Streak", 16, Pal.ink, false));
+        TextView streakWord = text("Streak", 16, Pal.ink, false);
+        streakWord.setGravity(Gravity.CENTER);
+        streakCard.addView(streakWord, new LinearLayout.LayoutParams(-1, -2));
         stats.addView(streakCard, new LinearLayout.LayoutParams(0, dp(124), 1.15f));
         LinearLayout right = new LinearLayout(this);
         right.setOrientation(LinearLayout.VERTICAL);
@@ -200,7 +202,7 @@ public class HabitDetailActivity extends Activity {
         card.setGravity(Gravity.CENTER_VERTICAL);
         card.setPadding(dp(18), dp(12), dp(14), dp(12));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(10);
+        lp.topMargin = h.goal > 0 ? 0 : dp(10);
         card.setLayoutParams(lp);
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
@@ -225,7 +227,54 @@ public class HabitDetailActivity extends Activity {
             render();
         });
         card.addView(btn);
-        return card;
+        if (h.goal <= 0) return card;
+
+        // the habit's other quick amounts, a custom amount, and undo
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(0, 0, 0, 0);
+        wrap.addView(card, new LinearLayout.LayoutParams(-1, -2));
+        FlowLayout chips = new FlowLayout(this, dp(8), dp(8));
+        chips.setPadding(dp(4), dp(10), 0, 0);
+        boolean first = true;
+        for (final int q : h.quickAmounts()) {
+            if (first) { // the main step is already the big button
+                first = false;
+                continue;
+            }
+            chips.addView(amountChip("+" + q, v -> {
+                db.add(id, HabitDb.today(), q);
+                render();
+            }), new android.view.ViewGroup.LayoutParams(-2, dp(38)));
+        }
+        chips.addView(amountChip("Custom\u2026", v -> HabitEditor.askAmount(this, h, val -> {
+            db.add(id, HabitDb.today(), val);
+            render();
+        })), new android.view.ViewGroup.LayoutParams(-2, dp(38)));
+        chips.addView(amountChip("\u2212" + h.step, v -> {
+            db.add(id, HabitDb.today(), -h.step);
+            render();
+        }), new android.view.ViewGroup.LayoutParams(-2, dp(38)));
+        wrap.addView(chips);
+        LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(-1, -2);
+        wlp.topMargin = dp(10);
+        wrap.setLayoutParams(wlp);
+        return wrap;
+    }
+
+    private TextView amountChip(String label, View.OnClickListener l) {
+        TextView t = text(label, 14, Pal.ink, true);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(16), 0, dp(16), 0);
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(HabitUi.alpha(Pal.card, 0xE0));
+        g.setCornerRadius(dp(19));
+        t.setBackground(g);
+        t.setOnClickListener(v -> {
+            Hap.tick(v);
+            l.onClick(v);
+        });
+        return t;
     }
 
     private LinearLayout statRow(String label, int value) {

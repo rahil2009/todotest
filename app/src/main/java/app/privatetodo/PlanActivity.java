@@ -162,8 +162,10 @@ public class PlanActivity extends Activity {
             LinearLayout cell = new LinearLayout(this);
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER_HORIZONTAL);
-            cell.addView(text(letter.format(new Date(d0)).toUpperCase(Locale.getDefault()), 11,
-                    Pal.muted, true));
+            TextView dow = text(letter.format(new Date(d0)).toUpperCase(Locale.getDefault()), 11,
+                    Pal.muted, true);
+            dow.setGravity(Gravity.CENTER);
+            cell.addView(dow, new LinearLayout.LayoutParams(-1, -2));
             Calendar dc = Calendar.getInstance();
             dc.setTimeInMillis(d0);
             TextView num = text(String.valueOf(dc.get(Calendar.DAY_OF_MONTH)), 16,
@@ -176,6 +178,7 @@ public class PlanActivity extends Activity {
             num.setBackground(g);
             LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(dp(40), dp(40));
             nlp.topMargin = dp(4);
+            nlp.gravity = Gravity.CENTER_HORIZONTAL;
             cell.addView(num, nlp);
             // up to three dots for what is due that day
             int pending = 0;
@@ -196,7 +199,9 @@ public class PlanActivity extends Activity {
                 dlp.setMargins(dp(1), 0, dp(1), 0);
                 dots.addView(dot, dlp);
             }
-            cell.addView(dots, new LinearLayout.LayoutParams(-2, dp(8)));
+            LinearLayout.LayoutParams dotsLp = new LinearLayout.LayoutParams(-2, dp(8));
+            dotsLp.gravity = Gravity.CENTER_HORIZONTAL;
+            cell.addView(dots, dotsLp);
             cell.setOnClickListener(v -> {
                 Hap.tick(v);
                 day = d0;
@@ -577,6 +582,11 @@ public class PlanActivity extends Activity {
         if (t.done) title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
         title.setMaxLines(2);
         title.setPadding(dp(2), dp(8), dp(4), dp(8));
+        if (t.repeat > 0) {
+            title.setCompoundDrawablesWithIntrinsicBounds(null, null,
+                    new RepeatDrawable(t.done ? Pal.muted : Pal.accent, dp(15)), null);
+            title.setCompoundDrawablePadding(dp(6));
+        }
         card.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
 
         if (!t.done) {

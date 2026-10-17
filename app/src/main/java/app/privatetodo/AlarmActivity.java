@@ -70,9 +70,16 @@ public class AlarmActivity extends Activity {
         }
         android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
         frame.setBackgroundColor(BG);
-        frame.addView(build(t, subs), new android.widget.FrameLayout.LayoutParams(-1, -1));
-        if (Prefs.glow(this)) {
-            frame.addView(new GlowView(this), new android.widget.FrameLayout.LayoutParams(-1, -1));
+        int mode = Prefs.alertAnim(this);
+        View fx = AlertFx.create(this, mode);
+        View content = build(t, subs);
+        if (fx != null && mode != AlertFx.EDGE) { // backdrop styles sit behind the content
+            frame.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));
+            content.setBackgroundColor(Color.TRANSPARENT);
+        }
+        frame.addView(content, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        if (fx != null && mode == AlertFx.EDGE) { // the edge glow frames everything, on top
+            frame.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));
         }
         setContentView(frame);
         Fonts.apply(getWindow().getDecorView());

@@ -71,6 +71,7 @@ public class HabitActivity extends Activity {
         header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         header.addView(text("Habit", 30, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
         IconView add = new IconView(this, IconView.PLUS);
+        add.setTint(Pal.ink);
         add.setContentDescription("New habit");
         add.setOnClickListener(v -> HabitEditor.show(this, null, this::render));
         header.addView(add, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -114,8 +115,10 @@ public class HabitActivity extends Activity {
             LinearLayout cell = new LinearLayout(this);
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER_HORIZONTAL);
-            cell.addView(text(ld.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.getDefault()),
-                    12, Pal.muted, false));
+            TextView dow = text(ld.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.getDefault()),
+                    12, Pal.muted, false);
+            dow.setGravity(Gravity.CENTER);
+            cell.addView(dow, new LinearLayout.LayoutParams(-1, -2));
             boolean on = day == selected;
             TextView num = text(String.valueOf(ld.getDayOfMonth()), 16, on ? Pal.onAccent : Pal.ink, true);
             num.setGravity(Gravity.CENTER);
@@ -125,6 +128,7 @@ public class HabitActivity extends Activity {
             num.setBackground(g);
             LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(dp(40), dp(40));
             nlp.topMargin = dp(6);
+            nlp.gravity = Gravity.CENTER_HORIZONTAL;
             cell.addView(num, nlp);
             cell.setOnClickListener(v -> {
                 Hap.tick(v);
@@ -174,8 +178,7 @@ public class HabitActivity extends Activity {
         badge.setOnClickListener(v -> logTap(h, v));
         badge.setOnLongClickListener(v -> {
             Hap.confirm(v);
-            db.setAmount(h.id, selected, 0);
-            render();
+            quickSheet(h);
             return true;
         });
         top.addView(badge, new LinearLayout.LayoutParams(dp(68), dp(68)));
@@ -197,7 +200,8 @@ public class HabitActivity extends Activity {
             cell.setOrientation(LinearLayout.VERTICAL);
             cell.setGravity(Gravity.CENTER_HORIZONTAL);
             TextView l = text(letters[i], 13, day == selected ? HabitUi.deep(h.color) : Pal.muted, day == selected);
-            cell.addView(l);
+            l.setGravity(Gravity.CENTER);
+            cell.addView(l, new LinearLayout.LayoutParams(-1, -2));
             HabitUi.DayDot dot = new HabitUi.DayDot(this, h.color);
             float frac = h.goal > 0 ? Math.max(0, a) / (float) h.goal : 0f;
             int state;
@@ -224,11 +228,41 @@ public class HabitActivity extends Activity {
             });
             LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(dp(40), dp(44));
             dlp.topMargin = dp(2);
+            dlp.gravity = Gravity.CENTER_HORIZONTAL;
             cell.addView(dot, dlp);
             week.addView(cell, new LinearLayout.LayoutParams(0, -2, 1f));
         }
         card.addView(week);
         return card;
+    }
+
+    /** Long-press on the badge: the habit's quick amounts, a custom amount (dial), or reset the day. */
+    private void quickSheet(final Habit h) {
+        final List<Integer> quick = h.quickAmounts();
+        final List<String> items = new java.util.ArrayList<>();
+        if (h.goal > 0) {
+            for (int q : quick) items.add("+" + q + (h.unit.isEmpty() ? "" : " " + h.unit));
+            items.add("Custom amount\u2026");
+        }
+        items.add("Reset this day");
+        new Dlg.Builder(this)
+                .setTitle(h.name)
+                .setItems(items.toArray(new String[0]), (d, which) -> {
+                    if (h.goal > 0 && which < quick.size()) {
+                        db.add(h.id, selected, quick.get(which));
+                        render();
+                    } else if (h.goal > 0 && which == quick.size()) {
+                        HabitEditor.askAmount(this, h, v -> {
+                            db.add(h.id, selected, v);
+                            render();
+                        });
+                    } else {
+                        db.setAmount(h.id, selected, 0);
+                        render();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     /** One tap on the badge adds a step to the selected day (or ticks a simple habit). */

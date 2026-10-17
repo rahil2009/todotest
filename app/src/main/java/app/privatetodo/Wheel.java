@@ -6,11 +6,19 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.Typeface;
+import android.os.SystemClock;
+import android.text.InputType;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.animation.DecelerateInterpolator;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.Toast;
+
+import java.util.function.IntConsumer;
 
 /**
  * Swipe-up/down dial. Replaces the platform NumberPicker so the rule is simple and the same for every
@@ -44,6 +52,13 @@ final class Wheel extends View {
     private boolean dragging;
     private final Typeface regular;
     private final Typeface bold;
+    private Runnable flingRun;
+    private long flingTime;
+    private float flingV; // rows per second
+    private long lastTapAt;
+    private long lastHaptic;
+    private IntConsumer typed; // when set, a typed number goes here instead of being matched to a row
+    private static final float FRICTION = 1.9f; // per second; lower = longer glide
 
     Wheel(Context c) {
         super(c);
@@ -77,6 +92,11 @@ final class Wheel extends View {
 
     void setOnValueChangedListener(Listener l) {
         listener = l;
+    }
+
+    /** Receives a number typed by double-tapping the centre value (for dials whose rows are a custom list). */
+    void setTypedHandler(IntConsumer h) {
+        typed = h;
     }
 
     int getValue() {
@@ -168,18 +188,143 @@ final class Wheel extends View {
                 vt.addMovement(e);
                 vt.computeCurrentVelocity(1000);
                 float v = -vt.getYVelocity() / rowH; // rows per second
+                v = Math.max(-110f, Math.min(110f, v));
                 vt.recycle();
                 vt = null;
-                if (!dragging && e.getActionMasked() == MotionEvent.ACTION_UP) {
-                    int delta = Math.round((e.getY() - getHeight() / 2f) / rowH);
-                    settle(Math.round(pos) + delta);
+                boolean up = e.getActionMasked() == MotionEvent.ACTION_UP;
+                if (!dragging && up) {
+                    float off = e.getY() - getHeight() / 2f;
+                    if (Math.abs(off) < rowH / 2f) { // centre value: a quick second tap types a number
+                        long now = SystemClock.uptimeMillis();
+                        if (numeric() && now - lastTapAt < ViewConfiguration.getDoubleTapTimeout() + 100) {
+                            lastTapAt = 0;
+                            settle(Math.round(pos));
+                            edit();
+                            return true;
+                        }
+                        lastTapAt = now;
+                        settle(Math.round(pos));
+                    } else {
+                        lastTapAt = 0;
+                        settle(Math.round(pos) + Math.round(off / rowH));
+                    }
+                } else if (Math.abs(v) > 3f) {
+                    fling(v);
                 } else {
-                    settle(Math.round(pos + v * 0.18f));
+                    settle(Math.round(pos));
                 }
                 return true;
             default:
                 return true;
         }
+    }
+
+    /** iOS-style glide: the speed you let go at decays smoothly to a stop, then the nearest row eases in. */
+    private void fling(float v) {
+        stop();
+        flingV = v;
+        flingTime = System.nanoTime();
+        flingRun = new Runnable() {
+            @Override
+            public void run() {
+                long now = System.nanoTime();
+                float dt = Math.min(0.04f, (now - flingTime) / 1e9f);
+                flingTime = now;
+                setPos(pos + flingV * dt);
+                flingV *= (float) Math.exp(-FRICTION * dt);
+                boolean edge = !wrap && (pos <= 0f || pos >= count() - 1f);
+                if (Math.abs(flingV) < 1.6f || edge) {
+                    flingRun = null;
+                    settle(Math.round(pos));
+                } else {
+                    postOnAnimation(this);
+                }
+            }
+        };
+        postOnAnimation(flingRun);
+    }
+
+    private boolean numeric() {
+        if (typed != null || labels == null) return true;
+        try {
+            Integer.parseInt(labels[0].trim());
+            return true;
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private void edit() {
+        final android.content.Context c = getContext();
+        if (!(c instanceof android.app.Activity)) return;
+        final EditText et = new EditText(c);
+        et.setInputType(InputType.TYPE_CLASS_NUMBER);
+        et.setSingleLine(true);
+        et.setTextSize(26);
+        et.setGravity(android.view.Gravity.CENTER);
+        et.setTextColor(Pal.ink);
+        et.setTypeface(Fonts.face(true));
+        String cur = label(lastIdx).replaceAll("[^0-9]", "");
+        et.setText(cur);
+        et.setSelectAllOnFocus(true);
+        LinearLayout box = new LinearLayout(c);
+        box.setPadding(Math.round(32 * density), Math.round(8 * density), Math.round(32 * density), 0);
+        box.addView(et, new LinearLayout.LayoutParams(-1, -2));
+        String range = typed != null ? "" : labels == null ? min + " to " + max : "";
+        final android.app.AlertDialog d = new Dlg.Builder(c)
+                .setTitle("Type a number")
+                .setMessage(range)
+                .setView(box)
+                .setPositiveButton("Set", (dd, ww) -> apply(et.getText().toString()))
+                .setNegativeButton("Cancel", null)
+                .show();
+        et.requestFocus();
+        if (d.getWindow() != null) {
+            d.getWindow().setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+        }
+        et.setOnEditorActionListener((tv, id, ev) -> {
+            apply(et.getText().toString());
+            d.dismiss();
+            return true;
+        });
+    }
+
+    private void apply(String s) {
+        s = s.trim();
+        if (s.isEmpty()) return;
+        int val;
+        try {
+            val = Integer.parseInt(s);
+        } catch (NumberFormatException ex) {
+            return;
+        }
+        if (typed != null) {
+            typed.accept(val);
+            return;
+        }
+        int idx = -1;
+        if (labels == null) {
+            idx = val - min;
+        } else {
+            for (int i = 0; i < labels.length; i++) {
+                try {
+                    if (Integer.parseInt(labels[i].trim()) == val) {
+                        idx = i;
+                        break;
+                    }
+                } catch (NumberFormatException ignored) {
+                    // non-numeric label
+                }
+            }
+        }
+        if (idx < 0 || idx >= count()) {
+            Toast.makeText(getContext(), labels == null ? "Choose " + min + " to " + max
+                    : "That value is not on this dial", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        stop();
+        setPos(idx); // jump straight there (the dial may wrap)
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
     }
 
     private void setPos(float p) {
@@ -190,6 +335,11 @@ final class Wheel extends View {
         if (idx != lastIdx) {
             int old = lastIdx;
             lastIdx = idx;
+            long t = SystemClock.uptimeMillis();
+            if (t - lastHaptic > 45) { // a soft tick per row, but never a buzz at fling speed
+                lastHaptic = t;
+                performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
             if (listener != null) listener.onChange(this, min + old, min + idx);
         }
         invalidate();
@@ -201,13 +351,17 @@ final class Wheel extends View {
         final float to = target;
         stop();
         anim = ValueAnimator.ofFloat(from, to);
-        anim.setDuration(Math.min(450, 140 + (long) (Math.abs(to - from) * 40)));
+        anim.setDuration(Math.min(520, 170 + (long) (Math.abs(to - from) * 260)));
         anim.setInterpolator(new DecelerateInterpolator());
         anim.addUpdateListener(a -> setPos((Float) a.getAnimatedValue()));
         anim.start();
     }
 
     private void stop() {
+        if (flingRun != null) {
+            removeCallbacks(flingRun);
+            flingRun = null;
+        }
         if (anim != null) {
             anim.cancel();
             anim = null;

@@ -1823,6 +1823,12 @@ public class MainActivity extends Activity {
                 LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, -2);
                 slp.topMargin = dp(4);
                 sub.setLayoutParams(slp);
+                if (t.repeat > 0) { // recurring: a small repeat glyph at the start of the tile
+                    sub.setCompoundDrawablesWithIntrinsicBounds(new RepeatDrawable(fg, dp(14)), null, null, null);
+                    sub.setCompoundDrawablePadding(dp(5));
+                } else {
+                    sub.setCompoundDrawables(null, null, null, null);
+                }
             }
 
             check.setOn(t.done);

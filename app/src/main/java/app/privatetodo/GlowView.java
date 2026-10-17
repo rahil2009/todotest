@@ -16,7 +16,7 @@ import android.view.animation.LinearInterpolator;
  * alpha stand in for a blur, so it stays cheap to draw. It never takes touches.
  */
 final class GlowView extends View {
-    private static final int[] COLORS = {
+    static final int[] COLORS = {
             0xFF3DDCC6, 0xFF4F8CFF, 0xFFB06BFF, 0xFFFF6BB5, 0xFFFFB86B, 0xFF3DDCC6};
 
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);

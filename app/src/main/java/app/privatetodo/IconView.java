@@ -215,7 +215,7 @@ final class IconView extends View {
                 drawTick(canvas, cx, cy, 1.6f, tint != 0 ? tint : Color.WHITE, 2.2f);
                 break;
             case PLUS:
-                stroke(2.4f, Pal.onAccent);
+                stroke(2.4f, tint != 0 ? tint : Pal.onAccent);
                 canvas.drawLine(cx - 7 * d, cy, cx + 7 * d, cy, paint);
                 canvas.drawLine(cx, cy - 7 * d, cx, cy + 7 * d, paint);
                 break;

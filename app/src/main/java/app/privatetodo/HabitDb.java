@@ -24,7 +24,7 @@ final class HabitDb extends SQLiteOpenHelper {
             0xFFFBBF24, 0xFFFB923C, 0xFF34D399, 0xFFF87171};
 
     HabitDb(Context c) {
-        super(c.getApplicationContext(), "habits.db", null, 1);
+        super(c.getApplicationContext(), "habits.db", null, 2);
     }
 
     static long today() {
@@ -36,7 +36,7 @@ final class HabitDb extends SQLiteOpenHelper {
         db.execSQL("CREATE TABLE habits (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,"
                 + "emoji TEXT NOT NULL DEFAULT '', color INTEGER NOT NULL, goal INTEGER NOT NULL DEFAULT 0,"
                 + "unit TEXT NOT NULL DEFAULT '', step INTEGER NOT NULL DEFAULT 1, created INTEGER NOT NULL,"
-                + "sort INTEGER NOT NULL DEFAULT 0)");
+                + "sort INTEGER NOT NULL DEFAULT 0, extras TEXT NOT NULL DEFAULT '')");
         db.execSQL("CREATE TABLE log (habit INTEGER NOT NULL, day INTEGER NOT NULL, amount INTEGER NOT NULL,"
                 + "PRIMARY KEY (habit, day))");
         // a starting set: water first, reading as 30 minutes
@@ -46,7 +46,7 @@ final class HabitDb extends SQLiteOpenHelper {
     }
 
     private void seed(SQLiteDatabase db, String name, String emoji, int color, int goal, String unit,
-                      int step, int sort) {
+                      int step, int sort, String extras) {
         ContentValues v = new ContentValues();
         v.put("name", name);
         v.put("emoji", emoji);
@@ -56,19 +56,21 @@ final class HabitDb extends SQLiteOpenHelper {
         v.put("step", step);
         v.put("created", System.currentTimeMillis());
         v.put("sort", sort);
+        v.put("extras", extras);
         db.insert("habits", null, v);
     }
 
     @Override
     public void onUpgrade(SQLiteDatabase db, int o, int n) {
+        if (o < 2) db.execSQL("ALTER TABLE habits ADD COLUMN extras TEXT NOT NULL DEFAULT ''");
     }
 
     private static Habit read(Cursor c) {
         return new Habit(c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4),
-                c.getString(5), c.getInt(6), c.getLong(7));
+                c.getString(5), c.getInt(6), c.getLong(7), c.getString(8));
     }
 
-    private static final String COLS = "id,name,emoji,color,goal,unit,step,created";
+    private static final String COLS = "id,name,emoji,color,goal,unit,step,created,extras";
 
     List<Habit> list() {
         List<Habit> out = new ArrayList<>();
@@ -85,7 +87,7 @@ final class HabitDb extends SQLiteOpenHelper {
         }
     }
 
-    long add(String name, String emoji, int color, int goal, String unit, int step) {
+    long add(String name, String emoji, int color, int goal, String unit, int step, String extras) {
         ContentValues v = new ContentValues();
         v.put("name", name);
         v.put("emoji", emoji);
@@ -93,12 +95,13 @@ final class HabitDb extends SQLiteOpenHelper {
         v.put("goal", goal);
         v.put("unit", unit);
         v.put("step", Math.max(1, step));
+        v.put("extras", extras == null ? "" : extras);
         v.put("created", System.currentTimeMillis());
         v.put("sort", list().size());
         return getWritableDatabase().insert("habits", null, v);
     }
 
-    void update(long id, String name, String emoji, int color, int goal, String unit, int step) {
+    void update(long id, String name, String emoji, int color, int goal, String unit, int step, String extras) {
         ContentValues v = new ContentValues();
         v.put("name", name);
         v.put("emoji", emoji);
@@ -106,6 +109,7 @@ final class HabitDb extends SQLiteOpenHelper {
         v.put("goal", goal);
         v.put("unit", unit);
         v.put("step", Math.max(1, step));
+        v.put("extras", extras == null ? "" : extras);
         getWritableDatabase().update("habits", v, "id=?", new String[]{String.valueOf(id)});
     }
 
@@ -218,6 +222,7 @@ final class HabitDb extends SQLiteOpenHelper {
                 j.put("unit", x.unit);
                 j.put("step", x.step);
                 j.put("created", x.created);
+                j.put("extras", x.extras);
                 hs.put(j);
             }
             JSONArray log = new JSONArray();
@@ -262,6 +267,7 @@ final class HabitDb extends SQLiteOpenHelper {
                     v.put("step", j.optInt("step", 1));
                     v.put("created", j.optLong("created", System.currentTimeMillis()));
                     v.put("sort", i);
+                    v.put("extras", j.optString("extras", ""));
                     db.insert("habits", null, v);
                 }
                 JSONArray log = o.optJSONArray("log");
