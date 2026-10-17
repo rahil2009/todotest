@@ -28,7 +28,7 @@ public class PomodoroActivity extends Activity {
     private static final int VIOLET = 0xFF8B5CF6;
 
     private float density;
-    private boolean builtDark;
+    private int builtDark;
     private LinearLayout content;
     private Ring ring;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -43,8 +43,8 @@ public class PomodoroActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
-        builtDark = Pal.dark;
-        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        builtDark = Pal.themeRes();
+        setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         render();
@@ -54,7 +54,7 @@ public class PomodoroActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Pal.init(this);
-        if (Pal.dark != builtDark) {
+        if (Pal.themeRes() != builtDark) {
             recreate();
             return;
         }

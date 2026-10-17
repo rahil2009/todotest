@@ -10,7 +10,7 @@ public class LinkActivity extends Activity {
         super.onCreate(b);
         long id = getIntent().getLongExtra(Reminders.EXTRA_ID, -1);
         String url = getIntent().getStringExtra("url");
-        if (id >= 0) Reminders.cancelNotification(this, id); // stops ring + vibration
+        if (id >= 0) Reminders.complete(this, id); // stops ring + vibration and marks it done
         if (url != null) Links.open(this, url);
         finish();
     }

@@ -19,7 +19,7 @@ public class WidgetConfigActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         Pal.init(this);
-        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        setTheme(Pal.themeRes());
         super.onCreate(b);
         setResult(RESULT_CANCELED);
         density = getResources().getDisplayMetrics().density;

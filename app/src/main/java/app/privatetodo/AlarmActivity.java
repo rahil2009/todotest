@@ -100,7 +100,7 @@ public class AlarmActivity extends Activity {
 
         TextView title = label(t.title, 28, Color.WHITE, true);
         title.setGravity(Gravity.CENTER);
-        Links.linkify(title, 0xFF8FD6C8); // tap a link right from the alarm screen
+        Links.linkify(title, 0xFF8FD6C8, this::linkOpened); // opening a link finishes the reminder
         root.addView(title);
 
         long when = t.snooze > 0 ? t.snooze : t.due;
@@ -118,7 +118,7 @@ public class AlarmActivity extends Activity {
             TextView list = label(sb.toString(), 16, 0xFFE3EAE8, false);
             list.setGravity(Gravity.START);
             list.setPadding(0, dp(16), 0, 0);
-            Links.linkify(list, 0xFF8FD6C8);
+            Links.linkify(list, 0xFF8FD6C8, this::linkOpened);
             root.addView(list);
         }
 
@@ -232,6 +232,12 @@ public class AlarmActivity extends Activity {
                 db.close();
             }
         }
+    }
+
+    /** A link was opened from the alarm: the reminder has done its job, so silence it and mark it done. */
+    private void linkOpened() {
+        Reminders.complete(this, id);
+        finish();
     }
 
     /** Stops the ringing but leaves the task as it is. */

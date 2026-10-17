@@ -29,12 +29,12 @@ public class SettingsActivity extends Activity {
     private static final int REQ_EXPORT = 4101;
     private static final int REQ_IMPORT = 4102;
     private int pickKind;
-    private final TextView[] soundName = new TextView[2];
+    private final TextView[] soundName = new TextView[3];
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
-        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         setContentView(build());
@@ -74,14 +74,14 @@ public class SettingsActivity extends Activity {
         LinearLayout themeCard = card();
         LinearLayout chips = new LinearLayout(this);
         chips.setOrientation(LinearLayout.HORIZONTAL);
-        String[] names = {"Match phone", "Light", "Dark"};
+        String[] names = {"Auto", "Light", "Dark", "AMOLED"};
         int current = Prefs.theme(this);
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             final int mode = i;
-            TextView chip = text(names[i], 15, i == current ? Pal.onSel : Pal.muted, true);
+            TextView chip = text(names[i], 14, i == current ? Pal.onSel : Pal.muted, true);
             chip.setGravity(Gravity.CENTER);
             chip.setMinHeight(dp(44));
-            chip.setPadding(dp(16), 0, dp(16), 0);
+            chip.setPadding(dp(6), 0, dp(6), 0);
             GradientDrawable g = new GradientDrawable();
             g.setCornerRadius(dp(22));
             g.setColor(i == current ? Pal.sel : Pal.chip);
@@ -91,7 +91,7 @@ public class SettingsActivity extends Activity {
                 recreate(); // onCreate re-reads the palette
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
-            lp.rightMargin = dp(i < 2 ? 8 : 0);
+            lp.rightMargin = dp(i < 3 ? 6 : 0);
             chips.addView(chip, lp);
         }
         themeCard.addView(chips);
@@ -102,6 +102,12 @@ public class SettingsActivity extends Activity {
         col.addView(soundCard(Prefs.NOTIF));
         col.addView(sectionLabel("Alarms"));
         col.addView(soundCard(Prefs.ALARM));
+        col.addView(sectionLabel("Pomodoro"));
+        col.addView(soundCard(Prefs.POMO));
+
+        // ---- smart dates
+        col.addView(sectionLabel("Smart dates"));
+        col.addView(smartCard());
 
         // ---- full-screen alert: glow + test
         col.addView(sectionLabel("Full-screen alert"));
@@ -192,7 +198,7 @@ public class SettingsActivity extends Activity {
 
         PillSlider bar = new PillSlider(this);
         bar.setValue(Prefs.volume(this, kind));
-        bar.setContentDescription(kind == Prefs.ALARM ? "Alarm volume" : "Notification volume");
+        bar.setContentDescription(kind == Prefs.ALARM ? "Alarm volume" : kind == Prefs.POMO ? "Pomodoro volume" : "Notification volume");
         bar.setListener(new PillSlider.Listener() {
             @Override
             public void onChange(int value) {
@@ -229,7 +235,7 @@ public class SettingsActivity extends Activity {
         pickKind = kind;
         String[] items = {"Sounds on this phone…", "Audio file…", "Phone default", "Silent"};
         new Dlg.Builder(this)
-                .setTitle(kind == Prefs.ALARM ? "Alarm sound" : "Notification sound")
+                .setTitle(kind == Prefs.ALARM ? "Alarm sound" : kind == Prefs.POMO ? "Pomodoro tune" : "Notification sound")
                 .setItems(items, (d, which) -> {
                     switch (which) {
                         case 0:
@@ -261,6 +267,170 @@ public class SettingsActivity extends Activity {
         }
         String picked = SoundPicker.result(this, req, result, data);
         if (picked != null) applySound(pickKind, picked);
+    }
+
+    private LinearLayout toggleRow(String title, String sub, boolean on, ToggleView.Listener l) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(dp(64));
+        LinearLayout tx = new LinearLayout(this);
+        tx.setOrientation(LinearLayout.VERTICAL);
+        tx.addView(text(title, 16, Pal.ink, true));
+        tx.addView(text(sub, 13, Pal.muted, false));
+        row.addView(tx, new LinearLayout.LayoutParams(0, -2, 1f));
+        ToggleView sw = new ToggleView(this);
+        sw.set(on, false);
+        sw.setListener(l);
+        row.addView(sw, new LinearLayout.LayoutParams(dp(52), dp(32)));
+        return row;
+    }
+
+    /** "@sat 2pm" in the quick-add pill: on/off, trigger symbol, default time, ring style, shortcuts, live try-it. */
+    private LinearLayout smartCard() {
+        LinearLayout card = card();
+        String trig = Prefs.smartTrigger(this);
+        card.addView(toggleRow("Type a date in the task",
+                "Write " + trig + "sat 2pm, " + trig + "tomorrow 7pm, " + trig + "next sunday 5am, "
+                        + trig + "every monday 2pm or " + trig + "today 3:40pm after your task",
+                Prefs.smartOn(this), on -> Prefs.setSmartOn(this, on)));
+        card.addView(backupRow("Trigger symbol: " + trig,
+                "Only text after this symbol is read as a date", v -> {
+                    final android.widget.EditText et = new android.widget.EditText(this);
+                    et.setText(Prefs.smartTrigger(this));
+                    et.setSingleLine(true);
+                    et.setSelectAllOnFocus(true);
+                    et.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(2)});
+                    LinearLayout box = new LinearLayout(this);
+                    box.setPadding(dp(24), dp(8), dp(24), 0);
+                    box.addView(et, new LinearLayout.LayoutParams(-1, -2));
+                    new Dlg.Builder(this)
+                            .setTitle("Trigger symbol")
+                            .setMessage("One or two characters, for example @  #  !  ~  //")
+                            .setView(box)
+                            .setPositiveButton("Save", (d, w) -> {
+                                Prefs.setSmartTrigger(this, et.getText().toString());
+                                recreate();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                }));
+        int h = Prefs.smartHour(this);
+        int mi = Prefs.smartMinute(this);
+        String when = new SimpleDateFormat(android.text.format.DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm a",
+                Locale.getDefault()).format(new Date(0, 0, 1, h, mi));
+        card.addView(backupRow("Time when only a day is given: " + when,
+                "Used for things like " + trig + "sat or " + trig + "tomorrow", v ->
+                        new android.app.TimePickerDialog(this, (tp, hh, mm) -> {
+                            Prefs.setSmartTime(this, hh, mm);
+                            recreate();
+                        }, Prefs.smartHour(this), Prefs.smartMinute(this),
+                                android.text.format.DateFormat.is24HourFormat(this)).show()));
+        card.addView(toggleRow("Ring as alarm",
+                "Tasks made this way use the full-screen alarm instead of a normal notification",
+                Prefs.smartAlarm(this), on -> Prefs.setSmartAlarm(this, on)));
+
+        TextView sc = text("MY SHORTCUTS", 12, Pal.muted, true);
+        sc.setLetterSpacing(0.12f);
+        sc.setPadding(0, dp(14), 0, dp(2));
+        card.addView(sc);
+        card.addView(text("Short words that expand into any date phrase. Example: gym = every mon wed fri 6pm, "
+                + "then type " + trig + "gym", 13, Pal.muted, false));
+        final java.util.List<String[]> rules = new java.util.ArrayList<>();
+        for (String line : Prefs.smartAliases(this).split("\n")) {
+            int eq = line.indexOf('=');
+            if (eq > 0) rules.add(new String[]{line.substring(0, eq).trim(), line.substring(eq + 1).trim()});
+        }
+        for (int i = 0; i < rules.size(); i++) {
+            final int idx = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(48));
+            row.addView(text(trig + rules.get(i)[0], 15, Pal.accent, true), new LinearLayout.LayoutParams(dp(110), -2));
+            row.addView(text(rules.get(i)[1], 15, Pal.ink, false), new LinearLayout.LayoutParams(0, -2, 1f));
+            row.setOnClickListener(v -> editRule(rules, idx));
+            card.addView(row);
+        }
+        TextView add = text("+ Add shortcut", 15, Pal.accent, true);
+        add.setMinHeight(dp(48));
+        add.setGravity(Gravity.CENTER_VERTICAL);
+        add.setOnClickListener(v -> editRule(rules, -1));
+        card.addView(add);
+
+        TextView tryHead = text("TRY IT", 12, Pal.muted, true);
+        tryHead.setLetterSpacing(0.12f);
+        tryHead.setPadding(0, dp(10), 0, dp(4));
+        card.addView(tryHead);
+        final android.widget.EditText tryIt = new android.widget.EditText(this);
+        tryIt.setHint("buy milk " + trig + "tomorrow 7pm");
+        tryIt.setSingleLine(true);
+        tryIt.setTextSize(15);
+        tryIt.setTextColor(Pal.ink);
+        tryIt.setHintTextColor(Pal.muted);
+        GradientDrawable tg = new GradientDrawable();
+        tg.setColor(Pal.chip);
+        tg.setCornerRadius(dp(14));
+        tryIt.setBackground(tg);
+        tryIt.setPadding(dp(14), 0, dp(14), 0);
+        card.addView(tryIt, new LinearLayout.LayoutParams(-1, dp(48)));
+        final TextView result = text("", 14, Pal.accent, true);
+        result.setPadding(dp(4), dp(8), 0, dp(6));
+        card.addView(result);
+        tryIt.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override public void onTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override
+            public void afterTextChanged(android.text.Editable e) {
+                String in = e.toString();
+                result.setText(in.trim().isEmpty() ? "" : SmartDate.describe(SettingsActivity.this,
+                        SmartDate.parse(SettingsActivity.this, in, System.currentTimeMillis())));
+            }
+        });
+        return card;
+    }
+
+    private void editRule(final java.util.List<String[]> rules, final int idx) {
+        final android.widget.EditText name = new android.widget.EditText(this);
+        name.setHint("shortcut, e.g. gym");
+        name.setSingleLine(true);
+        final android.widget.EditText means = new android.widget.EditText(this);
+        means.setHint("meaning, e.g. every mon wed fri 6pm");
+        means.setSingleLine(true);
+        if (idx >= 0) {
+            name.setText(rules.get(idx)[0]);
+            means.setText(rules.get(idx)[1]);
+        }
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(name, new LinearLayout.LayoutParams(-1, -2));
+        box.addView(means, new LinearLayout.LayoutParams(-1, -2));
+        Dlg.Builder b = new Dlg.Builder(this);
+        b.setTitle(idx >= 0 ? "Edit shortcut" : "New shortcut")
+                .setView(box)
+                .setPositiveButton("Save", (d, w) -> {
+                    String k = name.getText().toString().trim().toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
+                    String v = means.getText().toString().trim();
+                    if (k.isEmpty() || v.isEmpty()) return;
+                    if (idx >= 0) rules.set(idx, new String[]{k, v});
+                    else rules.add(new String[]{k, v});
+                    saveRules(rules);
+                })
+                .setNegativeButton("Cancel", null);
+        if (idx >= 0) {
+            b.setNeutralButton("Delete", (d, w) -> {
+                rules.remove(idx);
+                saveRules(rules);
+            });
+        }
+        b.show();
+    }
+
+    private void saveRules(java.util.List<String[]> rules) {
+        StringBuilder sb = new StringBuilder();
+        for (String[] r : rules) sb.append(sb.length() > 0 ? "\n" : "").append(r[0]).append('=').append(r[1]);
+        Prefs.setSmartAliases(this, sb.toString());
+        recreate();
     }
 
     /** Makes a throw-away task with sample subtasks and rings it; AlarmActivity deletes it afterwards. */

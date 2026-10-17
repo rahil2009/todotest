@@ -33,7 +33,7 @@ public class PlanActivity extends Activity {
 
     private TaskDb db;
     private float density;
-    private boolean builtDark;
+    private int builtDark;
     private long day; // start of the selected day
     private List<Task> all = new ArrayList<>();
 
@@ -45,8 +45,8 @@ public class PlanActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
-        builtDark = Pal.dark;
-        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        builtDark = Pal.themeRes();
+        setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         db = new TaskDb(this);
@@ -58,7 +58,7 @@ public class PlanActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Pal.init(this);
-        if (Pal.dark != builtDark) {
+        if (Pal.themeRes() != builtDark) {
             recreate();
             return;
         }

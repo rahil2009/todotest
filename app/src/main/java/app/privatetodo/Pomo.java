@@ -30,7 +30,7 @@ final class Pomo {
     static final int LONG = 2;
 
     private static final String CH_RUN = "pomodoro_run_v1";
-    private static final String CH_DONE = "pomodoro_done_v1";
+    private static final String CH_DONE = "pomodoro_done_v2";
     private static final int NOTIF_RUN = 91001;
     private static final int NOTIF_DONE = 91002;
     private static final String ACTION_END = "app.privatetodo.POMODORO_END";
@@ -201,6 +201,7 @@ final class Pomo {
 
     private static void channels(Context c) {
         NotificationManager nm = notifications(c);
+        nm.deleteNotificationChannel("pomodoro_done_v1");
         NotificationChannel run = new NotificationChannel(CH_RUN, "Pomodoro timer",
                 NotificationManager.IMPORTANCE_LOW);
         run.setDescription("Shows the running countdown");
@@ -209,8 +210,7 @@ final class Pomo {
         NotificationChannel done = new NotificationChannel(CH_DONE, "Pomodoro finished",
                 NotificationManager.IMPORTANCE_HIGH);
         done.setDescription("Tells you when a focus or break period ends");
-        done.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION),
-                new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION).build());
+        done.setSound(null, null); // the tune is played by the app so you can choose it in Settings
         done.enableVibration(true);
         done.setVibrationPattern(new long[]{0, 250, 120, 250, 120, 500});
         nm.createNotificationChannel(done);
@@ -256,6 +256,7 @@ final class Pomo {
                 .setAutoCancel(true)
                 .setContentIntent(open(c));
         notifications(c).notify(NOTIF_DONE, b.build());
+        Sound.play(c, Prefs.POMO, false, 15_000L, null);
     }
 
     static void clearDone(Context c) {

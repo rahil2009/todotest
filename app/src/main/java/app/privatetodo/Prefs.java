@@ -7,10 +7,12 @@ import android.content.SharedPreferences;
 final class Prefs {
     static final int NOTIF = 0;
     static final int ALARM = 1;
+    static final int POMO = 2;
 
     static final int THEME_SYSTEM = 0;
     static final int THEME_LIGHT = 1;
     static final int THEME_DARK = 2;
+    static final int THEME_AMOLED = 3;
 
     /** Sound value meaning "no sound". An empty string means "the phone's default". */
     static final String SILENT = "silent";
@@ -66,6 +68,55 @@ final class Prefs {
         sp(c).edit().putFloat("note_scale", v).apply();
     }
 
+    // ---- smart "@" dates in the quick-add pill
+
+    static boolean smartOn(Context c) {
+        return sp(c).getBoolean("smart_on", true);
+    }
+
+    static void setSmartOn(Context c, boolean v) {
+        sp(c).edit().putBoolean("smart_on", v).apply();
+    }
+
+    static String smartTrigger(Context c) {
+        String s = sp(c).getString("smart_trigger", "@");
+        return s.isEmpty() ? "@" : s;
+    }
+
+    static void setSmartTrigger(Context c, String v) {
+        sp(c).edit().putString("smart_trigger", v == null || v.trim().isEmpty() ? "@" : v.trim()).apply();
+    }
+
+    /** Clock time used when only a day is given ("@sat"). */
+    static int smartHour(Context c) {
+        return sp(c).getInt("smart_hour", 9);
+    }
+
+    static int smartMinute(Context c) {
+        return sp(c).getInt("smart_min", 0);
+    }
+
+    static void setSmartTime(Context c, int h, int m) {
+        sp(c).edit().putInt("smart_hour", h).putInt("smart_min", m).apply();
+    }
+
+    static boolean smartAlarm(Context c) {
+        return sp(c).getBoolean("smart_alarm", false);
+    }
+
+    static void setSmartAlarm(Context c, boolean v) {
+        sp(c).edit().putBoolean("smart_alarm", v).apply();
+    }
+
+    /** One "shortcut=what it means" per line. */
+    static String smartAliases(Context c) {
+        return sp(c).getString("smart_aliases", SmartDate.DEFAULT_ALIASES);
+    }
+
+    static void setSmartAliases(Context c, String v) {
+        sp(c).edit().putString("smart_aliases", v).apply();
+    }
+
     /** Animated edge glow on the full-screen alert (on by default). */
     static boolean glow(Context c) {
         return sp(c).getBoolean("glow", true);
@@ -85,6 +136,6 @@ final class Prefs {
     }
 
     private static String key(String what, int kind) {
-        return what + (kind == ALARM ? "_alarm" : "_notif");
+        return what + (kind == ALARM ? "_alarm" : kind == POMO ? "_pomo" : "_notif");
     }
 }

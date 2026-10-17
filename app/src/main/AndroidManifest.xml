@@ -136,6 +136,14 @@
             android:theme="@style/AppThemeDark" />
 
         <activity
+            android:name=".HabitActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".HabitDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".HabitActivity" />
+        <activity
             android:name=".PomodoroActivity"
             android:exported="false"
             android:launchMode="singleTop"

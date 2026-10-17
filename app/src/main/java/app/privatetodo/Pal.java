@@ -10,6 +10,7 @@ import android.content.res.Configuration;
  */
 final class Pal {
     static boolean dark;
+    static boolean amoled;
     static int bg = 0xFFEEF1EF;      // page
     static int card = 0xFFFFFFFF;    // task cards, settings cards
     static int raised = 0xFFFFFFFF;  // floating bar: gear, pill, search (one step above cards)
@@ -29,8 +30,21 @@ final class Pal {
         int mode = Prefs.theme(c);
         boolean system = (c.getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
-        dark = mode == Prefs.THEME_DARK || (mode == Prefs.THEME_SYSTEM && system);
-        if (dark) {
+        amoled = mode == Prefs.THEME_AMOLED;
+        dark = mode == Prefs.THEME_DARK || amoled || (mode == Prefs.THEME_SYSTEM && system);
+        if (amoled) { // true black so AMOLED pixels switch off
+            bg = 0xFF000000;
+            card = 0xFF111413;
+            raised = 0xFF1A1E1C;
+            chip = 0xFF232826;
+            ink = 0xFFE3E8E6;
+            muted = 0xFF9FA9A5;
+            accent = 0xFF6FCDBD;
+            onAccent = 0xFF04201B;
+            sel = 0xFF21403A;
+            onSel = 0xFFD2F1EA;
+            overdue = 0xFFF2B8B5;
+        } else if (dark) {
             bg = 0xFF111513;
             card = 0xFF1A201E;
             raised = 0xFF252C2A;
@@ -55,5 +69,10 @@ final class Pal {
             onSel = 0xFFFFFFFF;
             overdue = 0xFFB3261E;
         }
+    }
+
+    /** The window theme matching the current palette. */
+    static int themeRes() {
+        return amoled ? R.style.AppThemeAmoled : dark ? R.style.AppThemeDark : R.style.AppTheme;
     }
 }

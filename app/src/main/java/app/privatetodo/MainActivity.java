@@ -72,7 +72,7 @@ public class MainActivity extends Activity {
     private TaskAdapter adapter;
     private ListView listView;
     private AlertDialog setupDialog;
-    private boolean builtDark;
+    private int builtDark;
     private java.util.function.Consumer<String> soundCb;
     private EditText pillInput;
     private IconView pillMore;
@@ -84,8 +84,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
-        builtDark = Pal.dark;
-        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        builtDark = Pal.themeRes();
+        setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         db = new TaskDb(this);
@@ -117,7 +117,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Pal.init(this);
-        if (Pal.dark != builtDark) { // theme changed in Settings
+        if (Pal.themeRes() != builtDark) { // theme changed in Settings
             recreate();
             return;
         }
@@ -180,6 +180,14 @@ public class MainActivity extends Activity {
         trash.setOnClickListener(v -> confirmClearDone());
         clearDone = trash;
         header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        IconView habit = new IconView(this, IconView.HABIT);
+        habit.setContentDescription("Habits");
+        habit.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, HabitActivity.class));
+        });
+        header.addView(habit, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         IconView pomodoro = new IconView(this, IconView.POMODORO);
         pomodoro.setContentDescription("Pomodoro focus timer");
@@ -436,7 +444,17 @@ public class MainActivity extends Activity {
     private void addFromPill() {
         String s = pillInput.getText().toString().trim();
         if (s.isEmpty()) return;
-        db.add(s, 0, 0, 2, false);
+        SmartDate.Result sd = SmartDate.parse(this, s, System.currentTimeMillis());
+        if (sd.found) { // "buy milk @tomorrow 7pm": the date is applied and removed from the title
+            boolean ring = Prefs.smartAlarm(this);
+            long id = db.add(sd.title, sd.due, sd.repeat, sd.unit, ring);
+            db.setAlarmMode(id, ring, false);
+            Reminders.schedule(this, db.get(id));
+            ensureReminderPermissions(ring);
+            Toast.makeText(this, "Set for " + Reminders.when(this, sd.due), Toast.LENGTH_SHORT).show();
+        } else {
+            db.add(s, 0, 0, 2, false);
+        }
         Hap.confirm(pillInput);
         if (filter == TaskDb.DONE || filter >= TaskDb.TODAY) filter = TaskDb.ACTIVE;
         pillInput.setText("");
@@ -1618,9 +1636,6 @@ public class MainActivity extends Activity {
 
             prioBar = new View(c);
             prioBar.setVisibility(View.GONE);
-            LinearLayout.LayoutParams pbl = new LinearLayout.LayoutParams(dp(4), dp(32));
-            pbl.leftMargin = dp(6);
-            card.addView(prioBar, pbl);
 
             check = new IconView(c, IconView.CHECK);
             card.addView(check, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -1655,6 +1670,12 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(dp(42), dp(42));
             elp.setMargins(dp(3), 0, dp(3), 0);
             card.addView(emojiView, elp);
+
+            // priority stripe sits at the far right edge, after the emoji / delete button
+            LinearLayout.LayoutParams pbl = new LinearLayout.LayoutParams(dp(4), dp(32));
+            pbl.leftMargin = dp(4);
+            pbl.rightMargin = dp(6);
+            card.addView(prioBar, pbl);
 
             addView(card, new FrameLayout.LayoutParams(-1, -2));
         }

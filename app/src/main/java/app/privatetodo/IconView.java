@@ -25,6 +25,7 @@ final class IconView extends View {
     static final int SWIPE_DONE = 14;
     static final int PLAN = 15;
     static final int POMODORO = 16;
+    static final int HABIT = 17;
 
     private final int kind;
     private boolean on;
@@ -187,6 +188,17 @@ final class IconView extends View {
                 canvas.drawPath(path, paint);
                 canvas.drawLine(cx, cy + 2 * d, cx, cy - 2 * d, paint);
                 canvas.drawLine(cx, cy + 2 * d, cx + 3 * d, cy + 3.5f * d, paint);
+                break;
+            case HABIT: // ring with a tick, a small spark at the top right
+                stroke(1.8f, Pal.ink);
+                canvas.drawCircle(cx, cy + 1 * d, 8.5f * d, paint);
+                path.reset();
+                path.moveTo(cx - 4 * d, cy + 1 * d);
+                path.lineTo(cx - 1 * d, cy + 4 * d);
+                path.lineTo(cx + 4.5f * d, cy - 2.5f * d);
+                canvas.drawPath(path, paint);
+                canvas.drawLine(cx + 7 * d, cy - 9 * d, cx + 7 * d, cy - 6 * d, paint);
+                canvas.drawLine(cx + 5.5f * d, cy - 7.5f * d, cx + 8.5f * d, cy - 7.5f * d, paint);
                 break;
             case LOCK: // padlock, used in the "stored only on this device" line
                 stroke(1.7f, Pal.muted);

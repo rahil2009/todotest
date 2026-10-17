@@ -144,7 +144,7 @@ final class Sound {
         MediaPlayer mp = new MediaPlayer();
         try {
             mp.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(kind == Prefs.ALARM ? AudioAttributes.USAGE_ALARM
+                    .setUsage(kind == Prefs.ALARM || kind == Prefs.POMO ? AudioAttributes.USAGE_ALARM
                             : AudioAttributes.USAGE_NOTIFICATION)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build());

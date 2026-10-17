@@ -62,7 +62,7 @@ public class NoteEditorActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
-        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         RichText.init(this);
@@ -364,21 +364,30 @@ public class NoteEditorActivity extends Activity {
                 Toast.makeText(this, "A table keeps its header and one row", Toast.LENGTH_SHORT).show();
                 return;
             }
-            final int last = tmpCells.length - 1;
-            StringBuilder what = new StringBuilder();
-            for (String cell : tmpCells[last]) {
-                String shown = RichText.Tbl.label(cell).trim();
-                if (!shown.isEmpty()) what.append(what.length() > 0 ? " \u00B7 " : "").append(shown);
+            // choose which body row to delete (the header row stays)
+            final String[] items = new String[tmpCells.length - 1];
+            for (int r = 1; r < tmpCells.length; r++) {
+                items[r - 1] = "Row " + r + (preview(tmpCells[r]).isEmpty() ? " (empty)" : ":  " + preview(tmpCells[r]));
             }
             new Dlg.Builder(this)
-                    .setTitle("Delete the last row?")
-                    .setMessage(what.length() == 0 ? "Row " + (last + 1) + " is empty."
-                            : "Row " + (last + 1) + ": " + what)
-                    .setPositiveButton("Delete", (d, w) -> {
-                        tmpCells = java.util.Arrays.copyOf(tmpCells, last);
-                        buildGrid();
+                    .setTitle("Delete which row?")
+                    .setItems(items, (d, which) -> {
+                        final int row = which + 1;
+                        new Dlg.Builder(this)
+                                .setTitle("Delete row " + row + "?")
+                                .setMessage(preview(tmpCells[row]).isEmpty() ? "It is empty." : preview(tmpCells[row]))
+                                .setPositiveButton("Delete", (d2, w2) -> {
+                                    String[][] next = new String[tmpCells.length - 1][];
+                                    for (int r = 0, o = 0; r < tmpCells.length; r++) {
+                                        if (r != row) next[o++] = tmpCells[r];
+                                    }
+                                    tmpCells = next;
+                                    buildGrid();
+                                })
+                                .setNegativeButton("Keep", null)
+                                .show();
                     })
-                    .setNegativeButton("Keep", null)
+                    .setNegativeButton("Cancel", null)
                     .show();
         }));
         tools.addView(toolChip("\u2212 Column", () -> {
@@ -386,23 +395,38 @@ public class NoteEditorActivity extends Activity {
                 Toast.makeText(this, "A table keeps at least two columns", Toast.LENGTH_SHORT).show();
                 return;
             }
-            final int last = tmpCells[0].length - 1;
-            StringBuilder what = new StringBuilder();
-            for (String[] row : tmpCells) {
-                String shown = RichText.Tbl.label(row[last]).trim();
-                if (!shown.isEmpty()) what.append(what.length() > 0 ? " \u00B7 " : "").append(shown);
+            final int cols = tmpCells[0].length;
+            final String[] items = new String[cols];
+            for (int k = 0; k < cols; k++) {
+                String head = RichText.Tbl.label(tmpCells[0][k]).trim();
+                items[k] = "Column " + (k + 1) + (head.isEmpty() ? "" : ":  " + head);
             }
             new Dlg.Builder(this)
-                    .setTitle("Delete the last column?")
-                    .setMessage(what.length() == 0 ? "Column " + (last + 1) + " is empty."
-                            : "Column " + (last + 1) + ": " + what)
-                    .setPositiveButton("Delete", (d, w) -> {
-                        for (int r = 0; r < tmpCells.length; r++) {
-                            tmpCells[r] = java.util.Arrays.copyOf(tmpCells[r], last);
+                    .setTitle("Delete which column?")
+                    .setItems(items, (d, which) -> {
+                        final int col = which;
+                        StringBuilder what = new StringBuilder();
+                        for (String[] row : tmpCells) {
+                            String shown = RichText.Tbl.label(row[col]).trim();
+                            if (!shown.isEmpty()) what.append(what.length() > 0 ? " \u00B7 " : "").append(shown);
                         }
-                        buildGrid();
+                        new Dlg.Builder(this)
+                                .setTitle("Delete column " + (col + 1) + "?")
+                                .setMessage(what.length() == 0 ? "It is empty." : what.toString())
+                                .setPositiveButton("Delete", (d2, w2) -> {
+                                    for (int r = 0; r < tmpCells.length; r++) {
+                                        String[] row = new String[cols - 1];
+                                        for (int k = 0, o = 0; k < cols; k++) {
+                                            if (k != col) row[o++] = tmpCells[r][k];
+                                        }
+                                        tmpCells[r] = row;
+                                    }
+                                    buildGrid();
+                                })
+                                .setNegativeButton("Keep", null)
+                                .show();
                     })
-                    .setNegativeButton("Keep", null)
+                    .setNegativeButton("Cancel", null)
                     .show();
         }));
         root.addView(tools);
@@ -427,6 +451,15 @@ public class NoteEditorActivity extends Activity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private static String preview(String[] row) {
+        StringBuilder sb = new StringBuilder();
+        for (String cell : row) {
+            String shown = RichText.Tbl.label(cell).trim();
+            if (!shown.isEmpty()) sb.append(sb.length() > 0 ? " \u00B7 " : "").append(shown);
+        }
+        return sb.length() > 40 ? sb.substring(0, 40) + "\u2026" : sb.toString();
     }
 
     private TextView toolChip(String label, final Runnable action) {

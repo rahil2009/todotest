@@ -104,7 +104,12 @@ final class Links {
      * under the text still opens the editor (the old movement method swallowed those taps).
      */
     private static final class PillTouch implements MovementMethod {
-        static final PillTouch INSTANCE = new PillTouch();
+        static final PillTouch INSTANCE = new PillTouch(null);
+        private final Runnable after;
+
+        PillTouch(Runnable after) {
+            this.after = after;
+        }
 
         private Pill hit(TextView tv, Spannable sp, MotionEvent ev) {
             Layout layout = tv.getLayout();
@@ -126,7 +131,10 @@ final class Links {
             if (a != MotionEvent.ACTION_DOWN && a != MotionEvent.ACTION_UP) return false;
             Pill p = hit(tv, sp, ev);
             if (p == null) return false;
-            if (a == MotionEvent.ACTION_UP) open(tv.getContext(), p.url);
+            if (a == MotionEvent.ACTION_UP) {
+                open(tv.getContext(), p.url);
+                if (after != null) after.run();
+            }
             return true;
         }
 
@@ -156,6 +164,11 @@ final class Links {
      * tap that misses every pill falls through to the parent (which opens the editor).
      */
     static void linkify(TextView t, int color) {
+        linkify(t, color, null);
+    }
+
+    /** Like linkify, and {@code after} runs once a link has been opened (the alarm screen marks the task done). */
+    static void linkify(TextView t, int color, Runnable after) {
         CharSequence src = t.getText();
         SpannableString out = new SpannableString(src);
         Matcher m = Patterns.WEB_URL.matcher(src);
@@ -164,7 +177,7 @@ final class Links {
                     Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         // Always set (also when there are no links): recycled list rows must not keep an old handler.
-        t.setMovementMethod(PillTouch.INSTANCE);
+        t.setMovementMethod(after == null ? PillTouch.INSTANCE : new PillTouch(after));
         t.setText(out, TextView.BufferType.SPANNABLE);
         t.setClickable(false);
         t.setFocusable(false);

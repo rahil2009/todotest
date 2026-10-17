@@ -53,6 +53,7 @@ final class Backup {
                 }
                 root.put(table, rows);
             }
+            root.put("habitData", HabitDb.export(ctx));
             return root.toString();
         } finally {
             helper.close();
@@ -106,6 +107,7 @@ final class Backup {
             } finally {
                 db.endTransaction();
             }
+            if (root.optJSONObject("habitData") != null) HabitDb.restore(ctx, root.optJSONObject("habitData"));
             // Arm the reminders that were in the backup.
             for (Task t : helper.withReminders()) Reminders.schedule(ctx, t);
             return root.getJSONArray("tasks").length();

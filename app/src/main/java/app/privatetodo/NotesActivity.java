@@ -29,7 +29,7 @@ import java.util.List;
 public class NotesActivity extends Activity {
     private TaskDb db;
     private float density;
-    private boolean builtDark;
+    private int builtDark;
     private final List<Note> notes = new ArrayList<>();
     private String query = "";
     private ListView list;
@@ -40,8 +40,8 @@ public class NotesActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
-        builtDark = Pal.dark;
-        setTheme(Pal.dark ? R.style.AppThemeDark : R.style.AppTheme);
+        builtDark = Pal.themeRes();
+        setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         db = new TaskDb(this);
@@ -53,7 +53,7 @@ public class NotesActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Pal.init(this);
-        if (Pal.dark != builtDark) {
+        if (Pal.themeRes() != builtDark) {
             recreate();
             return;
         }

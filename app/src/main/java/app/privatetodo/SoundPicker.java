@@ -23,7 +23,7 @@ final class SoundPicker {
                 .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                 .putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
                 .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE,
-                        kind == Prefs.ALARM ? "Alarm sound" : "Notification sound");
+                        kind == Prefs.ALARM ? "Alarm sound" : kind == Prefs.POMO ? "Pomodoro tune" : "Notification sound");
         if (current != null && !current.isEmpty() && !Prefs.SILENT.equals(current)) {
             i.putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(current));
         }
