@@ -445,6 +445,7 @@ final class TaskDb extends SQLiteOpenHelper {
 
     /** Inserts (id <= 0) or updates a note; returns its id. */
     long saveNote(long id, String title, String body, String plain) {
+        changed();
         ContentValues v = new ContentValues();
         v.put("title", title);
         v.put("body", body);
@@ -456,6 +457,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void deleteNote(long id) {
+        changed();
         getWritableDatabase().delete("notes", "id = ?", new String[]{String.valueOf(id)});
     }
 }

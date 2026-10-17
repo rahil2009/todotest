@@ -103,6 +103,7 @@ final class RichEditText extends EditText {
             @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
             @Override public void afterTextChanged(Editable e) {
                 syncCircles(e);
+                resyncTables();
             }
         });
     }
@@ -134,6 +135,19 @@ final class RichEditText extends EditText {
             boolean ok = k >= RichText.P_CHECK_OFF && e.getSpanEnd(o) == st + 1 && o.on == (k == RichText.P_CHECK_ON);
             if (!ok) e.removeSpan(o);
         }
+    }
+
+    /** Re-measures table columns (text size or width changed). */
+    void resyncTables() {
+        int avail = getWidth() > 0 ? getWidth() - getPaddingLeft() - getPaddingRight()
+                : getResources().getDisplayMetrics().widthPixels - Math.round(40 * getResources().getDisplayMetrics().density);
+        RichText.syncTables(getText(), getTextSize(), avail);
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int ow, int oh) {
+        super.onSizeChanged(w, h, ow, oh);
+        if (w != ow) post(this::resyncTables);
     }
 
     void setZoomListener(ZoomListener l) {

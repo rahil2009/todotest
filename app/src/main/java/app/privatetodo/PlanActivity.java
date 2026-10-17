@@ -333,19 +333,29 @@ public class PlanActivity extends Activity {
         for (View v : views) content.addView(v);
     }
 
+    /** Same shape as an agenda row: time on the left, a card-sized hatched block on the right. */
     private View freeBlock(final long from, final long to, final List<Task> loose) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+        rlp.bottomMargin = dp(8);
+        row.setLayoutParams(rlp);
+        row.addView(text(clock(from), 13, Pal.muted, true), new LinearLayout.LayoutParams(dp(52), -2));
+
         FreeBlock b = new FreeBlock(this);
-        b.setText(clock(from) + " \u2013 " + clock(to) + "  \u00b7  Free, tap to fill");
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,
-                Math.max(dp(52), Math.min(dp(96), (int) ((to - from) / 3_600_000L) * dp(26))));
-        lp.bottomMargin = dp(8);
-        b.setLayoutParams(lp);
-        b.setContentDescription("Free from " + clock(from) + " to " + clock(to) + ". Tap to fill.");
-        b.setOnClickListener(v -> {
+        long mins = (to - from) / 60_000L;
+        String len = mins >= 60 ? (mins / 60) + (mins % 60 == 0 ? " h" : " h " + (mins % 60) + " min") : mins + " min";
+        b.setText("Free for " + len + "  \u00b7  tap to fill");
+        b.setMinHeight(dp(60));
+        row.addView(b, new LinearLayout.LayoutParams(0, dp(60), 1f));
+        row.setContentDescription("Free from " + clock(from) + " to " + clock(to) + ". Tap to fill.");
+        View.OnClickListener l = v -> {
             Hap.tick(v);
             fillSlot(from, loose);
-        });
-        return b;
+        };
+        row.setOnClickListener(l);
+        b.setOnClickListener(l);
+        return row;
     }
 
     private String clock(long t) {

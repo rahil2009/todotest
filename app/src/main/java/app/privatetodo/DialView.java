@@ -9,7 +9,6 @@ import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
-import android.widget.NumberPicker;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
@@ -40,12 +39,12 @@ final class DialView extends LinearLayout {
     private final boolean is24;
     private final long dayBase; // midnight today when the control was created
 
-    private final NumberPicker amount;
-    private final NumberPicker unit;
-    private final NumberPicker day;
-    private final NumberPicker hour;
-    private final NumberPicker minute;
-    private final NumberPicker ampm;
+    private final Wheel amount;
+    private final Wheel unit;
+    private final Wheel day;
+    private final Wheel hour;
+    private final Wheel minute;
+    private final Wheel ampm;
     private final LinearLayout relRow;
     private final LinearLayout absRow;
     private final TextView tabIn;
@@ -231,27 +230,13 @@ final class DialView extends LinearLayout {
         if (!quiet && onChange != null) onChange.run();
     }
 
-    private NumberPicker picker(Context c, int min, int max, String[] labels, boolean wrap) {
-        NumberPicker p = new NumberPicker(c);
+    private Wheel picker(Context c, int min, int max, String[] labels, boolean wrap) {
+        Wheel p = new Wheel(c);
         p.setMinValue(min);
         p.setMaxValue(max);
         if (labels != null) p.setDisplayedValues(labels);
         p.setWrapSelectorWheel(wrap);
-        // Stops the soft keyboard popping up when a dial is tapped.
-        p.setDescendantFocusability(NumberPicker.FOCUS_BLOCK_DESCENDANTS);
-        if (Build.VERSION.SDK_INT >= 29) {
-            p.setTextColor(INK);
-            p.setTextSize(20 * density);
-            p.setSelectionDividerHeight(dp(2));
-        }
-        // centred (selected) value is bold; the faded neighbours stay regular
-        for (int i = 0; i < p.getChildCount(); i++) {
-            View ch = p.getChildAt(i);
-            if (ch instanceof android.widget.EditText) {
-                ((android.widget.EditText) ch).setTypeface(Typeface.DEFAULT_BOLD);
-            }
-        }
-        p.setOnValueChangedListener((v, o, n) -> changed());
+        p.setOnValueChangedListener((w, o, n) -> changed());
         return p;
     }
 

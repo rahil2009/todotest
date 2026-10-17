@@ -115,3 +115,6 @@ Plan mode (week strip, day agenda, progress ring, one-tap scheduling, "Plan my d
 
 ## v3.10
 Code blocks: fixed the huge padding (small gap above the first and below the last line only). Notes: pinch with two fingers to zoom text, and an "Aa" button for Small / Normal / Large / Huge (remembered). Plan mode: hatched, dashed "free" blocks for empty stretches of an hour or more; tap one to put an untimed task there or add a new task at that time. Dials: the centred value is bold. Home-screen widgets: "Today" (tick tasks off, + to add) and "Quick add". Widgets read only the local database.
+
+## v3.11
+Dials: new own Wheel view (replaces NumberPicker) so the centred value is always bold on every dial. Notes: tables (the table button inserts rows x columns; the next-cell button moves between cells and adds a row at the end; tapping the table button inside a table adds a row or column or removes it). Widgets: Tasks (switch Today / Tomorrow / Upcoming / Active / Priority / All by tapping the title or on adding), Notebook, Plan (with free stretches) and Quick add. Plan screen: free blocks now line up with task cards (time on the left).

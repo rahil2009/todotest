@@ -23,6 +23,12 @@ final class Fonts {
         }
     }
 
+    /** The app font (regular or bold) for custom-drawn text. */
+    static Typeface face(boolean b) {
+        if (regular == null) return b ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT;
+        return b ? bold : regular;
+    }
+
     /** Walks the tree and swaps the typeface, keeping bold / italic. Safe to call repeatedly. */
     static void apply(View v) {
         init(v.getContext());

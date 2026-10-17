@@ -33,6 +33,8 @@ public class NoteEditorActivity extends Activity {
 
     private static final int BULLET_KEY = -1;
     private static final int SIZE_KEY = -9;
+    private static final int TABLE_KEY = 8;
+    private static final int NEXT_KEY = -10;
     private static final int CHECK_KEY = -2;
 
     private TaskDb db;
@@ -85,6 +87,7 @@ public class NoteEditorActivity extends Activity {
             content.requestFocus(); // so the title does not grab focus and pop the keyboard up
             title.setText(n.title);
             RichText.fromJson(n.body, body.getText());
+            body.resyncTables();
             dateLabel.setText("Edited " + Reminders.when(this, n.updated));
         }
         dirty = false;
@@ -273,6 +276,70 @@ public class NoteEditorActivity extends Activity {
         scale = Math.max(0.7f, Math.min(2.6f, v));
         body.setTextSize(17 * scale);
         title.setTextSize(22 * scale);
+        body.post(body::resyncTables);
+    }
+
+    private void tableMenu() {
+        final Editable e = body.getText();
+        final int s = selStart();
+        if (RichText.tableAt(e, s) == null) {
+            newTableDialog();
+            return;
+        }
+        new Dlg.Builder(this)
+                .setTitle("Table")
+                .setItems(new String[]{"Add row", "Add column", "Remove table"}, (d, i) -> {
+                    if (i == 0) body.setSelection(RichText.addRow(e, s));
+                    else if (i == 1) RichText.addColumn(e, s);
+                    else RichText.removeTable(e, s);
+                    body.resyncTables();
+                    dirty = true;
+                    refreshToolbar();
+                })
+                .show();
+    }
+
+    private void newTableDialog() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        final Wheel cols = new Wheel(this);
+        cols.setMinValue(2);
+        cols.setMaxValue(6);
+        cols.setWrapSelectorWheel(false);
+        cols.setValue(3);
+        final Wheel rows = new Wheel(this);
+        rows.setMinValue(2);
+        rows.setMaxValue(15);
+        rows.setWrapSelectorWheel(false);
+        rows.setValue(3);
+        box.addView(labelled("Columns", cols), new LinearLayout.LayoutParams(0, -2, 1f));
+        box.addView(labelled("Rows", rows), new LinearLayout.LayoutParams(0, -2, 1f));
+        new Dlg.Builder(this)
+                .setTitle("Insert table")
+                .setView(box)
+                .setPositiveButton("Insert", (d, w) -> {
+                    int c = RichText.insertTable(body.getText(), selStart(), cols.getValue(), rows.getValue());
+                    body.resyncTables();
+                    body.setSelection(Math.min(c, body.getText().length()));
+                    dirty = true;
+                    refreshToolbar();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private View labelled(String label, View v) {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(13);
+        t.setTextColor(Pal.muted);
+        t.setGravity(Gravity.CENTER);
+        l.addView(t);
+        l.addView(v, new LinearLayout.LayoutParams(-1, -2));
+        return l;
     }
 
     private void pickSize() {
@@ -306,6 +373,8 @@ public class NoteEditorActivity extends Activity {
         addButton(bar, RichText.HEAD, "H", Typeface.BOLD, "Heading");
         addButton(bar, BULLET_KEY, "\u2022", Typeface.BOLD, "Bullet list");
         addButton(bar, CHECK_KEY, "(\u2713)", Typeface.BOLD, "To-do list");
+        addButton(bar, TABLE_KEY, "\u25A6", Typeface.BOLD, "Table");
+        addButton(bar, NEXT_KEY, "\u21E5", Typeface.BOLD, "Next table cell");
         addButton(bar, RichText.CODE, "`", Typeface.NORMAL, "Inline code").setTypeface(Typeface.MONOSPACE);
         addButton(bar, RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block").setTypeface(Typeface.MONOSPACE);
 
@@ -359,6 +428,21 @@ public class NoteEditorActivity extends Activity {
             busy = false;
             body.setSelection(Math.min(c, e.length()));
             dirty = true;
+            refreshToolbar();
+            return;
+        }
+        if (key == TABLE_KEY) {
+            tableMenu();
+            return;
+        }
+        if (key == NEXT_KEY) {
+            if (RichText.tableAt(e, s) == null) {
+                e.replace(s, en, "\t"); // outside a table: just a tab
+                dirty = true;
+            } else {
+                body.setSelection(RichText.nextCell(e, en));
+                dirty = true;
+            }
             refreshToolbar();
             return;
         }
@@ -418,7 +502,7 @@ public class NoteEditorActivity extends Activity {
             } else {
                 on = isOn(key, s, en);
             }
-            if (key == SIZE_KEY) on = false;
+            if (key == SIZE_KEY || key == NEXT_KEY) on = false;
             style(b.getValue(), on);
         }
     }

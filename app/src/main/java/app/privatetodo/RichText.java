@@ -34,6 +34,7 @@ final class RichText {
     static final int CODE = 5;
     static final int HEAD = 6;
     static final int BLOCK = 7;
+    static final int TABLE = 8;
 
     static final String BULLET = "• ";
     /** Highlight colours (same in light and dark; highlighted text is always drawn dark). */
@@ -171,8 +172,172 @@ final class RichText {
         }
     }
 
+
+    // ------------------------------------------------------------- tables
+
+    /** Column stop for a table row (one per column boundary; recreated by {@link #syncTables}). */
+    static final class Stop extends android.text.style.TabStopSpan.Standard {
+        final int x;
+
+        Stop(int x) {
+            super(x);
+            this.x = x;
+        }
+    }
+
+    /** A table: rows are lines, cells are separated by tab characters, the grid is drawn behind. */
+    static final class Tbl implements LineBackgroundSpan {
+        final int cols;
+        int colW = 300;
+
+        Tbl(int cols) {
+            this.cols = cols;
+        }
+
+        @Override
+        public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
+                                   int bottom, CharSequence text, int start, int end, int lnum) {
+            int old = p.getColor();
+            Paint.Style os = p.getStyle();
+            float sw = p.getStrokeWidth();
+            boolean first = text instanceof Spanned && ((Spanned) text).getSpanStart(this) >= start;
+            int w = Math.min(right - left, cols * colW);
+            if (first) {
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(Pal.chip);
+                c.drawRect(left, top, left + w, bottom, p);
+            }
+            float t = Math.max(1f, density);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Pal.dark ? 0xFF4A5753 : 0xFF9AA5A1);
+            if (first) c.drawRect(left, top, left + w, top + t, p);
+            c.drawRect(left, bottom - t, left + w, bottom, p);
+            for (int k = 0; k <= cols; k++) {
+                int x = left + Math.min(k * colW, w) - (k == cols ? Math.round(t) : 0);
+                c.drawRect(x, top, x + t, bottom, p);
+            }
+            p.setColor(old);
+            p.setStyle(os);
+            p.setStrokeWidth(sw);
+        }
+    }
+
+    static Tbl tableAt(Spanned e, int pos) {
+        for (Tbl t : e.getSpans(Math.max(0, pos - 1), Math.min(e.length(), pos + 1), Tbl.class)) {
+            if (e.getSpanStart(t) <= pos && pos <= e.getSpanEnd(t)) return t;
+        }
+        return null;
+    }
+
+    /** Keeps tab stops and column width in step with the tables (call after every text change). */
+    static void syncTables(Editable e, float textSize, int availPx) {
+        Tbl[] tables = e.getSpans(0, e.length(), Tbl.class);
+        Stop[] stops = e.getSpans(0, e.length(), Stop.class);
+        boolean[] keep = new boolean[stops.length];
+        for (Tbl t : tables) {
+            int a = e.getSpanStart(t);
+            int b = e.getSpanEnd(t);
+            int w = Math.round(Math.max(textSize * 4f, Math.min(textSize * 9f, availPx / (float) t.cols)));
+            t.colW = w;
+            for (int k = 1; k < t.cols; k++) {
+                boolean have = false;
+                for (int i = 0; i < stops.length; i++) {
+                    if (!keep[i] && stops[i].x == k * w && e.getSpanStart(stops[i]) == a
+                            && e.getSpanEnd(stops[i]) == b) {
+                        keep[i] = true;
+                        have = true;
+                        break;
+                    }
+                }
+                if (!have) e.setSpan(new Stop(k * w), a, b, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
+            }
+        }
+        // drop stops that no longer belong to a table
+        for (int i = 0; i < stops.length; i++) {
+            if (keep[i]) continue;
+            e.removeSpan(stops[i]);
+        }
+        // a second pass re-adds nothing: stops created above are in the editable already
+    }
+
+    /** Inserts a blank table on its own lines at {@code pos}; returns the cursor position (first cell). */
+    static int insertTable(Editable e, int pos, int cols, int rows) {
+        StringBuilder sb = new StringBuilder();
+        int at = lineStart(e, pos);
+        boolean lineHasText = lineEnd(e, pos) > at;
+        int ins = lineHasText ? lineEnd(e, pos) : at;
+        if (lineHasText) sb.append('\n');
+        int startOfTable = ins + sb.length();
+        for (int r = 0; r < rows; r++) {
+            if (r > 0) sb.append('\n');
+            for (int c = 1; c < cols; c++) sb.append('\t');
+        }
+        int tableLen = sb.length() - (lineHasText ? 1 : 0);
+        if (ins >= e.length()) sb.append('\n'); // leave a line below to keep typing on
+        e.insert(ins, sb.toString());
+        int endOfTable = startOfTable + tableLen;
+        e.setSpan(new Tbl(cols), startOfTable, endOfTable, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
+        return startOfTable;
+    }
+
+    static int addRow(Editable e, int pos) {
+        Tbl t = tableAt(e, pos);
+        if (t == null) return pos;
+        int end = e.getSpanEnd(t);
+        StringBuilder sb = new StringBuilder("\n");
+        for (int c = 1; c < t.cols; c++) sb.append('\t');
+        e.insert(end, sb.toString());
+        e.setSpan(t, e.getSpanStart(t), end + sb.length(), Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
+        return end + 1;
+    }
+
+    static void addColumn(Editable e, int pos) {
+        Tbl t = tableAt(e, pos);
+        if (t == null) return;
+        int a = e.getSpanStart(t);
+        int b = e.getSpanEnd(t);
+        java.util.ArrayList<Integer> ends = new java.util.ArrayList<>();
+        int p = a;
+        while (true) {
+            int le = lineEnd(e, p);
+            if (le > b) le = b;
+            ends.add(le);
+            if (le >= b) break;
+            p = le + 1;
+        }
+        e.removeSpan(t);
+        for (int i = ends.size() - 1; i >= 0; i--) e.insert(ends.get(i), "\t");
+        e.setSpan(new Tbl(t.cols + 1), a, b + ends.size(), Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
+    }
+
+    /** Turns the table back into plain lines (cells separated by two spaces). */
+    static void removeTable(Editable e, int pos) {
+        Tbl t = tableAt(e, pos);
+        if (t == null) return;
+        int a = e.getSpanStart(t);
+        int b = e.getSpanEnd(t);
+        e.removeSpan(t);
+        for (int i = b - 1; i >= a; i--) {
+            if (e.charAt(i) == '\t') e.replace(i, i + 1, "  ");
+        }
+    }
+
+    /** Cursor position of the next cell (adds a row after the last cell). */
+    static int nextCell(Editable e, int pos) {
+        Tbl t = tableAt(e, pos);
+        if (t == null) return pos;
+        int le = lineEnd(e, pos);
+        for (int i = pos; i < le; i++) {
+            if (e.charAt(i) == '\t') return i + 1;
+        }
+        if (le < e.getSpanEnd(t)) return le + 1;
+        return addRow(e, pos);
+    }
+
     static Object make(int type, int arg) {
         switch (type) {
+            case TABLE:
+                return new Tbl(Math.max(2, arg));
             case BOLD:
                 return new StyleSpan(Typeface.BOLD);
             case ITALIC:
@@ -202,10 +367,12 @@ final class RichText {
         if (o instanceof Code) return CODE;
         if (o instanceof Head) return HEAD;
         if (o instanceof Block) return BLOCK;
+        if (o instanceof Tbl) return TABLE;
         return -1;
     }
 
     private static int argOf(Object o) {
+        if (o instanceof Tbl) return ((Tbl) o).cols;
         return o instanceof Hl ? ((Hl) o).color : 0;
     }
 
