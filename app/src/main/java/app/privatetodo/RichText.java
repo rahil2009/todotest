@@ -96,16 +96,30 @@ final class RichText {
         }
     }
 
-    /** Full-width shaded background with an accent bar, for code blocks. */
-    static final class Block implements LineBackgroundSpan {
+    /** Terminal-style code block: near-black full-width panel, light monospace text, accent bar. */
+    static final class Block extends MetricAffectingSpan implements LineBackgroundSpan {
+        static final int BG = 0xFF0D1117;
+        static final int FG = 0xFFE6EDF3;
+
+        @Override
+        public void updateMeasureState(TextPaint p) {
+            p.setTypeface(Typeface.MONOSPACE);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+            p.setTypeface(Typeface.MONOSPACE);
+            p.setColor(FG);
+        }
+
         @Override
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
             int old = p.getColor();
-            p.setColor(codeBg());
+            p.setColor(BG);
             c.drawRect(left, top, right, bottom, p);
             p.setColor(Pal.accent);
-            c.drawRect(left, top, left + 2 * density, bottom, p);
+            c.drawRect(left, top, left + 3 * density, bottom, p);
             p.setColor(old);
         }
     }
@@ -170,7 +184,7 @@ final class RichText {
             }
             if (on) e.setSpan(make(type, arg), s, en, FLAGS);
         }
-        if (type == BLOCK) apply(e, CODE, s, en, 0, on); // a code block is monospace too
+        if (type == BLOCK && !on) apply(e, CODE, s, en, 0, false); // notes saved earlier had inline code inside blocks
     }
 
     /** True when every character in [s, en) has the style (or the one before the cursor if s == en). */
@@ -317,6 +331,9 @@ final class RichText {
                 int a = Math.max(0, r.getInt(1));
                 int b = Math.min(t.length(), r.getInt(2));
                 if (a < b) out.setSpan(make(r.getInt(0), r.optInt(3)), a, b, FLAGS);
+            }
+            for (Object blk : out.getSpans(0, out.length(), Block.class)) { // old notes: drop code-in-block
+                apply(out, CODE, out.getSpanStart(blk), out.getSpanEnd(blk), 0, false);
             }
         } catch (JSONException ex) {
             out.clear();

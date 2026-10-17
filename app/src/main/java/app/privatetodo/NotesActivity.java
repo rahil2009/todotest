@@ -153,7 +153,7 @@ public class NotesActivity extends Activity {
         pbg.setColor(Pal.accent);
         pbg.setCornerRadius(dp(28));
         pill.setBackground(pbg);
-        pill.setElevation(dp(1));
+        pill.setElevation(0);
         pill.setClickable(true);
         pill.setContentDescription("New note");
         pill.setPadding(dp(18), 0, dp(24), 0);

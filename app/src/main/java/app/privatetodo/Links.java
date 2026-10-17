@@ -69,7 +69,8 @@ final class Links {
 
         private CharSequence shown(Paint p, CharSequence text, int s, int e) {
             TextPaint tp = p instanceof TextPaint ? (TextPaint) p : new TextPaint(p);
-            CharSequence raw = text.subSequence(s, e);
+            // plain String: a Spanned here would re-enter this span via the measuring code (stack overflow)
+            String raw = text.toString().substring(s, e);
             return TextUtils.ellipsize(raw, tp, maxPx - 20 * d, TextUtils.TruncateAt.END);
         }
 

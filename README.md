@@ -95,3 +95,11 @@ No local Android setup? Push this folder to a GitHub repo and run the **Build AP
 (Actions tab). The APK appears under the run's artifacts.
 
 Requires Android 8.0+ (API 26).
+
+
+## Updating without losing data
+Every build is signed with the fixed key in `app/debug.keystore`, so a new APK installs over the old app and keeps your tasks.
+If you ever install a build signed with a different key, Android forces an uninstall first: use Settings > Backup > Export backup before that, then Import backup afterwards.
+
+## Repeat on chosen days
+In the task editor, Repeat > Choose days lets you tick Mon to Sun (Mon to Fri by default; Sat and Sun stay off).

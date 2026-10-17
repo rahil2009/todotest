@@ -4,6 +4,14 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Typeface;
+import android.net.Uri;
+import android.widget.Toast;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -18,6 +26,8 @@ import android.widget.TextView;
  */
 public class SettingsActivity extends Activity {
     private float density;
+    private static final int REQ_EXPORT = 4101;
+    private static final int REQ_IMPORT = 4102;
     private int pickKind;
     private final TextView[] soundName = new TextView[2];
 
@@ -92,6 +102,31 @@ public class SettingsActivity extends Activity {
         col.addView(soundCard(Prefs.NOTIF));
         col.addView(sectionLabel("Alarms"));
         col.addView(soundCard(Prefs.ALARM));
+
+        // ---- backup
+        col.addView(sectionLabel("Backup"));
+        LinearLayout backupCard = card();
+        backupCard.addView(backupRow("Export backup",
+                "Save all tasks, subtasks and notes to a file you choose", v -> {
+                    String name = "private-todo-backup-"
+                            + new SimpleDateFormat("yyyy-MM-dd", Locale.US).format(new Date()) + ".json";
+                    startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT)
+                            .addCategory(Intent.CATEGORY_OPENABLE)
+                            .setType("application/json")
+                            .putExtra(Intent.EXTRA_TITLE, name), REQ_EXPORT);
+                }));
+        backupCard.addView(backupRow("Import backup",
+                "Replace everything in the app with a backup file", v ->
+                        new Dlg.Builder(this)
+                                .setTitle("Import backup?")
+                                .setMessage("This replaces all tasks and notes currently in the app.")
+                                .setPositiveButton("Choose file", (d, w) ->
+                                        startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                                                .addCategory(Intent.CATEGORY_OPENABLE)
+                                                .setType("*/*"), REQ_IMPORT))
+                                .setNegativeButton("Cancel", null)
+                                .show()));
+        col.addView(backupCard);
 
         TextView note = text("Volume is relative to your phone's own notification and alarm volume, "
                 + "so it can only turn a sound down. Sounds are read from your phone and never leave it.",
@@ -195,8 +230,48 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int result, Intent data) {
         super.onActivityResult(req, result, data);
+        if ((req == REQ_EXPORT || req == REQ_IMPORT) && result == RESULT_OK && data != null
+                && data.getData() != null) {
+            if (req == REQ_EXPORT) doExport(data.getData());
+            else doImport(data.getData());
+            return;
+        }
         String picked = SoundPicker.result(this, req, result, data);
         if (picked != null) applySound(pickKind, picked);
+    }
+
+    private LinearLayout backupRow(String title, String sub, View.OnClickListener l) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.VERTICAL);
+        r.setMinimumHeight(dp(64));
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.addView(text(title, 16, Pal.ink, true));
+        r.addView(text(sub, 13, Pal.muted, false));
+        r.setOnClickListener(l);
+        return r;
+    }
+
+    private void doExport(Uri uri) {
+        try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {
+            out.write(Backup.export(this).getBytes(StandardCharsets.UTF_8));
+            Toast.makeText(this, "Backup saved", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Could not save the backup", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void doImport(Uri uri) {
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream();
+            byte[] b = new byte[8192];
+            int n;
+            while ((n = in.read(b)) > 0) buf.write(b, 0, n);
+            int tasks = Backup.restore(this, new String(buf.toByteArray(), StandardCharsets.UTF_8));
+            Toast.makeText(this, tasks < 0 ? "That is not a Private Todo backup"
+                    : "Imported " + tasks + " tasks and your notes", Toast.LENGTH_LONG).show();
+        } catch (Exception e) {
+            Toast.makeText(this, "Could not read that file", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void applySound(int kind, String value) {

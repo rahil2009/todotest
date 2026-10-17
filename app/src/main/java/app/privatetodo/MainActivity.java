@@ -152,6 +152,13 @@ public class MainActivity extends Activity {
         titles.addView(subtitle);
         header.addView(titles, new LinearLayout.LayoutParams(0, -2, 1f));
 
+        IconView trash = new IconView(this, IconView.TRASH);
+        trash.setTint(Pal.ink);
+        trash.setContentDescription("Clear completed tasks");
+        trash.setOnClickListener(v -> confirmClearDone());
+        clearDone = trash;
+        header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
         IconView notebook = new IconView(this, IconView.NOTE);
         notebook.setContentDescription("Notebook");
         notebook.setOnClickListener(v -> startActivity(new Intent(this, NotesActivity.class)));
@@ -162,12 +169,6 @@ public class MainActivity extends Activity {
         bell.setOnClickListener(v -> showSetup());
         header.addView(bell, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
-        IconView trash = new IconView(this, IconView.TRASH);
-        trash.setTint(Pal.ink);
-        trash.setContentDescription("Clear completed tasks");
-        trash.setOnClickListener(v -> confirmClearDone());
-        clearDone = trash;
-        header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
         column.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
         // Filter chips
@@ -235,7 +236,10 @@ public class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(16), dp(8), dp(16), dp(16));
+        bar.setPadding(dp(16), dp(24), dp(16), dp(16));
+        // fade the list out behind the bar in the page colour, so cards never show between the buttons
+        bar.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{Pal.bg & 0x00FFFFFF, Pal.bg, Pal.bg}));
 
         IconView gear = new IconView(this, IconView.GEAR);
         gear.setContentDescription("Settings");
@@ -251,7 +255,7 @@ public class MainActivity extends Activity {
         pillBg.setColor(Pal.raised);
         pillBg.setCornerRadius(dp(26));
         pill.setBackground(pillBg);
-        pill.setElevation(dp(1));
+        pill.setElevation(0);
 
         pillInput = new EditText(this);
         pillInput.setBackground(null);
@@ -359,7 +363,8 @@ public class MainActivity extends Activity {
         g.setShape(GradientDrawable.OVAL);
         g.setColor(Pal.raised);
         v.setBackground(g);
-        v.setElevation(dp(1));
+        v.setElevation(0);
+        v.setStateListAnimator(null);
     }
 
     /** Adds a plain task straight from the bottom pill (no reminder; use the clock for that). */
@@ -615,7 +620,7 @@ public class MainActivity extends Activity {
         final int[] rep = {existing == null ? 0 : existing.repeat,
                 existing == null ? 2 : existing.repeatUnit};
         // true when the repeat is anything other than the Daily / Weekly shortcuts
-        final boolean[] custom = {existing != null && existing.repeat > 0
+        final boolean[] custom = {existing != null && existing.repeat > 0 && existing.repeatUnit != 5
                 && !(existing.repeat == 1 && (existing.repeatUnit == 2 || existing.repeatUnit == 3))};
         final boolean[] alarm = {existing != null && existing.alarm};
         final Runnable[] upd = new Runnable[1];
@@ -796,19 +801,21 @@ public class MainActivity extends Activity {
         extras.addView(repLabel);
         LinearLayout repRow = new LinearLayout(this);
         repRow.setOrientation(LinearLayout.HORIZONTAL);
-        final TextView[] repChips = new TextView[4];
-        String[] repNames = {"Once", "Daily", "Weekly", "Custom\u2026"};
+        final TextView[] repChips = new TextView[5];
+        String[] repNames = {"Once", "Daily", "Weekly", "Choose days\u2026", "Custom\u2026"};
         // "Every N min / hr / day / week / month": same swipe dials as the time pickers.
         final DialView everyDial = new DialView(this, false, true);
-        everyDial.setRelative(Math.max(1, rep[0]), rep[1]);
+        everyDial.setRelative(Math.max(1, rep[1] == 5 ? 1 : rep[0]), rep[1] == 5 ? 2 : rep[1]);
         everyDial.setOnChange(() -> {
             rep[0] = everyDial.everyAmount();
             rep[1] = everyDial.everyUnit();
             upd[0].run();
         });
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             final int r = i;
             repChips[i] = formChip(repNames[i], false);
+            repChips[i].setPadding(dp(8), 0, dp(8), 0);
+            repChips[i].setSingleLine(true);
             repChips[i].setOnClickListener(v -> {
                 if (r == 0) {
                     rep[0] = 0;
@@ -821,9 +828,15 @@ public class MainActivity extends Activity {
                     rep[0] = 1;
                     rep[1] = 3;
                     custom[0] = false;
+                } else if (r == 3) { // specific weekdays: Monday to Friday ticked, weekend left off
+                    if (rep[1] != 5 || rep[0] == 0) {
+                        rep[0] = 31;
+                        rep[1] = 5;
+                    }
+                    custom[0] = false;
                 } else {
                     custom[0] = true;
-                    if (rep[0] == 0) {
+                    if (rep[0] == 0 || rep[1] == 5) {
                         rep[0] = 1;
                         rep[1] = 2;
                     }
@@ -831,14 +844,46 @@ public class MainActivity extends Activity {
                 }
                 upd[0].run();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.rightMargin = dp(8);
-            repRow.addView(repChips[i], lp);
         }
-        HorizontalScrollView repScroll = new HorizontalScrollView(this);
-        repScroll.setHorizontalScrollBarEnabled(false);
-        repScroll.addView(repRow);
-        extras.addView(repScroll);
+        LinearLayout repRow1 = new LinearLayout(this);
+        repRow1.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout repRow2 = new LinearLayout(this);
+        repRow2.setOrientation(LinearLayout.HORIZONTAL);
+        for (int i = 0; i < 5; i++) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            lp.rightMargin = (i == 2 || i == 4) ? 0 : dp(8);
+            (i < 3 ? repRow1 : repRow2).addView(repChips[i], lp);
+        }
+        extras.addView(repRow1);
+        LinearLayout.LayoutParams r2lp = new LinearLayout.LayoutParams(-1, -2);
+        r2lp.topMargin = dp(8);
+        extras.addView(repRow2, r2lp);
+
+        // Mon..Sun round toggles, shown for "Choose days"
+        final TextView[] dayViews = new TextView[7];
+        final LinearLayout daysRow = new LinearLayout(this);
+        daysRow.setOrientation(LinearLayout.HORIZONTAL);
+        String[] dayNames = {"M", "T", "W", "T", "F", "S", "S"};
+        String[] dayFull = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+        for (int i = 0; i < 7; i++) {
+            final int di = i;
+            TextView dv = text(dayNames[i], 15, Pal.muted, true);
+            dv.setGravity(Gravity.CENTER);
+            dv.setContentDescription(dayFull[i]);
+            dv.setOnClickListener(v -> {
+                int m = rep[0] ^ (1 << di);
+                if (m == 0) return; // keep at least one day
+                rep[0] = m;
+                upd[0].run();
+            });
+            dayViews[i] = dv;
+            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            dlp.rightMargin = i == 6 ? 0 : dp(6);
+            daysRow.addView(dv, dlp);
+        }
+        LinearLayout.LayoutParams dayslp = new LinearLayout.LayoutParams(-1, -2);
+        dayslp.topMargin = dp(10);
+        extras.addView(daysRow, dayslp);
         LinearLayout.LayoutParams edlp = new LinearLayout.LayoutParams(-1, -2);
         edlp.topMargin = dp(8);
         extras.addView(everyDial, edlp);
@@ -981,15 +1026,26 @@ public class MainActivity extends Activity {
             pick.setTextColor(has ? Pal.accent : Pal.muted);
             clear.setVisibility(has ? View.VISIBLE : View.GONE);
             extras.setVisibility(has ? View.VISIBLE : View.GONE);
+            boolean daysMode = rep[1] == 5 && rep[0] > 0;
             boolean daily = rep[0] == 1 && rep[1] == 2;
             boolean weekly = rep[0] == 1 && rep[1] == 3;
-            boolean isCustom = custom[0] && rep[0] > 0;
+            boolean isCustom = custom[0] && rep[0] > 0 && !daysMode;
             styleChip(repChips[0], rep[0] == 0, Pal.chip);
-            styleChip(repChips[1], !custom[0] && daily, Pal.chip);
-            styleChip(repChips[2], !custom[0] && weekly, Pal.chip);
-            styleChip(repChips[3], isCustom, Pal.chip);
-            repChips[3].setText(isCustom ? Reminders.repeatLabel(rep[0], rep[1]) : "Custom\u2026");
+            styleChip(repChips[1], !custom[0] && !daysMode && daily, Pal.chip);
+            styleChip(repChips[2], !custom[0] && !daysMode && weekly, Pal.chip);
+            styleChip(repChips[3], daysMode, Pal.chip);
+            styleChip(repChips[4], isCustom, Pal.chip);
+            repChips[4].setText(isCustom ? Reminders.repeatLabel(rep[0], rep[1]) : "Custom\u2026");
             everyDial.setVisibility(isCustom ? View.VISIBLE : View.GONE);
+            daysRow.setVisibility(daysMode ? View.VISIBLE : View.GONE);
+            for (int i = 0; i < 7; i++) {
+                boolean on = daysMode && (rep[0] & (1 << i)) != 0;
+                GradientDrawable dg = new GradientDrawable();
+                dg.setShape(GradientDrawable.OVAL);
+                dg.setColor(on ? Pal.sel : Pal.chip);
+                dayViews[i].setBackground(dg);
+                dayViews[i].setTextColor(on ? Pal.onSel : Pal.muted);
+            }
         };
         upd[0].run();
 
@@ -1023,6 +1079,8 @@ public class MainActivity extends Activity {
                 toast("Pick a time in the future");
                 return;
             }
+            if (d > 0 && rep[1] == 5 && rep[0] > 0) d = Reminders.nextAllowedDay(d, rep[0]);
+            due[0] = d;
             long id;
             if (existing == null) {
                 id = db.add(s, d, rep[0], rep[1], alarm[0]);

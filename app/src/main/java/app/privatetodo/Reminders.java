@@ -54,6 +54,19 @@ final class Reminders {
      */
     static long advance(long due, int n, int unit, long now) {
         if (n < 1) return due;
+        if (unit == 5) { // n is a Mon..Sun bit mask
+            Calendar base = Calendar.getInstance();
+            base.setTimeInMillis(due);
+            for (int k = 1; k < 100_000; k++) {
+                Calendar c = (Calendar) base.clone();
+                c.add(Calendar.DAY_OF_YEAR, k);
+                if ((n & (1 << ((c.get(Calendar.DAY_OF_WEEK) + 5) % 7))) != 0
+                        && c.getTimeInMillis() > now) {
+                    return c.getTimeInMillis();
+                }
+            }
+            return due + 86_400_000L;
+        }
         if (unit <= 1) { // minutes and hours are fixed-length
             long step = n * (unit == 0 ? 60_000L : 3_600_000L);
             long k = Math.max(1, (now - due) / step + 1);
@@ -71,8 +84,29 @@ final class Reminders {
         return due + 86_400_000L;
     }
 
+    /** Moves {@code due} forward to the first day (same clock time) allowed by the Mon..Sun mask. */
+    static long nextAllowedDay(long due, int mask) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(due);
+        for (int i = 0; i < 7; i++) {
+            if ((mask & (1 << ((c.get(Calendar.DAY_OF_WEEK) + 5) % 7))) != 0) return c.getTimeInMillis();
+            c.add(Calendar.DAY_OF_YEAR, 1);
+        }
+        return due;
+    }
+
     /** "Every minute", "Every 30 min", "Every 2 days", "Every month"... */
     static String repeatLabel(int n, int unit) {
+        if (unit == 5) {
+            if (n == 31) return "Mon\u2013Fri";
+            if (n == 127) return "Every day";
+            String[] d = {"Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"};
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 7; i++) {
+                if ((n & (1 << i)) != 0) sb.append(sb.length() > 0 ? ", " : "").append(d[i]);
+            }
+            return sb.toString();
+        }
         String[] one = {"minute", "hour", "day", "week", "month"};
         String[] many = {"min", "hours", "days", "weeks", "months"};
         int u = Math.max(0, Math.min(4, unit));
