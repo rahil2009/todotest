@@ -199,6 +199,19 @@ final class Reminders {
 
     // ------------------------------------------------------ notification
 
+    static final String CH_ALARM_QUIET = "alarms_quiet_v1";
+
+    /**
+     * True when this alarm should simply take over the screen (phone in use, unlocked) instead of
+     * also sliding in as a notification from the top.
+     */
+    static boolean takeOver(Context ctx, Task t) {
+        if (!t.always || !android.provider.Settings.canDrawOverlays(ctx)) return false;
+        android.os.PowerManager pm = ctx.getSystemService(android.os.PowerManager.class);
+        android.app.KeyguardManager km = ctx.getSystemService(android.app.KeyguardManager.class);
+        return pm != null && pm.isInteractive() && km != null && !km.isKeyguardLocked();
+    }
+
     static void ensureChannels(Context ctx) {
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         nm.deleteNotificationChannel("reminders_v1");
@@ -219,7 +232,14 @@ final class Reminders {
         alarm.setVibrationPattern(new long[]{0, 600, 400, 600, 400, 600});
         alarm.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
 
-        nm.createNotificationChannels(Arrays.asList(remind, alarm));
+        NotificationChannel quiet = new NotificationChannel(
+                CH_ALARM_QUIET, "Alarm (screen already open)", NotificationManager.IMPORTANCE_LOW);
+        quiet.setDescription("Quiet entry in the shade while the alarm screen is already showing");
+        quiet.setSound(null, null);
+        quiet.enableVibration(false);
+        quiet.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
+
+        nm.createNotificationChannels(Arrays.asList(remind, alarm, quiet));
     }
 
     /**
@@ -232,14 +252,15 @@ final class Reminders {
         ensureChannels(ctx);
         NotificationManager nm = ctx.getSystemService(NotificationManager.class);
         if (t.alarm) {
+            final boolean quiet = takeOver(ctx, t);
             try {
-                RingService.start(ctx, t.id); // posts the notification itself
+                RingService.start(ctx, t.id, quiet); // posts the notification itself
             } catch (RuntimeException e) {
                 // The system refused a foreground service: still show it, and ring for a minute.
-                nm.notify((int) t.id, build(ctx, t, subs));
+                nm.notify((int) t.id, build(ctx, t, subs, quiet));
                 Sound.play(ctx, Prefs.ALARM, true, 60_000L, null, t.sound, t.volume);
             }
-            if (t.always && android.provider.Settings.canDrawOverlays(ctx)) {
+            if (quiet) {
                 try { // the overlay permission lets the alarm screen open even while the phone is in use
                     ctx.startActivity(new Intent(ctx, AlarmActivity.class)
                             .putExtra(EXTRA_ID, t.id)
@@ -257,6 +278,11 @@ final class Reminders {
     }
 
     static Notification build(Context ctx, Task t, List<Sub> subs) {
+        return build(ctx, t, subs, false);
+    }
+
+    /** {@code quiet}: the alarm screen is already open, so no heads-up pop-in and no full-screen intent. */
+    static Notification build(Context ctx, Task t, List<Sub> subs, boolean quiet) {
         ensureChannels(ctx);
 
         PendingIntent open = PendingIntent.getActivity(ctx, (int) t.id,
@@ -264,7 +290,7 @@ final class Reminders {
                         Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Notification.Builder b = new Notification.Builder(ctx, t.alarm ? CH_ALARM : CH_REMIND)
+        Notification.Builder b = new Notification.Builder(ctx, t.alarm ? (quiet ? CH_ALARM_QUIET : CH_ALARM) : CH_REMIND)
                 .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle(t.title)
                 .setContentText(when(ctx, t.snooze > 0 ? t.snooze : t.due))
@@ -314,16 +340,16 @@ final class Reminders {
                                     | Intent.FLAG_ACTIVITY_NO_USER_ACTION),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             b.setCategory(Notification.CATEGORY_ALARM)
-                    .setFullScreenIntent(full, true)
                     .setAutoCancel(false)
                     .setTimeoutAfter(10 * 60 * 1000L);
+            if (!quiet) b.setFullScreenIntent(full, true);
         } else {
             b.setCategory(Notification.CATEGORY_REMINDER).setAutoCancel(true);
         }
 
         Notification n = b.build();
         // The sound is played by the app (Sound / RingService); INSISTENT keeps the vibration repeating.
-        if (t.alarm) n.flags |= Notification.FLAG_INSISTENT;
+        if (t.alarm && !quiet) n.flags |= Notification.FLAG_INSISTENT;
         return n;
     }
 

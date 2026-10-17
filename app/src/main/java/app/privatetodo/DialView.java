@@ -227,6 +227,7 @@ final class DialView extends LinearLayout {
     }
 
     private void changed() {
+        if (!quiet) Hap.tick(this);
         if (!quiet && onChange != null) onChange.run();
     }
 

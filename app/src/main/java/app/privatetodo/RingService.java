@@ -18,7 +18,13 @@ public class RingService extends Service {
     private static volatile long ringingId = -1;
 
     static void start(Context c, long id) {
-        c.startForegroundService(new Intent(c, RingService.class).putExtra(Reminders.EXTRA_ID, id));
+        start(c, id, false);
+    }
+
+    /** {@code quiet}: the alarm screen is already open, so the notification stays silent and we vibrate ourselves. */
+    static void start(Context c, long id, boolean quiet) {
+        c.startForegroundService(new Intent(c, RingService.class)
+                .putExtra(Reminders.EXTRA_ID, id).putExtra("quiet", quiet));
     }
 
     static boolean isRinging() {
@@ -49,13 +55,23 @@ public class RingService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        Notification n = Reminders.build(this, t, subs);
+        boolean quiet = intent != null && intent.getBooleanExtra("quiet", false);
+        Notification n = Reminders.build(this, t, subs, quiet);
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground((int) id, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         } else {
             startForeground((int) id, n);
         }
         ringingId = id;
+        if (quiet) {
+            android.os.Vibrator vb = getSystemService(android.os.Vibrator.class);
+            if (vb != null && vb.hasVibrator()) {
+                vb.vibrate(android.os.VibrationEffect.createWaveform(
+                                new long[]{0, 600, 400, 600, 400, 600}, 0),
+                        new android.media.AudioAttributes.Builder()
+                                .setUsage(android.media.AudioAttributes.USAGE_ALARM).build());
+            }
+        }
         final long mine = id;
         // If a second alarm takes over, the first one's "done" must not stop the service.
         Sound.play(this, Prefs.ALARM, true, MAX_MS, () -> {
@@ -67,6 +83,8 @@ public class RingService extends Service {
     @Override
     public void onDestroy() {
         ringingId = -1;
+        android.os.Vibrator vb = getSystemService(android.os.Vibrator.class);
+        if (vb != null) vb.cancel();
         Sound.stop();
         super.onDestroy();
     }

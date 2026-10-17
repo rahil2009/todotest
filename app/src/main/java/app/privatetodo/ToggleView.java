@@ -26,6 +26,7 @@ final class ToggleView extends View {
         d = c.getResources().getDisplayMetrics().density;
         setClickable(true);
         setOnClickListener(v -> {
+            Hap.tick(this);
             set(!on, true);
             if (listener != null) listener.onChange(on);
         });

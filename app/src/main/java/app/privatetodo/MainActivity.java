@@ -61,7 +61,13 @@ public class MainActivity extends Activity {
     private TextView subtitle;
     private View clearDone;
     private IconView bell;
-    private final TextView[] chips = new TextView[3];
+    private final TextView[] chips = new TextView[7];
+    // undo pill: "Task deleted  [Undo]" with a bar that drains over 4 seconds
+    private LinearLayout undoPill;
+    private TextView undoMsg;
+    private View undoFill;
+    private Runnable undoAction;
+    private final Runnable undoHide = () -> hideUndo(true);
     private LinearLayout emptyView;
     private TextView emptyTitle;
     private TextView emptyBody;
@@ -152,6 +158,14 @@ public class MainActivity extends Activity {
         titles.addView(subtitle);
         header.addView(titles, new LinearLayout.LayoutParams(0, -2, 1f));
 
+        IconView plan = new IconView(this, IconView.PLAN);
+        plan.setContentDescription("Plan");
+        plan.setOnClickListener(v -> {
+            Hap.tick(v);
+            toast("Plan is coming soon");
+        });
+        header.addView(plan, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
         IconView trash = new IconView(this, IconView.TRASH);
         trash.setTint(Pal.ink);
         trash.setContentDescription("Clear completed tasks");
@@ -171,18 +185,19 @@ public class MainActivity extends Activity {
 
         column.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
-        // Filter chips
+        // Filter chips: status first, then date and priority views (scrolls sideways when it must)
         LinearLayout chipRow = new LinearLayout(this);
         chipRow.setOrientation(LinearLayout.HORIZONTAL);
         chipRow.setPadding(dp(24), dp(16), dp(24), dp(12));
-        String[] names = {"Active", "Done", "All"};
-        for (int i = 0; i < 3; i++) {
+        String[] names = {"Active", "Done", "All", "Today", "Tomorrow", "Upcoming", "Priority"};
+        for (int i = 0; i < names.length; i++) {
             final int f = i;
             TextView chip = text(names[i], 15, Pal.muted, true);
             chip.setGravity(Gravity.CENTER);
             chip.setMinHeight(dp(40));
             chip.setPadding(dp(18), 0, dp(18), 0);
             chip.setOnClickListener(v -> {
+                Hap.tick(v);
                 filter = f;
                 refresh();
             });
@@ -191,7 +206,11 @@ public class MainActivity extends Activity {
             chipRow.addView(chip, lp);
             chips[i] = chip;
         }
-        column.addView(chipRow, new LinearLayout.LayoutParams(-1, -2));
+        HorizontalScrollView chipScroll = new HorizontalScrollView(this);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        chipScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        chipScroll.addView(chipRow);
+        column.addView(chipScroll, new LinearLayout.LayoutParams(-1, -2));
 
         // List + empty state
         FrameLayout body = new FrameLayout(this);
@@ -244,7 +263,10 @@ public class MainActivity extends Activity {
         IconView gear = new IconView(this, IconView.GEAR);
         gear.setContentDescription("Settings");
         floatingCircle(gear);
-        gear.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+        gear.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, SettingsActivity.class));
+        });
         bar.addView(gear, new LinearLayout.LayoutParams(dp(52), dp(52)));
 
         LinearLayout pill = new LinearLayout(this);
@@ -322,12 +344,65 @@ public class MainActivity extends Activity {
         searchBtn = new IconView(this, IconView.SEARCH);
         searchBtn.setContentDescription("Search tasks");
         floatingCircle(searchBtn);
-        searchBtn.setOnClickListener(v -> setSearching(!searching));
+        searchBtn.setOnClickListener(v -> {
+            Hap.tick(v);
+            setSearching(!searching);
+        });
         bar.addView(searchBtn, new LinearLayout.LayoutParams(dp(52), dp(52)));
 
         FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(-1, -2);
         blp.gravity = Gravity.BOTTOM;
         root.addView(bar, blp);
+
+        // Undo pill, floating just above the bar
+        undoPill = new LinearLayout(this);
+        undoPill.setOrientation(LinearLayout.VERTICAL);
+        undoPill.setPadding(dp(20), dp(4), dp(8), dp(10));
+        GradientDrawable ubg = new GradientDrawable();
+        ubg.setColor(Pal.ink);
+        ubg.setCornerRadius(dp(28));
+        undoPill.setBackground(ubg);
+        undoPill.setElevation(0);
+        undoPill.setVisibility(View.GONE);
+        final int undoOn = Pal.dark ? 0xFF111513 : 0xFFFFFFFF;
+        final int undoAccent = Pal.dark ? 0xFF0B6B5D : 0xFF6FCDBD;
+        LinearLayout urow = new LinearLayout(this);
+        urow.setOrientation(LinearLayout.HORIZONTAL);
+        urow.setGravity(Gravity.CENTER_VERTICAL);
+        undoMsg = text("", 15, undoOn, true);
+        urow.addView(undoMsg, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView undoBtn = text("Undo", 15, undoAccent, true);
+        undoBtn.setGravity(Gravity.CENTER);
+        undoBtn.setMinHeight(dp(44));
+        undoBtn.setMinWidth(dp(64));
+        undoBtn.setOnClickListener(v -> {
+            Runnable r = undoAction;
+            hideUndo(false);
+            if (r != null) {
+                Hap.confirm(v);
+                r.run();
+            }
+        });
+        urow.addView(undoBtn);
+        undoPill.addView(urow, new LinearLayout.LayoutParams(-1, -2));
+        FrameLayout track = new FrameLayout(this);
+        GradientDrawable tbg = new GradientDrawable();
+        tbg.setColor((undoOn & 0x00FFFFFF) | 0x33000000);
+        tbg.setCornerRadius(dp(2));
+        track.setBackground(tbg);
+        undoFill = new View(this);
+        GradientDrawable fbg = new GradientDrawable();
+        fbg.setColor(undoAccent);
+        fbg.setCornerRadius(dp(2));
+        undoFill.setBackground(fbg);
+        track.addView(undoFill, new FrameLayout.LayoutParams(-1, -1));
+        LinearLayout.LayoutParams trlp = new LinearLayout.LayoutParams(-1, dp(3));
+        trlp.rightMargin = dp(12);
+        undoPill.addView(track, trlp);
+        FrameLayout.LayoutParams ulp = new FrameLayout.LayoutParams(-1, -2);
+        ulp.gravity = Gravity.BOTTOM;
+        ulp.setMargins(dp(16), 0, dp(16), dp(88));
+        root.addView(undoPill, ulp);
         return root;
     }
 
@@ -372,7 +447,8 @@ public class MainActivity extends Activity {
         String s = pillInput.getText().toString().trim();
         if (s.isEmpty()) return;
         db.add(s, 0, 0, 2, false);
-        if (filter == TaskDb.DONE) filter = TaskDb.ACTIVE;
+        Hap.confirm(pillInput);
+        if (filter == TaskDb.DONE || filter >= TaskDb.TODAY) filter = TaskDb.ACTIVE;
         pillInput.setText("");
         refresh();
     }
@@ -428,7 +504,7 @@ public class MainActivity extends Activity {
         subtitle.setText(left + " left · " + done + " done");
         clearDone.setVisibility(done > 0 ? View.VISIBLE : View.INVISIBLE);
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < chips.length; i++) {
             styleChip(chips[i], i == filter, Pal.card);
         }
 
@@ -444,6 +520,18 @@ public class MainActivity extends Activity {
         } else if (filter == TaskDb.DONE) {
             emptyTitle.setText("Nothing done yet");
             emptyBody.setText("Finished tasks show up here.");
+        } else if (filter == TaskDb.TODAY) {
+            emptyTitle.setText("Nothing for today");
+            emptyBody.setText("Tasks due today, and anything overdue, show up here.");
+        } else if (filter == TaskDb.TOMORROW) {
+            emptyTitle.setText("Nothing for tomorrow");
+            emptyBody.setText("Tasks with a reminder tomorrow show up here.");
+        } else if (filter == TaskDb.UPCOMING) {
+            emptyTitle.setText("Nothing coming up");
+            emptyBody.setText("Tasks with a reminder after tomorrow show up here.");
+        } else if (filter == TaskDb.PRIORITY) {
+            emptyTitle.setText("No priority tasks");
+            emptyBody.setText("Tasks you mark Low, Medium or High priority show up here.");
         } else {
             emptyTitle.setText("No tasks yet");
             emptyBody.setText("Type in the bar below to add your first one.");
@@ -1100,6 +1188,17 @@ public class MainActivity extends Activity {
                 .setPositiveButton(existing == null ? "Add" : "Save", null)
                 .setNegativeButton("Cancel", null)
                 .create();
+        if (existing != null) {
+            dialog.setButton(AlertDialog.BUTTON_NEUTRAL, "Duplicate", (dd, w) -> {
+                long copy = db.duplicate(existing.id);
+                if (copy > 0) {
+                    Reminders.schedule(this, db.get(copy));
+                    Hap.confirm(listView);
+                    toast("Task duplicated");
+                    refresh();
+                }
+            });
+        }
         dialog.setOnDismissListener(dd -> {
             Sound.stopPreview();
             soundCb = null;
@@ -1126,7 +1225,7 @@ public class MainActivity extends Activity {
             long id;
             if (existing == null) {
                 id = db.add(s, d, rep[0], rep[1], alarm[0]);
-                if (filter == TaskDb.DONE) filter = TaskDb.ACTIVE;
+                if (filter == TaskDb.DONE || filter >= TaskDb.TODAY) filter = TaskDb.ACTIVE;
             } else {
                 id = existing.id;
                 db.update(id, s, d, rep[0], rep[1], alarm[0]);
@@ -1229,14 +1328,51 @@ public class MainActivity extends Activity {
         if (i > 0) rows.get(i - 1).et.requestFocus();
     }
 
+    private void showUndo(String msg, Runnable undo) {
+        undoAction = undo;
+        undoMsg.setText(msg);
+        undoPill.removeCallbacks(undoHide);
+        undoFill.animate().cancel();
+        undoPill.animate().cancel();
+        undoPill.setVisibility(View.VISIBLE);
+        undoPill.setAlpha(0f);
+        undoPill.animate().alpha(1f).setDuration(150).start();
+        undoFill.setPivotX(0f);
+        undoFill.setScaleX(1f);
+        // linear, so the bar shrinks evenly: 4 seconds from full to empty
+        undoFill.animate().scaleX(0f).setDuration(4000)
+                .setInterpolator(new android.view.animation.LinearInterpolator()).start();
+        undoPill.postDelayed(undoHide, 4000);
+    }
+
+    private void hideUndo(boolean fade) {
+        undoPill.removeCallbacks(undoHide);
+        undoFill.animate().cancel();
+        undoAction = null;
+        if (fade) {
+            undoPill.animate().alpha(0f).setDuration(180)
+                    .withEndAction(() -> undoPill.setVisibility(View.GONE)).start();
+        } else {
+            undoPill.animate().cancel();
+            undoPill.setVisibility(View.GONE);
+        }
+    }
+
     private void confirmDelete(final Task t) {
         new Dlg.Builder(this)
                 .setTitle("Delete task?")
                 .setMessage(t.title)
                 .setPositiveButton("Delete", (d, w) -> {
+                    final TaskDb.Snap snap = db.snapshot("id = ?", new String[]{String.valueOf(t.id)});
                     Reminders.cancel(this, t.id);
                     db.delete(t.id);
+                    Hap.confirm(listView);
                     refresh();
+                    showUndo("Task deleted", () -> {
+                        db.restore(snap);
+                        Reminders.schedule(this, db.get(t.id));
+                        refresh();
+                    });
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
@@ -1245,24 +1381,41 @@ public class MainActivity extends Activity {
     private void confirmClearDone() {
         new Dlg.Builder(this)
                 .setTitle("Clear completed tasks?")
-                .setMessage("This permanently deletes them from this device.")
+                .setMessage("They are removed from this device. You can undo for a few seconds.")
                 .setPositiveButton("Clear", (d, w) -> {
+                    final TaskDb.Snap snap = db.snapshot("done = 1", null);
                     for (Task t : db.list(TaskDb.DONE)) Reminders.cancel(this, t.id);
                     db.clearDone();
+                    Hap.confirm(listView);
                     refresh();
+                    showUndo("Completed tasks cleared", () -> {
+                        db.restore(snap);
+                        refresh();
+                    });
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
 
-    private void toggleDone(Task t) {
-        db.setDone(t.id, !t.done);
-        if (t.done) {
-            Reminders.schedule(this, db.get(t.id)); // re-opened: re-arm if still pending
-        } else {
-            Reminders.cancel(this, t.id);
-        }
+    private void toggleDone(final Task t) {
+        setDoneAndSchedule(t.id, !t.done);
+        Hap.confirm(listView);
         refresh();
+        if (!t.done) {
+            showUndo("Task completed", () -> {
+                setDoneAndSchedule(t.id, false);
+                refresh();
+            });
+        }
+    }
+
+    private void setDoneAndSchedule(long id, boolean done) {
+        db.setDone(id, done);
+        if (done) {
+            Reminders.cancel(this, id);
+        } else {
+            Reminders.schedule(this, db.get(id)); // re-opened: re-arm if still pending
+        }
     }
 
     // ----------------------------------------------------------- adapter
@@ -1309,6 +1462,7 @@ public class MainActivity extends Activity {
         private float downX;
         private float downY;
         private boolean swiping;
+        private boolean armed;
 
         Row(Context c) {
             super(c);
@@ -1417,6 +1571,9 @@ public class MainActivity extends Activity {
             }
             float dx = e.getX() - downX;
             if (a == MotionEvent.ACTION_MOVE) {
+                boolean past = Math.abs(dx) >= Math.max(dp(96), getWidth() * 0.3f);
+                if (past && !armed) Hap.tick(this);
+                armed = past;
                 showSwipe(dx);
             } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
                 swiping = false;
@@ -1444,6 +1601,7 @@ public class MainActivity extends Activity {
         void bind(final Task t) {
             bound = t;
             swiping = false;
+            armed = false;
             card.animate().cancel();
             card.setTranslationX(0);
             reveal.setVisibility(View.INVISIBLE);
@@ -1495,7 +1653,24 @@ public class MainActivity extends Activity {
                 box.setOn(s.done);
                 box.setContentDescription(s.done ? "Mark subtask not done" : "Mark subtask done");
                 box.setOnClickListener(v -> {
-                    db.setSubDone(s.id, !s.done);
+                    boolean nowDone = !s.done;
+                    db.setSubDone(s.id, nowDone);
+                    Hap.tick(v);
+                    boolean allDone = true;
+                    java.util.List<Sub> all = db.subs(t.id);
+                    for (Sub x : all) allDone &= x.done;
+                    if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
+                        if (t.repeat == 0) {
+                            setDoneAndSchedule(t.id, true);
+                        } else {
+                            Reminders.complete(MainActivity.this, t.id); // repeating: waits for its next time
+                            db.resetSubs(t.id);
+                        }
+                        Hap.confirm(v);
+                        toast("All subtasks done \u00B7 task completed");
+                    } else if (!nowDone && t.done) { // un-ticking one re-opens the task
+                        setDoneAndSchedule(t.id, false);
+                    }
                     refresh();
                 });
                 subRow.addView(box, new LinearLayout.LayoutParams(dp(40), dp(40)));

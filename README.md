@@ -106,3 +106,6 @@ In the task editor, Repeat > Choose days lets you tick Mon to Sun (Mon to Fri by
 
 ## Show even when unlocked
 Alarm style has a second toggle, "Show even when unlocked". It makes the alarm screen open over whatever you are doing (it asks for "Display over other apps" once). The notification's Open link button now silences the ring and vibration as it opens the link.
+
+## v3.8 additions
+Undo pill (4 s, draining bar) after delete / clear / complete; Duplicate in the edit dialog; ticking the last subtask completes the task; haptic taps; Today / Tomorrow / Upcoming / Priority filters; a placeholder Plan icon; roomier code blocks; the unlocked full-screen alarm no longer also slides in as a heads-up notification.

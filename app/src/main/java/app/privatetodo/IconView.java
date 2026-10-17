@@ -23,6 +23,7 @@ final class IconView extends View {
     static final int PLUS = 12;
     static final int LOCK = 13;
     static final int SWIPE_DONE = 14;
+    static final int PLAN = 15;
 
     private final int kind;
     private boolean on;
@@ -159,6 +160,18 @@ final class IconView extends View {
                 path.lineTo(cx + 4.5f * d, cy + 8 * d);
                 path.lineTo(cx + 5.5f * d, cy - 5 * d);
                 canvas.drawPath(path, paint);
+                break;
+            case PLAN: // calendar with two rings and a grid dot
+                stroke(1.8f, Pal.ink);
+                rect.set(cx - 8 * d, cy - 7 * d, cx + 8 * d, cy + 9 * d);
+                canvas.drawRoundRect(rect, 3 * d, 3 * d, paint);
+                canvas.drawLine(cx - 8 * d, cy - 2 * d, cx + 8 * d, cy - 2 * d, paint);
+                canvas.drawLine(cx - 3.5f * d, cy - 10 * d, cx - 3.5f * d, cy - 5 * d, paint);
+                canvas.drawLine(cx + 3.5f * d, cy - 10 * d, cx + 3.5f * d, cy - 5 * d, paint);
+                paint.setStyle(Paint.Style.FILL);
+                canvas.drawCircle(cx - 3.5f * d, cy + 3 * d, 1.2f * d, paint);
+                canvas.drawCircle(cx + 3.5f * d, cy + 3 * d, 1.2f * d, paint);
+                canvas.drawCircle(cx - 3.5f * d, cy + 6.3f * d, 1.2f * d, paint);
                 break;
             case LOCK: // padlock, used in the "stored only on this device" line
                 stroke(1.7f, Pal.muted);

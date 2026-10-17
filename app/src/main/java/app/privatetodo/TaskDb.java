@@ -14,6 +14,10 @@ final class TaskDb extends SQLiteOpenHelper {
     static final int ACTIVE = 0;
     static final int DONE = 1;
     static final int ALL = 2;
+    static final int TODAY = 3;
+    static final int TOMORROW = 4;
+    static final int UPCOMING = 5;
+    static final int PRIORITY = 6;
 
     private static final String[] COLS = {
             "id", "title", "done", "due_at", "repeat_mode", "repeat_unit", "is_alarm", "snooze_until", "fired",
@@ -102,9 +106,34 @@ final class TaskDb extends SQLiteOpenHelper {
             where = "done = ?";
             args = new String[]{"1"};
         }
+        String order = "done ASC, priority DESC, created DESC, id DESC";
+        if (filter >= TODAY) {
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0);
+            cal.set(java.util.Calendar.MINUTE, 0);
+            cal.set(java.util.Calendar.SECOND, 0);
+            cal.set(java.util.Calendar.MILLISECOND, 0);
+            cal.add(java.util.Calendar.DAY_OF_YEAR, 1);
+            long tomorrow = cal.getTimeInMillis();
+            cal.add(java.util.Calendar.DAY_OF_YEAR, 1);
+            long after = cal.getTimeInMillis();
+            if (filter == TODAY) { // today, plus anything overdue
+                where = "done = 0 AND due_at > 0 AND due_at < ?";
+                args = new String[]{String.valueOf(tomorrow)};
+            } else if (filter == TOMORROW) {
+                where = "done = 0 AND due_at >= ? AND due_at < ?";
+                args = new String[]{String.valueOf(tomorrow), String.valueOf(after)};
+            } else if (filter == UPCOMING) {
+                where = "done = 0 AND due_at >= ?";
+                args = new String[]{String.valueOf(after)};
+            } else {
+                where = "done = 0 AND priority > 0";
+                args = null;
+            }
+            if (filter != PRIORITY) order = "due_at ASC, priority DESC, id DESC";
+        }
         List<Task> out = new ArrayList<>();
-        Cursor c = getReadableDatabase().query("tasks", COLS, where, args, null, null,
-                "done ASC, priority DESC, created DESC, id DESC");
+        Cursor c = getReadableDatabase().query("tasks", COLS, where, args, null, null, order);
         try {
             while (c.moveToNext()) out.add(map(c));
         } finally {
@@ -231,6 +260,85 @@ final class TaskDb extends SQLiteOpenHelper {
         SQLiteDatabase w = getWritableDatabase();
         w.delete("subtasks", "task_id = ?", new String[]{String.valueOf(id)});
         w.delete("tasks", "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    /** Raw copy of some tasks and their subtasks, so a delete can be undone. */
+    static final class Snap {
+        final List<ContentValues> tasks = new ArrayList<>();
+        final List<ContentValues> subs = new ArrayList<>();
+    }
+
+    Snap snapshot(String where, String[] args) {
+        Snap s = new Snap();
+        SQLiteDatabase r = getReadableDatabase();
+        Cursor c = r.query("tasks", null, where, args, null, null, null);
+        try {
+            while (c.moveToNext()) {
+                ContentValues v = new ContentValues();
+                android.database.DatabaseUtils.cursorRowToContentValues(c, v);
+                s.tasks.add(v);
+            }
+        } finally {
+            c.close();
+        }
+        for (ContentValues t : s.tasks) {
+            Cursor sc = r.query("subtasks", null, "task_id = ?",
+                    new String[]{String.valueOf(t.getAsLong("id"))}, null, null, null);
+            try {
+                while (sc.moveToNext()) {
+                    ContentValues v = new ContentValues();
+                    android.database.DatabaseUtils.cursorRowToContentValues(sc, v);
+                    s.subs.add(v);
+                }
+            } finally {
+                sc.close();
+            }
+        }
+        return s;
+    }
+
+    void restore(Snap s) {
+        SQLiteDatabase w = getWritableDatabase();
+        w.beginTransaction();
+        try {
+            for (ContentValues v : s.tasks) w.insertWithOnConflict("tasks", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+            for (ContentValues v : s.subs) w.insertWithOnConflict("subtasks", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+            w.setTransactionSuccessful();
+        } finally {
+            w.endTransaction();
+        }
+    }
+
+    /** A fresh, not-done copy of a task with its subtasks (un-ticked). A reminder in the past is dropped. */
+    long duplicate(long id) {
+        Snap s = snapshot("id = ?", new String[]{String.valueOf(id)});
+        if (s.tasks.isEmpty()) return -1;
+        ContentValues t = s.tasks.get(0);
+        t.remove("id");
+        t.put("created", System.currentTimeMillis());
+        t.put("done", 0);
+        t.put("fired", 0);
+        t.put("snooze_until", 0);
+        Long due = t.getAsLong("due_at");
+        if (due == null || due <= System.currentTimeMillis()) {
+            t.put("due_at", 0);
+            t.put("repeat_mode", 0);
+            t.put("is_alarm", 0);
+        }
+        SQLiteDatabase w = getWritableDatabase();
+        long nid = w.insert("tasks", null, t);
+        for (ContentValues v : s.subs) {
+            v.remove("id");
+            v.put("task_id", nid);
+            v.put("done", 0);
+            w.insert("subtasks", null, v);
+        }
+        return nid;
+    }
+
+    void resetSubs(long taskId) {
+        getWritableDatabase().execSQL("UPDATE subtasks SET done = 0 WHERE task_id = ?",
+                new Object[]{taskId});
     }
 
     void clearDone() {

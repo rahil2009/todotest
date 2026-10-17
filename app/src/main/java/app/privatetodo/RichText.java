@@ -98,7 +98,7 @@ final class RichText {
 
     /** Terminal-style code block: black panel with a border, indented light monospace text, accent bar. */
     static final class Block extends MetricAffectingSpan implements LineBackgroundSpan,
-            android.text.style.LeadingMarginSpan {
+            android.text.style.LeadingMarginSpan, android.text.style.LineHeightSpan {
         static final int BG = 0xFF000000;
         static final int FG = 0xFFE6EDF3;
 
@@ -111,6 +111,23 @@ final class RichText {
         public void updateDrawState(TextPaint p) {
             p.setTypeface(Typeface.MONOSPACE);
             p.setColor(FG);
+        }
+
+        /** Breathing room above the first line and below the last line of the block. */
+        @Override
+        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
+                                 Paint.FontMetricsInt fm) {
+            if (!(text instanceof Spanned)) return;
+            Spanned sp = (Spanned) text;
+            int pad = Math.round(12 * density);
+            if (start <= sp.getSpanStart(this)) {
+                fm.ascent -= pad;
+                fm.top -= pad;
+            }
+            if (end >= sp.getSpanEnd(this)) {
+                fm.descent += pad;
+                fm.bottom += pad;
+            }
         }
 
         @Override
