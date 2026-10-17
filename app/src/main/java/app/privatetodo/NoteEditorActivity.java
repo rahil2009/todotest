@@ -32,6 +32,7 @@ public class NoteEditorActivity extends Activity {
     static final String EXTRA_ID = "note_id";
 
     private static final int BULLET_KEY = -1;
+    private static final int SIZE_KEY = -9;
     private static final int CHECK_KEY = -2;
 
     private TaskDb db;
@@ -163,7 +164,15 @@ public class NoteEditorActivity extends Activity {
         body.setHint("Start writing…");
         body.setHintTextColor(Pal.muted);
         body.setTextColor(Pal.ink);
-        body.setTextSize(17);
+        scale = Prefs.noteScale(this);
+        body.setTextSize(17 * scale);
+        body.setZoomListener((f, done) -> {
+            if (done) {
+                Prefs.setNoteScale(this, scale);
+                return;
+            }
+            setScale(scale * f);
+        });
         body.setLineSpacing(0, 1.15f);
         body.setBackground(null);
         body.setGravity(Gravity.TOP | Gravity.START);
@@ -258,12 +267,34 @@ public class NoteEditorActivity extends Activity {
         return t;
     }
 
+    private float scale = 1f;
+
+    private void setScale(float v) {
+        scale = Math.max(0.7f, Math.min(2.6f, v));
+        body.setTextSize(17 * scale);
+        title.setTextSize(22 * scale);
+    }
+
+    private void pickSize() {
+        final String[] names = {"Small", "Normal", "Large", "Huge"};
+        final float[] vals = {0.8f, 1f, 1.35f, 1.8f};
+        new Dlg.Builder(this)
+                .setTitle("Text size")
+                .setItems(names, (d, i) -> {
+                    setScale(vals[i]);
+                    Prefs.setNoteScale(this, scale);
+                })
+                .show();
+    }
+
     private View buildToolbar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(8), dp(6), dp(8), dp(6));
 
+        TextView aa = addButton(bar, SIZE_KEY, "Aa", Typeface.BOLD, "Text size");
+        aa.setOnClickListener(v -> pickSize());
         addButton(bar, RichText.BOLD, "B", Typeface.BOLD, "Bold");
         addButton(bar, RichText.ITALIC, "I", Typeface.ITALIC, "Italic");
         addButton(bar, RichText.UNDER, "U", Typeface.NORMAL, "Underline");
@@ -387,6 +418,7 @@ public class NoteEditorActivity extends Activity {
             } else {
                 on = isOn(key, s, en);
             }
+            if (key == SIZE_KEY) on = false;
             style(b.getValue(), on);
         }
     }

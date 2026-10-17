@@ -244,6 +244,13 @@ final class DialView extends LinearLayout {
             p.setTextSize(20 * density);
             p.setSelectionDividerHeight(dp(2));
         }
+        // centred (selected) value is bold; the faded neighbours stay regular
+        for (int i = 0; i < p.getChildCount(); i++) {
+            View ch = p.getChildAt(i);
+            if (ch instanceof android.widget.EditText) {
+                ((android.widget.EditText) ch).setTypeface(Typeface.DEFAULT_BOLD);
+            }
+        }
         p.setOnValueChangedListener((v, o, n) -> changed());
         return p;
     }

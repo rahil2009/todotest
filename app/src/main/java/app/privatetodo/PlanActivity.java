@@ -239,10 +239,11 @@ public class PlanActivity extends Activity {
         content.addView(summaryCard(done, total, overdue.size(), loose.size()));
 
         addSection("Overdue", overdue, true);
-        addSection("Morning", morning, false);
-        addSection("Afternoon", afternoon, false);
-        addSection("Evening", evening, false);
-        if (total == 0 && overdue.isEmpty()) {
+        boolean pastDay = day < todayStart;
+        addTimeline("Morning", morning, 6, 12, pastDay, loose);
+        addTimeline("Afternoon", afternoon, 12, 17, pastDay, loose);
+        addTimeline("Evening", evening, 17, 22, pastDay, loose);
+        if (total == 0 && overdue.isEmpty() && pastDay) {
             TextView empty = text("Nothing planned for this day.", 15, Pal.muted, false);
             empty.setPadding(dp(8), dp(16), dp(8), 0);
             content.addView(empty);
@@ -308,6 +309,134 @@ public class PlanActivity extends Activity {
         if (list.isEmpty()) return;
         content.addView(sectionLabel(name));
         for (Task t : list) content.addView(agendaRow(t, overdue));
+    }
+
+    /** A part of the day: tasks in time order, with hatched "free" blocks where nothing is planned. */
+    private void addTimeline(String name, List<Task> list, int fromH, int toH, boolean pastDay,
+                             List<Task> loose) {
+        long now = System.currentTimeMillis();
+        long winEnd = dayAt(day, toH, 0);
+        long cursor = dayAt(day, fromH, 0);
+        if (!pastDay && day == startOfDay(now) && now > cursor) {
+            cursor = now - now % (15 * 60_000L) + 15 * 60_000L; // next quarter hour
+        }
+        List<View> views = new ArrayList<>();
+        final long hour = 3_600_000L;
+        for (Task t : list) {
+            if (!pastDay && t.due - cursor >= hour && !t.done) views.add(freeBlock(cursor, t.due, loose));
+            views.add(agendaRow(t, false));
+            cursor = Math.max(cursor, t.due + 30 * 60_000L);
+        }
+        if (!pastDay && winEnd - cursor >= hour) views.add(freeBlock(cursor, winEnd, loose));
+        if (views.isEmpty()) return;
+        content.addView(sectionLabel(name));
+        for (View v : views) content.addView(v);
+    }
+
+    private View freeBlock(final long from, final long to, final List<Task> loose) {
+        FreeBlock b = new FreeBlock(this);
+        b.setText(clock(from) + " \u2013 " + clock(to) + "  \u00b7  Free, tap to fill");
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1,
+                Math.max(dp(52), Math.min(dp(96), (int) ((to - from) / 3_600_000L) * dp(26))));
+        lp.bottomMargin = dp(8);
+        b.setLayoutParams(lp);
+        b.setContentDescription("Free from " + clock(from) + " to " + clock(to) + ". Tap to fill.");
+        b.setOnClickListener(v -> {
+            Hap.tick(v);
+            fillSlot(from, loose);
+        });
+        return b;
+    }
+
+    private String clock(long t) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(t);
+        return String.format(Locale.US, "%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
+    }
+
+    private void fillSlot(final long at, final List<Task> loose) {
+        final String[] names = new String[loose.size() + 1];
+        names[0] = "+ New task";
+        for (int i = 0; i < loose.size(); i++) names[i + 1] = loose.get(i).title;
+        new Dlg.Builder(this)
+                .setTitle("Fill " + clock(at))
+                .setItems(names, (d, i) -> {
+                    if (i == 0) newTaskAt(at);
+                    else {
+                        assign(loose.get(i - 1), at);
+                        render();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void newTaskAt(final long at) {
+        final android.widget.EditText in = new android.widget.EditText(this);
+        in.setHint("What needs doing?");
+        in.setSingleLine(true);
+        in.setTextColor(Pal.ink);
+        in.setHintTextColor(Pal.muted);
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(in, new FrameLayout.LayoutParams(-1, -2));
+        new Dlg.Builder(this)
+                .setTitle("New task at " + clock(at))
+                .setView(box)
+                .setPositiveButton("Add", (d, w) -> {
+                    String title = in.getText().toString().trim();
+                    if (title.isEmpty()) return;
+                    long id = db.add(title, at, 0, 0, false);
+                    Reminders.schedule(this, db.get(id));
+                    Hap.confirm(content);
+                    render();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Diagonal-hatched empty time block. */
+    private static final class FreeBlock extends TextView {
+        private final Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint edge = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Path clip = new android.graphics.Path();
+        private final float d;
+
+        FreeBlock(Context c) {
+            super(c);
+            d = c.getResources().getDisplayMetrics().density;
+            setGravity(Gravity.CENTER);
+            setTextSize(13);
+            setTypeface(Typeface.DEFAULT_BOLD);
+            setTextColor(Pal.accent);
+            setPadding(Math.round(12 * d), 0, Math.round(12 * d), 0);
+            line.setColor(Pal.accent);
+            line.setAlpha(Pal.dark ? 60 : 50);
+            line.setStrokeWidth(1.5f * d);
+            edge.setStyle(Paint.Style.STROKE);
+            edge.setStrokeWidth(1.5f * d);
+            edge.setColor(Pal.accent);
+            edge.setAlpha(140);
+            edge.setPathEffect(new android.graphics.DashPathEffect(new float[]{6 * d, 5 * d}, 0));
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float r = 16 * d;
+            float inset = edge.getStrokeWidth() / 2f;
+            RectF rf = new RectF(inset, inset, getWidth() - inset, getHeight() - inset);
+            clip.reset();
+            clip.addRoundRect(rf, r, r, android.graphics.Path.Direction.CW);
+            c.save();
+            c.clipPath(clip);
+            float step = 12 * d;
+            for (float x = -getHeight(); x < getWidth(); x += step) {
+                c.drawLine(x, getHeight(), x + getHeight(), 0, line); // slanted lines
+            }
+            c.restore();
+            c.drawRoundRect(rf, r, r, edge);
+            super.onDraw(c);
+        }
     }
 
     private View agendaRow(final Task t, boolean overdue) {

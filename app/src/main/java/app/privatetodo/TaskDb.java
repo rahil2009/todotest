@@ -23,8 +23,15 @@ final class TaskDb extends SQLiteOpenHelper {
             "id", "title", "done", "due_at", "repeat_mode", "repeat_unit", "is_alarm", "snooze_until", "fired",
             "sound", "volume", "priority"};
 
+    private final Context appCtx;
+
     TaskDb(Context context) {
         super(context, "tasks.db", null, 7);
+        appCtx = context.getApplicationContext();
+    }
+
+    private void changed() {
+        TaskWidget.refreshSoon(appCtx);
     }
 
     @Override
@@ -184,6 +191,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void setPriority(long id, int priority) {
+        changed();
         ContentValues v = new ContentValues();
         v.put("priority", Math.max(0, Math.min(3, priority)));
         getWritableDatabase().update("tasks", v, "id = ?", new String[]{String.valueOf(id)});
@@ -198,6 +206,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     long add(String title, long due, int repeat, int repeatUnit, boolean alarm) {
+        changed();
         ContentValues v = new ContentValues();
         v.put("title", title);
         v.put("done", 0);
@@ -210,6 +219,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void update(long id, String title, long due, int repeat, int repeatUnit, boolean alarm) {
+        changed();
         Task old = get(id);
         ContentValues v = new ContentValues();
         v.put("title", title);
@@ -227,6 +237,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void setDone(long id, boolean done) {
+        changed();
         ContentValues v = new ContentValues();
         v.put("done", done ? 1 : 0);
         if (done) {
@@ -243,6 +254,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void setState(long id, long due, boolean fired, long snooze) {
+        changed();
         ContentValues v = new ContentValues();
         v.put("due_at", due);
         v.put("fired", fired ? 1 : 0);
@@ -257,6 +269,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void delete(long id) {
+        changed();
         SQLiteDatabase w = getWritableDatabase();
         w.delete("subtasks", "task_id = ?", new String[]{String.valueOf(id)});
         w.delete("tasks", "id = ?", new String[]{String.valueOf(id)});
@@ -298,6 +311,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void restore(Snap s) {
+        changed();
         SQLiteDatabase w = getWritableDatabase();
         w.beginTransaction();
         try {
@@ -342,6 +356,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     void clearDone() {
+        changed();
         SQLiteDatabase w = getWritableDatabase();
         w.execSQL("DELETE FROM subtasks WHERE task_id IN (SELECT id FROM tasks WHERE done = 1)");
         w.delete("tasks", "done = 1", null);

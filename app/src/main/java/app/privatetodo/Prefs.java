@@ -57,6 +57,15 @@ final class Prefs {
         sp(c).edit().putString("presets", v).apply();
     }
 
+    /** Text size multiplier for the notebook (pinch to zoom, or the Aa button). */
+    static float noteScale(Context c) {
+        return sp(c).getFloat("note_scale", 1f);
+    }
+
+    static void setNoteScale(Context c, float v) {
+        sp(c).edit().putFloat("note_scale", v).apply();
+    }
+
     private static String key(String what, int kind) {
         return what + (kind == ALARM ? "_alarm" : "_notif");
     }

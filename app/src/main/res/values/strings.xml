@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Private Todo</string>
+    <string name="widget_tasks_desc">Today\'s tasks, tick them off from the home screen</string>
+    <string name="widget_quick_desc">Add a task in one tap</string>
 </resources>

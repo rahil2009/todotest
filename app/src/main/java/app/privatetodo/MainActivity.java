@@ -93,6 +93,24 @@ public class MainActivity extends Activity {
         setContentView(buildUi());
         Fonts.apply(getWindow().getDecorView());
         refresh();
+        handleWidgetIntent(getIntent());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleWidgetIntent(intent);
+    }
+
+    /** The widgets' "+" opens the app with the keyboard up, ready to type a task. */
+    private void handleWidgetIntent(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra(TaskWidget.EXTRA_ADD, false)) return;
+        intent.removeExtra(TaskWidget.EXTRA_ADD);
+        pillInput.postDelayed(() -> {
+            pillInput.requestFocus();
+            getSystemService(InputMethodManager.class).showSoftInput(pillInput, 0);
+        }, 250);
     }
 
     @Override

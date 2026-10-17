@@ -119,12 +119,16 @@ final class RichText {
                                  Paint.FontMetricsInt fm) {
             if (!(text instanceof Spanned)) return;
             Spanned sp = (Spanned) text;
-            int pad = Math.round(12 * density);
-            if (start <= sp.getSpanStart(this)) {
+            int pad = Math.round(8 * density);
+            int a = sp.getSpanStart(this);
+            int b = sp.getSpanEnd(this);
+            // only lines that really belong to this block; lines before/after never match
+            if (a < 0 || start < a || start >= Math.max(b, a + 1)) return;
+            if (start == a) {
                 fm.ascent -= pad;
                 fm.top -= pad;
             }
-            if (end >= sp.getSpanEnd(this)) {
+            if (end >= b) {
                 fm.descent += pad;
                 fm.bottom += pad;
             }

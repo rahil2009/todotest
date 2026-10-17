@@ -112,3 +112,6 @@ Undo pill (4 s, draining bar) after delete / clear / complete; Duplicate in the 
 
 ## v3.9
 Plan mode (week strip, day agenda, progress ring, one-tap scheduling, "Plan my day"), custom quick "Remind me" buttons (add with + Add, long-press to remove), a slider-style Undo pill, and ticking the last subtask now moves the task to Done with its subtasks left ticked.
+
+## v3.10
+Code blocks: fixed the huge padding (small gap above the first and below the last line only). Notes: pinch with two fingers to zoom text, and an "Aa" button for Small / Normal / Large / Huge (remembered). Plan mode: hatched, dashed "free" blocks for empty stretches of an hour or more; tap one to put an untimed task there or add a new task at that time. Dials: the centred value is bold. Home-screen widgets: "Today" (tick tasks off, + to add) and "Quick add". Widgets read only the local database.

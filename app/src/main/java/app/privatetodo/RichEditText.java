@@ -21,6 +21,13 @@ final class RichEditText extends EditText {
         void onCheckTap(int lineStart);
     }
 
+    interface ZoomListener {
+        void onZoom(float factor, boolean done);
+    }
+
+    private ZoomListener zoomListener;
+    private final android.view.ScaleGestureDetector scaler;
+    private boolean zooming;
     private SelectionListener listener;
     private CheckTapListener checkListener;
     private float downX;
@@ -78,6 +85,19 @@ final class RichEditText extends EditText {
 
     RichEditText(Context c) {
         super(c);
+        scaler = new android.view.ScaleGestureDetector(c,
+                new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                    @Override
+                    public boolean onScale(android.view.ScaleGestureDetector d) {
+                        if (zoomListener != null) zoomListener.onZoom(d.getScaleFactor(), false);
+                        return true;
+                    }
+
+                    @Override
+                    public void onScaleEnd(android.view.ScaleGestureDetector d) {
+                        if (zoomListener != null) zoomListener.onZoom(1f, true);
+                    }
+                });
         addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int d) { }
             @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
@@ -116,6 +136,10 @@ final class RichEditText extends EditText {
         }
     }
 
+    void setZoomListener(ZoomListener l) {
+        zoomListener = l;
+    }
+
     void setSelectionListener(SelectionListener l) {
         listener = l;
     }
@@ -127,6 +151,17 @@ final class RichEditText extends EditText {
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        scaler.onTouchEvent(e);
+        if (scaler.isInProgress() || e.getPointerCount() > 1) {
+            zooming = true;
+            if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+            return true; // two fingers: pinch only, never moves the cursor or ticks a box
+        }
+        if (zooming) {
+            if (e.getActionMasked() == MotionEvent.ACTION_UP
+                    || e.getActionMasked() == MotionEvent.ACTION_CANCEL) zooming = false;
+            return true;
+        }
         boolean handled = super.onTouchEvent(e);
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
             downX = e.getX();
