@@ -24,10 +24,12 @@ final class Task {
     final int priority;
     /** Alarm style that also takes over the screen while the phone is unlocked. */
     final boolean always;
+    /** Optional emoji shown before the title ("" = none). */
+    final String emoji;
 
     Task(long id, String title, boolean done, long due, int repeat, int repeatUnit,
          boolean alarm, long snooze, boolean fired, String sound, int volume, int priority,
-         boolean always) {
+         boolean always, String emoji) {
         this.id = id;
         this.title = title;
         this.done = done;
@@ -41,5 +43,6 @@ final class Task {
         this.volume = volume;
         this.priority = priority;
         this.always = alarm && always;
+        this.emoji = emoji == null ? "" : emoji;
     }
 }

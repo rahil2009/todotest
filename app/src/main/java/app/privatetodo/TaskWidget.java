@@ -150,7 +150,7 @@ public class TaskWidget extends AppWidgetProvider {
 
     static RemoteViews taskRow(Context ctx, Task t, SimpleDateFormat f) {
         RemoteViews r = new RemoteViews(ctx.getPackageName(), R.layout.widget_row);
-        r.setTextViewText(R.id.r_title, t.title);
+        r.setTextViewText(R.id.r_title, t.emoji.isEmpty() ? t.title : t.emoji + "  " + t.title);
         r.setTextViewText(R.id.r_time, t.due > 0 ? f.format(new Date(t.due)) : "");
         Intent done = new Intent(ctx, TaskWidget.class).setAction(ACTION_DONE).putExtra(EXTRA_ID, t.id)
                 .setData(Uri.parse("widget://done/" + t.id));

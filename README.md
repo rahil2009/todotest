@@ -118,3 +118,6 @@ Code blocks: fixed the huge padding (small gap above the first and below the las
 
 ## v3.11
 Dials: new own Wheel view (replaces NumberPicker) so the centred value is always bold on every dial. Notes: tables (the table button inserts rows x columns; the next-cell button moves between cells and adds a row at the end; tapping the table button inside a table adds a row or column or removes it). Widgets: Tasks (switch Today / Tomorrow / Upcoming / Active / Priority / All by tapping the title or on adding), Notebook, Plan (with free stretches) and Quick add. Plan screen: free blocks now line up with task cards (time on the left).
+
+## v3.12
+Emoji per task (editor > Emoji; shows on the list, Plan and widgets). Date/time now shows as a squarish tile (red outline overdue, solid accent today, neutral later) so it never looks like a link pill. Plan: filling a free gap or an untimed task lets you pick the exact hour and minute (5 min steps), and tapping a time on the agenda moves that task. Tables rebuilt: column widths follow the content, padded cells, bold tinted header row (new tables start with "Column 1.." selected), and tapping anywhere in a cell puts the cursor in that cell. Database version 8 (adds the emoji column; updates in place).

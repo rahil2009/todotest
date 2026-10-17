@@ -351,7 +351,7 @@ public class PlanActivity extends Activity {
         row.setContentDescription("Free from " + clock(from) + " to " + clock(to) + ". Tap to fill.");
         View.OnClickListener l = v -> {
             Hap.tick(v);
-            fillSlot(from, loose);
+            fillSlot(from, to, loose);
         };
         row.setOnClickListener(l);
         b.setOnClickListener(l);
@@ -364,19 +364,85 @@ public class PlanActivity extends Activity {
         return String.format(Locale.US, "%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
     }
 
-    private void fillSlot(final long at, final List<Task> loose) {
+    private void fillSlot(final long from, final long to, final List<Task> loose) {
         final String[] names = new String[loose.size() + 1];
         names[0] = "+ New task";
-        for (int i = 0; i < loose.size(); i++) names[i + 1] = loose.get(i).title;
+        for (int i = 0; i < loose.size(); i++) {
+            Task t = loose.get(i);
+            names[i + 1] = t.emoji.isEmpty() ? t.title : t.emoji + "  " + t.title;
+        }
         new Dlg.Builder(this)
-                .setTitle("Fill " + clock(at))
+                .setTitle("Fill " + clock(from) + " \u2013 " + clock(to))
                 .setItems(names, (d, i) -> {
-                    if (i == 0) newTaskAt(at);
-                    else {
-                        assign(loose.get(i - 1), at);
-                        render();
+                    final int hFrom = hourOf(from);
+                    final int hTo = Math.min(23, hourOf(to - 60_000L));
+                    if (i == 0) {
+                        pickTime("When in this gap?", from, hFrom, hTo, at -> newTaskAt(at));
+                    } else {
+                        final Task t = loose.get(i - 1);
+                        pickTime("Time for \u201C" + t.title + "\u201D", from, hFrom, hTo, at -> {
+                            assign(t, at);
+                            render();
+                        });
                     }
                 })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private static int minuteOf(long t) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(t);
+        return c.get(Calendar.MINUTE);
+    }
+
+    private static int hourOf(long t) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(t);
+        return c.get(Calendar.HOUR_OF_DAY);
+    }
+
+    /** Hour + minute wheels (5 minute steps), starting at {@code start}; any time in [minH, maxH] is allowed. */
+    private void pickTime(String title, long start, int minH, int maxH, final java.util.function.LongConsumer done) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(start);
+        int h = Math.max(minH, Math.min(maxH, c.get(Calendar.HOUR_OF_DAY)));
+        int m = c.get(Calendar.MINUTE) / 5;
+        final String[] hours = new String[maxH - minH + 1];
+        for (int i = 0; i < hours.length; i++) hours[i] = String.format(Locale.US, "%02d", minH + i);
+        final String[] mins = new String[12];
+        for (int i = 0; i < 12; i++) mins[i] = String.format(Locale.US, "%02d", i * 5);
+        final Wheel hw = new Wheel(this);
+        hw.setMinValue(0);
+        hw.setMaxValue(hours.length - 1);
+        hw.setDisplayedValues(hours);
+        hw.setWrapSelectorWheel(hours.length > 5);
+        hw.setValue(h - minH);
+        final Wheel mw = new Wheel(this);
+        mw.setMinValue(0);
+        mw.setMaxValue(11);
+        mw.setDisplayedValues(mins);
+        mw.setWrapSelectorWheel(true);
+        mw.setValue(m);
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER);
+        row.setPadding(dp(24), dp(8), dp(24), 0);
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(Pal.chip);
+        g.setCornerRadius(dp(24));
+        row.setBackground(g);
+        row.addView(hw, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView colon = text(":", 22, Pal.ink, true);
+        row.addView(colon);
+        row.addView(mw, new LinearLayout.LayoutParams(0, -2, 1f));
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        box.addView(row);
+        final int baseH = minH;
+        new Dlg.Builder(this)
+                .setTitle(title)
+                .setView(box)
+                .setPositiveButton("Set", (d, w) -> done.accept(dayAt(day, baseH + hw.getValue(), mw.getValue() * 5)))
                 .setNegativeButton("Cancel", null)
                 .show();
     }
@@ -462,6 +528,18 @@ public class PlanActivity extends Activity {
                 ? new SimpleDateFormat("d MMM", Locale.getDefault()).format(new Date(t.due))
                 : String.format(Locale.US, "%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
         TextView time = text(when, 13, overdue ? Pal.overdue : Pal.muted, true);
+        if (!t.done) {
+            time.setOnClickListener(v -> {
+                Hap.tick(v);
+                final Task tt = t;
+                pickTime("Move \u201C" + t.title + "\u201D", t.due, 0, 23, at -> {
+                    assign(tt, dayAt(day, hourOf(at), minuteOf(at)));
+                    render();
+                });
+            });
+            time.setMinHeight(dp(44));
+            time.setGravity(Gravity.CENTER_VERTICAL);
+        }
         row.addView(time, new LinearLayout.LayoutParams(dp(52), -2));
 
         LinearLayout card = new LinearLayout(this);
@@ -495,7 +573,7 @@ public class PlanActivity extends Activity {
         });
         card.addView(check, new LinearLayout.LayoutParams(dp(44), dp(44)));
 
-        TextView title = text(t.title, 16, t.done ? Pal.muted : Pal.ink, false);
+        TextView title = text(t.emoji.isEmpty() ? t.title : t.emoji + "  " + t.title, 16, t.done ? Pal.muted : Pal.ink, false);
         if (t.done) title.setPaintFlags(title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
         title.setMaxLines(2);
         title.setPadding(dp(2), dp(8), dp(4), dp(8));
@@ -546,7 +624,7 @@ public class PlanActivity extends Activity {
         lp.bottomMargin = dp(8);
         card.setLayoutParams(lp);
 
-        TextView title = text(t.title, 16, Pal.ink, false);
+        TextView title = text(t.emoji.isEmpty() ? t.title : t.emoji + "  " + t.title, 16, Pal.ink, false);
         title.setMaxLines(2);
         card.addView(title);
 
@@ -567,6 +645,15 @@ public class PlanActivity extends Activity {
             });
             slots.addView(ch);
         }
+        TextView pick = chip("Pick time\u2026", true);
+        pick.setOnClickListener(v -> {
+            Hap.tick(v);
+            pickTime("Time for \u201C" + t.title + "\u201D", dayAt(day, 9, 0), 0, 23, at -> {
+                assign(t, at);
+                render();
+            });
+        });
+        slots.addView(pick);
         if (!any) {
             TextView ch = chip("In 1 hour", false);
             ch.setOnClickListener(v -> {

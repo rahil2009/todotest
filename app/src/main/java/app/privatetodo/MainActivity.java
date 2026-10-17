@@ -543,6 +543,63 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    private static boolean sameDay(long a, long b) {
+        java.util.Calendar x = java.util.Calendar.getInstance();
+        java.util.Calendar y = java.util.Calendar.getInstance();
+        x.setTimeInMillis(a);
+        y.setTimeInMillis(b);
+        return x.get(java.util.Calendar.YEAR) == y.get(java.util.Calendar.YEAR)
+                && x.get(java.util.Calendar.DAY_OF_YEAR) == y.get(java.util.Calendar.DAY_OF_YEAR);
+    }
+
+    private static final String[] EMOJIS = {
+            "\uD83D\uDCDE", "\uD83D\uDCE7", "\uD83D\uDCB0", "\uD83D\uDED2", "\uD83C\uDF4E", "\uD83C\uDFCB\uFE0F",
+            "\uD83D\uDCDA", "\uD83D\uDCBB", "\uD83D\uDCA1", "\uD83D\uDCC5", "\u23F0", "\uD83C\uDFE0",
+            "\uD83D\uDE97", "\u2708\uFE0F", "\uD83C\uDF82", "\uD83C\uDF81", "\uD83D\uDC8A", "\uD83E\uDDD1\u200D\u2695\uFE0F",
+            "\uD83D\uDC36", "\uD83C\uDF31", "\uD83E\uDDF9", "\uD83D\uDD27", "\uD83D\uDCDD", "\uD83D\uDCE6",
+            "\uD83D\uDCB3", "\uD83C\uDF7D\uFE0F", "\u2615", "\uD83C\uDFAC", "\uD83C\uDFB5", "\uD83D\uDECF\uFE0F",
+            "\u2764\uFE0F", "\u2B50", "\uD83D\uDD25", "\u26A0\uFE0F", "\uD83C\uDFAF", "\uD83D\uDCAA"};
+
+    /** Emoji picker: a grid of common ones plus a box for any emoji from the keyboard. */
+    private void pickEmoji(String current, final java.util.function.Consumer<String> done) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        final android.app.AlertDialog[] dlg = new android.app.AlertDialog[1];
+        FlowLayout grid = new FlowLayout(this, dp(4), dp(4));
+        for (final String e : EMOJIS) {
+            TextView t = text(e, 26, Pal.ink, false);
+            t.setGravity(Gravity.CENTER);
+            t.setOnClickListener(v -> {
+                Hap.tick(v);
+                done.accept(e);
+                dlg[0].dismiss();
+            });
+            grid.addView(t, new ViewGroup.LayoutParams(dp(48), dp(48)));
+        }
+        box.addView(grid);
+        final EditText own = new EditText(this);
+        own.setHint("Or type any emoji");
+        own.setSingleLine(true);
+        own.setTextColor(Pal.ink);
+        own.setHintTextColor(Pal.muted);
+        own.setText(current);
+        LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(-1, -2);
+        olp.topMargin = dp(12);
+        box.addView(own, olp);
+        android.app.AlertDialog.Builder b = new Dlg.Builder(this)
+                .setTitle("Task emoji")
+                .setView(box)
+                .setPositiveButton("Use", (d, w) -> {
+                    String s = own.getText().toString().trim();
+                    if (s.length() > 8) s = s.substring(0, 8);
+                    done.accept(s);
+                })
+                .setNeutralButton("Remove", (d, w) -> done.accept(""))
+                .setNegativeButton("Cancel", null);
+        dlg[0] = b.show();
+    }
+
     private String subLine(Task t) {
         long when = t.snooze > 0 ? t.snooze : t.due;
         if (when <= 0) return null;
@@ -764,6 +821,32 @@ public class MainActivity extends Activity {
             if (subRows.size() < 40) addSubRow(subBox, subRows, subRows.size(), "", false, true);
         });
         form.addView(addSub, new LinearLayout.LayoutParams(-1, -2));
+
+        TextView emojiLabel = text("Emoji", 13, Pal.muted, true);
+        emojiLabel.setPadding(0, dp(12), 0, dp(6));
+        form.addView(emojiLabel);
+        final String[] emoji = {existing == null ? "" : existing.emoji};
+        final TextView emojiBtn = text("", 24, Pal.ink, false);
+        emojiBtn.setGravity(Gravity.CENTER);
+        final Runnable[] updEmoji = new Runnable[1];
+        updEmoji[0] = () -> {
+            boolean none = emoji[0].isEmpty();
+            emojiBtn.setText(none ? "\u263A  Add" : emoji[0] + "  Change");
+            emojiBtn.setTextSize(none ? 15 : 22);
+            emojiBtn.setTextColor(none ? Pal.muted : Pal.ink);
+            emojiBtn.setTypeface(none ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            GradientDrawable eg = new GradientDrawable();
+            eg.setCornerRadius(dp(20));
+            eg.setColor(Pal.chip);
+            emojiBtn.setBackground(eg);
+        };
+        updEmoji[0].run();
+        emojiBtn.setPadding(dp(18), 0, dp(18), 0);
+        emojiBtn.setOnClickListener(v -> pickEmoji(emoji[0], picked -> {
+            emoji[0] = picked;
+            updEmoji[0].run();
+        }));
+        form.addView(emojiBtn, new LinearLayout.LayoutParams(-2, dp(44)));
 
         TextView prioLabel = text("Priority", 13, Pal.muted, true);
         prioLabel.setPadding(0, dp(12), 0, dp(6));
@@ -1228,6 +1311,7 @@ public class MainActivity extends Activity {
             }
             db.setSound(id, tSound[0], tVol[0]);
             db.setPriority(id, prio[0]);
+            db.setEmoji(id, emoji[0]);
             db.setAlarmMode(id, alarm[0], alarm[0] && always[0]);
             db.replaceSubs(id, subsToSave);
             Reminders.schedule(this, db.get(id));
@@ -1469,6 +1553,7 @@ public class MainActivity extends Activity {
     private final class Row extends FrameLayout {
         private final IconView check;
         private final TextView title;
+        private final TextView emojiView;
         private final TextView sub;
         private final LinearLayout textCol;
         private final LinearLayout subsBox;
@@ -1525,13 +1610,17 @@ public class MainActivity extends Activity {
             check = new IconView(c, IconView.CHECK);
             card.addView(check, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
+            emojiView = text("", 24, Pal.ink, false);
+            emojiView.setGravity(Gravity.CENTER);
+            emojiView.setVisibility(View.GONE);
+            card.addView(emojiView, new LinearLayout.LayoutParams(dp(36), dp(48)));
+
             LinearLayout col = new LinearLayout(c);
             col.setOrientation(LinearLayout.VERTICAL);
             col.setPadding(0, dp(8), 0, dp(8));
             title = text("", 17, Pal.ink, false);
             col.addView(title);
-            sub = text("", 13, Pal.muted, false);
-            sub.setPadding(0, dp(2), 0, 0);
+            sub = text("", 12, Pal.muted, false);
             col.addView(sub);
             subsBox = new LinearLayout(c);
             subsBox.setOrientation(LinearLayout.VERTICAL);
@@ -1628,6 +1717,9 @@ public class MainActivity extends Activity {
             card.setTranslationX(0);
             reveal.setVisibility(View.INVISIBLE);
 
+            emojiView.setText(t.emoji);
+            emojiView.setAlpha(t.done ? 0.5f : 1f);
+            emojiView.setVisibility(t.emoji.isEmpty() ? View.GONE : View.VISIBLE);
             title.setText(t.title);
             title.setPaintFlags(t.done
                     ? title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
@@ -1651,11 +1743,38 @@ public class MainActivity extends Activity {
             if (line == null) {
                 sub.setVisibility(View.GONE);
             } else {
+                // A square-ish "when" tile, so it never reads as one of the round link pills:
+                // overdue = red, today = solid accent, later = neutral, done = muted.
                 long when = t.snooze > 0 ? t.snooze : t.due;
-                boolean overdue = !t.done && when < System.currentTimeMillis();
+                long now = System.currentTimeMillis();
+                boolean overdue = !t.done && when < now;
+                boolean today = !t.done && !overdue && sameDay(when, now);
+                GradientDrawable wb = new GradientDrawable();
+                wb.setCornerRadius(dp(8));
+                int fg;
+                if (t.done) {
+                    wb.setColor(Pal.chip);
+                    fg = Pal.muted;
+                } else if (overdue) {
+                    wb.setColor((Pal.overdue & 0x00FFFFFF) | 0x26000000);
+                    wb.setStroke(dp(1), Pal.overdue);
+                    fg = Pal.overdue;
+                } else if (today) {
+                    wb.setColor(Pal.accent);
+                    fg = Pal.onAccent;
+                } else {
+                    wb.setColor(Pal.chip);
+                    fg = Pal.ink;
+                }
                 sub.setVisibility(View.VISIBLE);
                 sub.setText(line);
-                sub.setTextColor(overdue ? Pal.overdue : (t.done ? Pal.muted : Pal.accent));
+                sub.setTextColor(fg);
+                sub.setTypeface(Typeface.DEFAULT_BOLD);
+                sub.setBackground(wb);
+                sub.setPadding(dp(8), dp(3), dp(8), dp(3));
+                LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-2, -2);
+                slp.topMargin = dp(4);
+                sub.setLayoutParams(slp);
             }
 
             check.setOn(t.done);

@@ -321,7 +321,9 @@ public class NoteEditorActivity extends Activity {
                 .setPositiveButton("Insert", (d, w) -> {
                     int c = RichText.insertTable(body.getText(), selStart(), cols.getValue(), rows.getValue());
                     body.resyncTables();
-                    body.setSelection(Math.min(c, body.getText().length()));
+                    int he = RichText.lineEnd(body.getText(), c);
+                    body.setSelection(Math.min(c, he), he); // header 1 selected: type to replace it
+                    body.requestFocus();
                     dirty = true;
                     refreshToolbar();
                 })
