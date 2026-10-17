@@ -69,6 +69,7 @@ public class AlarmActivity extends Activity {
             return;
         }
         setContentView(build(t, subs));
+        Fonts.apply(getWindow().getDecorView());
     }
 
     private View build(Task t, List<Sub> subs) {

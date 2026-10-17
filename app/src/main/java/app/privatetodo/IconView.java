@@ -21,9 +21,12 @@ final class IconView extends View {
     static final int NOTE = 10;
     static final int TRASH = 11;
     static final int PLUS = 12;
+    static final int LOCK = 13;
+    static final int SWIPE_DONE = 14;
 
     private final int kind;
     private boolean on;
+    private int tint;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private final android.graphics.RectF rect = new android.graphics.RectF();
@@ -36,6 +39,12 @@ final class IconView extends View {
         if (kind != BADGE) setClickable(true);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
+    }
+
+    /** Overrides the drawing colour of simple line icons (trash). */
+    void setTint(int color) {
+        tint = color;
+        invalidate();
     }
 
     /** CHECK: ticked. BELL: show the "needs attention" dot. SEARCH: show the close (X) state. */
@@ -139,7 +148,7 @@ final class IconView extends View {
                 canvas.drawLine(cx, cy + 1 * d, cx + 4 * d, cy + 1 * d, paint);
                 break;
             case TRASH:
-                stroke(1.9f, Pal.muted);
+                stroke(1.9f, tint != 0 ? tint : Pal.muted);
                 canvas.drawLine(cx - 7 * d, cy - 5 * d, cx + 7 * d, cy - 5 * d, paint);
                 canvas.drawLine(cx - 2.5f * d, cy - 5 * d, cx - 2.5f * d, cy - 8 * d, paint);
                 canvas.drawLine(cx + 2.5f * d, cy - 5 * d, cx + 2.5f * d, cy - 8 * d, paint);
@@ -150,6 +159,20 @@ final class IconView extends View {
                 path.lineTo(cx + 4.5f * d, cy + 8 * d);
                 path.lineTo(cx + 5.5f * d, cy - 5 * d);
                 canvas.drawPath(path, paint);
+                break;
+            case LOCK: // padlock, used in the "stored only on this device" line
+                stroke(1.7f, Pal.muted);
+                rect.set(cx - 5.5f * d, cy - 1 * d, cx + 5.5f * d, cy + 6.5f * d);
+                canvas.drawRoundRect(rect, 2 * d, 2 * d, paint);
+                path.reset();
+                path.moveTo(cx - 3.2f * d, cy - 1 * d);
+                path.lineTo(cx - 3.2f * d, cy - 3.5f * d);
+                path.cubicTo(cx - 3.2f * d, cy - 8.5f * d, cx + 3.2f * d, cy - 8.5f * d, cx + 3.2f * d, cy - 3.5f * d);
+                path.lineTo(cx + 3.2f * d, cy - 1 * d);
+                canvas.drawPath(path, paint);
+                break;
+            case SWIPE_DONE: // plain white tick, shown behind a row while swiping it right
+                drawTick(canvas, cx, cy, 1.6f, tint != 0 ? tint : Color.WHITE, 2.2f);
                 break;
             case PLUS:
                 stroke(2.4f, Pal.onAccent);

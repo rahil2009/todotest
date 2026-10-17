@@ -133,14 +133,16 @@ final class RichEditText extends EditText {
             downY = e.getY();
         } else if (e.getActionMasked() == MotionEvent.ACTION_UP && checkListener != null) {
             int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
-            float boxWidth = 44 * getResources().getDisplayMetrics().density;
             if (Math.abs(e.getX() - downX) < slop && Math.abs(e.getY() - downY) < slop
-                    && e.getX() < getTotalPaddingLeft() + boxWidth) {
+                    && getLayout() != null) {
                 int off = getOffsetForPosition(e.getX(), e.getY());
                 CharSequence t = getText();
                 int ls = RichText.lineStart(t, off);
                 if (off <= ls + 1 && RichText.prefixAt(t, ls) >= RichText.P_CHECK_OFF) {
-                    checkListener.onCheckTap(ls);
+                    // only the circle (plus a thumb's margin) ticks; the text after it just edits
+                    float edge = getTotalPaddingLeft() + getLayout().getPrimaryHorizontal(ls + 1)
+                            + 10 * getResources().getDisplayMetrics().density;
+                    if (e.getX() <= edge) checkListener.onCheckTap(ls);
                 }
             }
         }

@@ -46,6 +46,7 @@ public class NotesActivity extends Activity {
         density = getResources().getDisplayMetrics().density;
         db = new TaskDb(this);
         setContentView(build());
+        Fonts.apply(getWindow().getDecorView());
     }
 
     @Override
@@ -152,7 +153,7 @@ public class NotesActivity extends Activity {
         pbg.setColor(Pal.accent);
         pbg.setCornerRadius(dp(28));
         pill.setBackground(pbg);
-        pill.setElevation(dp(6));
+        pill.setElevation(dp(1));
         pill.setClickable(true);
         pill.setContentDescription("New note");
         pill.setPadding(dp(18), 0, dp(24), 0);
@@ -184,7 +185,7 @@ public class NotesActivity extends Activity {
     }
 
     private void confirmDelete(final Note n) {
-        new AlertDialog.Builder(this)
+        new Dlg.Builder(this)
                 .setTitle("Delete note?")
                 .setMessage(n.title.isEmpty() ? "Untitled" : n.title)
                 .setPositiveButton("Delete", (d, w) -> {
@@ -250,6 +251,7 @@ public class NotesActivity extends Activity {
                 return true;
             });
             wrap.addView(card, new FrameLayout.LayoutParams(-1, -2));
+            Fonts.apply(wrap);
             return wrap;
         }
     }

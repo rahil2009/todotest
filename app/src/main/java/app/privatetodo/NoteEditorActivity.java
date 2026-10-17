@@ -12,6 +12,7 @@ import android.text.Spanned;
 import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
@@ -51,6 +52,7 @@ public class NoteEditorActivity extends Activity {
     private boolean typing;
     private int insStart;
     private int insCount;
+    private int insBefore;
     private int expectCursor = -1;
 
     @Override
@@ -61,15 +63,25 @@ public class NoteEditorActivity extends Activity {
         density = getResources().getDisplayMetrics().density;
         RichText.init(this);
         db = new TaskDb(this);
-        noteId = getIntent().getLongExtra(EXTRA_ID, 0);
+        noteId = savedInstanceState != null ? savedInstanceState.getLong(EXTRA_ID, 0)
+                : getIntent().getLongExtra(EXTRA_ID, 0);
+        if (noteId == 0) noteId = getIntent().getLongExtra(EXTRA_ID, 0);
         setContentView(build());
+        Fonts.apply(getWindow().getDecorView());
 
         Note n = noteId > 0 ? db.note(noteId) : null;
         if (n == null) {
             noteId = 0;
             dateLabel.setText("New note");
+            getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
             body.requestFocus();
         } else {
+            getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_HIDDEN
+                    | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+            View content = findViewById(android.R.id.content);
+            content.setFocusableInTouchMode(true);
+            content.requestFocus(); // so the title does not grab focus and pop the keyboard up
             title.setText(n.title);
             RichText.fromJson(n.body, body.getText());
             dateLabel.setText("Edited " + Reminders.when(this, n.updated));
@@ -82,6 +94,13 @@ public class NoteEditorActivity extends Activity {
     protected void onPause() {
         saveNow();
         super.onPause();
+    }
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        saveNow();
+        out.putLong(EXTRA_ID, noteId);
+        super.onSaveInstanceState(out);
     }
 
     @Override
@@ -162,6 +181,7 @@ public class NoteEditorActivity extends Activity {
             public void onTextChanged(CharSequence c, int start, int before, int count) {
                 insStart = start;
                 insCount = count;
+                insBefore = before;
             }
 
             @Override
@@ -244,7 +264,6 @@ public class NoteEditorActivity extends Activity {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(8), dp(6), dp(8), dp(6));
 
-        addButton(bar, RichText.HEAD, "H", Typeface.BOLD, "Heading");
         addButton(bar, RichText.BOLD, "B", Typeface.BOLD, "Bold");
         addButton(bar, RichText.ITALIC, "I", Typeface.ITALIC, "Italic");
         addButton(bar, RichText.UNDER, "U", Typeface.NORMAL, "Underline");
@@ -253,10 +272,11 @@ public class NoteEditorActivity extends Activity {
         SpannableString marked = new SpannableString("A");
         marked.setSpan(new RichText.Hl(RichText.HL_COLORS[0]), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         hl.setText(marked);
+        addButton(bar, RichText.HEAD, "H", Typeface.BOLD, "Heading");
+        addButton(bar, BULLET_KEY, "\u2022", Typeface.BOLD, "Bullet list");
+        addButton(bar, CHECK_KEY, "(\u2713)", Typeface.BOLD, "To-do list");
         addButton(bar, RichText.CODE, "`", Typeface.NORMAL, "Inline code").setTypeface(Typeface.MONOSPACE);
         addButton(bar, RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block").setTypeface(Typeface.MONOSPACE);
-        addButton(bar, BULLET_KEY, "•", Typeface.BOLD, "Bullet list");
-        addButton(bar, CHECK_KEY, "(\u2713)", Typeface.BOLD, "To-do list");
 
         HorizontalScrollView scroll = new HorizontalScrollView(this);
         scroll.setHorizontalScrollBarEnabled(false);
@@ -396,23 +416,41 @@ public class NoteEditorActivity extends Activity {
                 }
             }
             boolean moved = false;
-            if (insCount == 1 && insStart < e.length() && e.charAt(insStart) == '\n') {
-                int ps = RichText.lineStart(e, insStart); // the line that Enter just ended
+            // Enter = the last inserted character is a newline (some keyboards commit "word\n" together).
+            int nl = insStart + insCount - 1;
+            boolean enter = insCount >= 1 && nl < e.length() && e.charAt(nl) == '\n'
+                    && e.subSequence(insStart, nl).toString().indexOf('\n') < 0;
+            if (enter) {
+                int ps = RichText.lineStart(e, nl); // the line that Enter just ended
+                boolean restEmpty = nl + 1 >= e.length() || e.charAt(nl + 1) == '\n';
                 int kind = RichText.prefixAt(e, ps);
-                if (kind != RichText.P_NONE) {
-                    if (insStart - ps == 2) { // Enter on an empty item ends the list
-                        e.delete(ps, insStart + 1);
-                        expectCursor = ps;
-                    } else {
-                        // New line continues the list; a to-do item continues as an unticked one.
-                        String next = kind == RichText.P_BULLET ? RichText.BULLET : RichText.CHECK_OFF;
-                        e.insert(insStart + 1, next);
-                        RichText.apply(e, RichText.STRIKE, insStart + 1, insStart + 1 + next.length(),
-                                0, false);
-                        expectCursor = insStart + 1 + next.length();
-                    }
+                if (kind != RichText.P_NONE && nl - ps == 2 && restEmpty) { // Enter on an empty item ends the list
+                    e.delete(ps, nl + 1);
+                    expectCursor = ps;
                     body.setSelection(Math.min(expectCursor, e.length()));
                     moved = true;
+                } else if (kind != RichText.P_NONE) {
+                    // New line continues the list; a to-do item continues as an unticked one.
+                    String next = kind == RichText.P_BULLET ? RichText.BULLET : RichText.CHECK_OFF;
+                    e.insert(nl + 1, next);
+                    RichText.apply(e, RichText.STRIKE, nl + 1, nl + 1 + next.length(), 0, false);
+                    expectCursor = nl + 1 + next.length();
+                    body.setSelection(Math.min(expectCursor, e.length()));
+                    moved = true;
+                }
+                if (restEmpty) endLineStyles(e, ps, nl);
+            }
+            // Backspace over the space of "• " / "☐ " removes the whole marker.
+            if (!moved && insCount == 0 && insBefore == 1) {
+                int ls = RichText.lineStart(e, Math.min(insStart, e.length()));
+                if (insStart == ls + 1 && ls < e.length()) {
+                    char ch = e.charAt(ls);
+                    if (ch == '\u2022' || ch == '\u2610' || ch == '\u2611') {
+                        e.delete(ls, ls + 1);
+                        expectCursor = ls;
+                        body.setSelection(Math.min(ls, e.length()));
+                        moved = true;
+                    }
                 }
             }
             if (!moved) expectCursor = insStart + insCount;
@@ -422,6 +460,24 @@ public class NoteEditorActivity extends Activity {
             insCount = 0;
         }
         refreshToolbar();
+    }
+
+    /**
+     * After Enter on a line, the next line should not inherit a heading, and Enter on an empty line
+     * inside a code block leaves the block.
+     */
+    private void endLineStyles(Editable e, int ps, int nl) {
+        for (Object o : e.getSpans(ps, nl + 1, Object.class)) {
+            int type = RichText.typeOf(o);
+            if (type == RichText.HEAD && e.getSpanEnd(o) == nl + 1) {
+                int a = e.getSpanStart(o);
+                e.removeSpan(o);
+                if (a < nl) e.setSpan(RichText.make(RichText.HEAD, 0), a, nl, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
+            }
+        }
+        if (nl == ps && RichText.active(e, RichText.BLOCK, ps, nl + 1)) {
+            RichText.apply(e, RichText.BLOCK, ps, nl + 1, 0, false); // second Enter ends the code block
+        }
     }
 
     // ------------------------------------------------------------ saving
@@ -438,13 +494,14 @@ public class NoteEditorActivity extends Activity {
             }
         } else {
             noteId = db.saveNote(noteId, t, RichText.toJson(b), b.toString());
+            getIntent().putExtra(EXTRA_ID, noteId);
             dateLabel.setText("Edited " + Reminders.when(this, System.currentTimeMillis()));
         }
         dirty = false;
     }
 
     private void confirmDelete() {
-        new AlertDialog.Builder(this)
+        new Dlg.Builder(this)
                 .setTitle("Delete this note?")
                 .setMessage("This permanently deletes it from this device.")
                 .setPositiveButton("Delete", (d, w) -> {

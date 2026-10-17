@@ -28,6 +28,7 @@ public class SettingsActivity extends Activity {
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         setContentView(build());
+        Fonts.apply(getWindow().getDecorView());
     }
 
     @Override
@@ -169,7 +170,7 @@ public class SettingsActivity extends Activity {
     private void chooseSound(final int kind) {
         pickKind = kind;
         String[] items = {"Sounds on this phone…", "Audio file…", "Phone default", "Silent"};
-        new AlertDialog.Builder(this)
+        new Dlg.Builder(this)
                 .setTitle(kind == Prefs.ALARM ? "Alarm sound" : "Notification sound")
                 .setItems(items, (d, which) -> {
                     switch (which) {

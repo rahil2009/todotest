@@ -27,6 +27,8 @@ import android.text.TextWatcher;
 import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewConfiguration;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.view.KeyEvent;
 import android.view.WindowManager;
@@ -57,7 +59,7 @@ public class MainActivity extends Activity {
     private float density;
 
     private TextView subtitle;
-    private TextView clearDone;
+    private View clearDone;
     private IconView bell;
     private final TextView[] chips = new TextView[3];
     private LinearLayout emptyView;
@@ -85,6 +87,7 @@ public class MainActivity extends Activity {
         db = new TaskDb(this);
         Reminders.ensureChannels(this);
         setContentView(buildUi());
+        Fonts.apply(getWindow().getDecorView());
         refresh();
     }
 
@@ -159,12 +162,12 @@ public class MainActivity extends Activity {
         bell.setOnClickListener(v -> showSetup());
         header.addView(bell, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
-        clearDone = text("Clear done", 15, Pal.accent, true);
-        clearDone.setGravity(Gravity.CENTER);
-        clearDone.setMinHeight(dp(48));
-        clearDone.setPadding(dp(8), 0, dp(8), 0);
-        clearDone.setOnClickListener(v -> confirmClearDone());
-        header.addView(clearDone, new LinearLayout.LayoutParams(-2, -2));
+        IconView trash = new IconView(this, IconView.TRASH);
+        trash.setTint(Pal.ink);
+        trash.setContentDescription("Clear completed tasks");
+        trash.setOnClickListener(v -> confirmClearDone());
+        clearDone = trash;
+        header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
         column.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
         // Filter chips
@@ -199,8 +202,7 @@ public class MainActivity extends Activity {
         listView.setPadding(0, 0, 0, dp(96));
         listView.setVerticalScrollBarEnabled(false);
 
-        TextView footer = text("Offline · stored only on this device", 13, Pal.muted, false);
-        footer.setGravity(Gravity.CENTER);
+        LinearLayout footer = lockLine("Offline \u00B7 stored only on this device");
         footer.setPadding(0, dp(16), 0, dp(8));
         listView.addFooterView(footer, null, false);
 
@@ -222,9 +224,7 @@ public class MainActivity extends Activity {
         emptyBody.setGravity(Gravity.CENTER);
         emptyBody.setPadding(0, dp(8), 0, 0);
         emptyView.addView(emptyBody);
-        TextView privacy = text(
-                "No account · no tracking · no internet permission", 13, Pal.muted, false);
-        privacy.setGravity(Gravity.CENTER);
+        LinearLayout privacy = lockLine("No account \u00B7 no tracking \u00B7 no internet permission");
         privacy.setPadding(0, dp(24), 0, 0);
         emptyView.addView(privacy);
         body.addView(emptyView, new FrameLayout.LayoutParams(-1, -1));
@@ -251,7 +251,7 @@ public class MainActivity extends Activity {
         pillBg.setColor(Pal.raised);
         pillBg.setCornerRadius(dp(26));
         pill.setBackground(pillBg);
-        pill.setElevation(dp(6));
+        pill.setElevation(dp(1));
 
         pillInput = new EditText(this);
         pillInput.setBackground(null);
@@ -327,6 +327,20 @@ public class MainActivity extends Activity {
         return root;
     }
 
+    /** Small padlock + muted text, centred. */
+    private LinearLayout lockLine(String s) {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.HORIZONTAL);
+        l.setGravity(Gravity.CENTER);
+        IconView lock = new IconView(this, IconView.LOCK);
+        lock.setClickable(false);
+        l.addView(lock, new LinearLayout.LayoutParams(dp(20), dp(20)));
+        TextView t = text(s, 13, Pal.muted, false);
+        t.setPadding(dp(4), 0, 0, 0);
+        l.addView(t);
+        return l;
+    }
+
     private TextView text(String s, int sp, int color, boolean bold) {
         TextView t = new TextView(this);
         t.setText(s);
@@ -345,7 +359,7 @@ public class MainActivity extends Activity {
         g.setShape(GradientDrawable.OVAL);
         g.setColor(Pal.raised);
         v.setBackground(g);
-        v.setElevation(dp(6));
+        v.setElevation(dp(1));
     }
 
     /** Adds a plain task straight from the bottom pill (no reminder; use the clock for that). */
@@ -438,6 +452,11 @@ public class MainActivity extends Activity {
         g.setColor(on ? Pal.sel : offColor);
         t.setBackground(g);
         t.setTextColor(on ? Pal.onSel : Pal.muted);
+    }
+
+    /** Low = blue, medium = amber, high = red. */
+    static int priorityColor(int level) {
+        return level == 1 ? 0xFF3F8FE0 : level == 2 ? 0xFFF2A93B : 0xFFE5534B;
     }
 
     private TextView formChip(String s, boolean on) {
@@ -542,7 +561,7 @@ public class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         scroll.addView(box);
-        setupDialog = new AlertDialog.Builder(this)
+        setupDialog = new Dlg.Builder(this)
                 .setTitle("Reminder setup")
                 .setView(scroll)
                 .setPositiveButton("Close", null)
@@ -617,6 +636,9 @@ public class MainActivity extends Activity {
 
         final EditText input = new EditText(this);
         input.setHint("What needs doing?");
+        input.setHintTextColor(Pal.muted);
+        input.setTextColor(Pal.ink);
+        input.setTextSize(18);
         input.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
@@ -655,6 +677,43 @@ public class MainActivity extends Activity {
         });
         form.addView(addSub, new LinearLayout.LayoutParams(-1, -2));
 
+        TextView prioLabel = text("Priority", 13, Pal.muted, true);
+        prioLabel.setPadding(0, dp(12), 0, dp(6));
+        form.addView(prioLabel);
+        final int[] prio = {existing == null ? 0 : existing.priority};
+        final TextView[] prioChips = new TextView[4];
+        LinearLayout prioRow = new LinearLayout(this);
+        prioRow.setOrientation(LinearLayout.HORIZONTAL);
+        String[] prioNames = {"None", "Low", "Medium", "High"};
+        final Runnable[] updPrio = new Runnable[1];
+        updPrio[0] = () -> {
+            for (int k = 0; k < 4; k++) {
+                boolean on = prio[0] == k;
+                styleChip(prioChips[k], on, Pal.chip);
+                if (on && k > 0) {
+                    GradientDrawable g = new GradientDrawable();
+                    g.setCornerRadius(dp(20));
+                    g.setColor(priorityColor(k));
+                    prioChips[k].setBackground(g);
+                    prioChips[k].setTextColor(k == 2 ? 0xFF111513 : Color.WHITE);
+                }
+            }
+        };
+        for (int k = 0; k < 4; k++) {
+            final int level = k;
+            prioChips[k] = formChip(prioNames[k], false);
+            prioChips[k].setPadding(dp(4), 0, dp(4), 0);
+            prioChips[k].setOnClickListener(v -> {
+                prio[0] = level;
+                updPrio[0].run();
+            });
+            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            if (k < 3) plp.rightMargin = dp(8);
+            prioRow.addView(prioChips[k], plp);
+        }
+        updPrio[0].run();
+        form.addView(prioRow, new LinearLayout.LayoutParams(-1, -2));
+
         TextView remindLabel = text("Remind me", 13, Pal.muted, true);
         remindLabel.setPadding(0, dp(16), 0, dp(6));
         form.addView(remindLabel);
@@ -662,16 +721,13 @@ public class MainActivity extends Activity {
         // Quick presets
         LinearLayout quick = new LinearLayout(this);
         quick.setOrientation(LinearLayout.HORIZONTAL);
-        String[] qNames = {"In 1 hour", "Tonight 8 pm", "Tomorrow 9 am", "Pick any time…"};
+        String[] qNames = {"In 1 hour", "Tonight 8 pm", "Tomorrow 9 am"};
         for (int i = 0; i < qNames.length; i++) {
             final int which = i;
             TextView q = formChip(qNames[i], false);
-            if (which == 3) q.setTextColor(Pal.accent);
+            q.setTextSize(13);
+            q.setPadding(dp(4), 0, dp(4), 0);
             q.setOnClickListener(v -> {
-                if (which == 3) {
-                    openDial.run();
-                    return;
-                }
                 Calendar c = Calendar.getInstance();
                 if (which == 0) {
                     c.add(Calendar.HOUR_OF_DAY, 1);
@@ -692,14 +748,11 @@ public class MainActivity extends Activity {
                 dial.setTime(due[0]);
                 upd[0].run();
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.rightMargin = dp(8);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1f);
+            if (i < qNames.length - 1) lp.rightMargin = dp(8);
             quick.addView(q, lp);
         }
-        HorizontalScrollView quickScroll = new HorizontalScrollView(this);
-        quickScroll.setHorizontalScrollBarEnabled(false);
-        quickScroll.addView(quick);
-        form.addView(quickScroll);
+        form.addView(quick, new LinearLayout.LayoutParams(-1, -2));
 
         // Picked time + clear
         LinearLayout pickRow = new LinearLayout(this);
@@ -790,18 +843,29 @@ public class MainActivity extends Activity {
         edlp.topMargin = dp(8);
         extras.addView(everyDial, edlp);
 
-        final Switch alarmSwitch = new Switch(this);
-        alarmSwitch.setText("Alarm style: full screen on the lock screen, rings until dismissed");
-        alarmSwitch.setTextSize(15);
-        alarmSwitch.setTextColor(Pal.ink);
-        alarmSwitch.setMinHeight(dp(56));
-        alarmSwitch.setPadding(0, dp(12), 0, 0);
-        alarmSwitch.setChecked(alarm[0]);
-        alarmSwitch.setOnCheckedChangeListener((b, on) -> {
+        LinearLayout alarmRow = new LinearLayout(this);
+        alarmRow.setOrientation(LinearLayout.HORIZONTAL);
+        alarmRow.setGravity(Gravity.CENTER_VERTICAL);
+        alarmRow.setMinimumHeight(dp(64));
+        alarmRow.setPadding(0, dp(12), 0, 0);
+        LinearLayout alarmText = new LinearLayout(this);
+        alarmText.setOrientation(LinearLayout.VERTICAL);
+        alarmText.addView(text("Alarm style", 16, Pal.ink, true));
+        TextView alarmDesc = text("Full screen on the lock screen. Rings until you dismiss it.", 13, Pal.muted, false);
+        alarmDesc.setPadding(0, dp(2), 0, 0);
+        alarmText.addView(alarmDesc);
+        alarmRow.addView(alarmText, new LinearLayout.LayoutParams(0, -2, 1f));
+        final ToggleView alarmSwitch = new ToggleView(this);
+        alarmSwitch.set(alarm[0], false);
+        alarmSwitch.setListener(on -> {
             alarm[0] = on;
             if (updSnd[0] != null) updSnd[0].run(); // default volume differs for alarms
         });
-        extras.addView(alarmSwitch, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(-2, -2);
+        swLp.leftMargin = dp(16);
+        alarmRow.addView(alarmSwitch, swLp);
+        alarmRow.setOnClickListener(v -> alarmSwitch.performClick());
+        extras.addView(alarmRow, new LinearLayout.LayoutParams(-1, -2));
 
         // Per-task sound and volume. Off by default: the task simply follows Settings.
         final String[] tSound = {existing == null ? "" : existing.sound};
@@ -897,7 +961,7 @@ public class MainActivity extends Activity {
                 updSnd[0].run();
                 Sound.play(this, kind, false, 6_000L, null, tSound[0], tVol[0]);
             };
-            new AlertDialog.Builder(this)
+            new Dlg.Builder(this)
                     .setTitle("Sound for this task")
                     .setItems(new String[]{"Sounds on this phone\u2026", "Audio file\u2026",
                             "Same as Settings", "Silent"}, (dd, which) -> {
@@ -913,7 +977,7 @@ public class MainActivity extends Activity {
 
         upd[0] = () -> {
             boolean has = due[0] > 0;
-            pick.setText(has ? Reminders.when(this, due[0]) : "Pick date & time");
+            pick.setText(has ? Reminders.when(this, due[0]) : "Pick any date & time\u2026");
             pick.setTextColor(has ? Pal.accent : Pal.muted);
             clear.setVisibility(has ? View.VISIBLE : View.GONE);
             extras.setVisibility(has ? View.VISIBLE : View.GONE);
@@ -932,7 +996,7 @@ public class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.addView(form);
 
-        final AlertDialog dialog = new AlertDialog.Builder(this)
+        final AlertDialog dialog = new Dlg.Builder(this)
                 .setTitle(existing == null ? "New task" : "Edit task")
                 .setView(scroll)
                 .setPositiveButton(existing == null ? "Add" : "Save", null)
@@ -944,6 +1008,7 @@ public class MainActivity extends Activity {
         });
         dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
         dialog.show();
+        Dlg.style(dialog);
         input.requestFocus();
 
         // Overridden so a validation error keeps the dialog (and the typed text) open.
@@ -972,6 +1037,7 @@ public class MainActivity extends Activity {
                 if (!st.isEmpty()) subsToSave.add(new Sub(0, id, st, r.done));
             }
             db.setSound(id, tSound[0], tVol[0]);
+            db.setPriority(id, prio[0]);
             db.replaceSubs(id, subsToSave);
             Reminders.schedule(this, db.get(id));
             if (d > 0) ensureReminderPermissions(alarm[0]);
@@ -1020,6 +1086,7 @@ public class MainActivity extends Activity {
         final SubRow r = new SubRow(text, done);
         rows.add(index, r);
         box.addView(r.view, index);
+        Fonts.apply(r.view);
 
         r.check.setOnClickListener(v -> {
             r.done = !r.done;
@@ -1062,7 +1129,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDelete(final Task t) {
-        new AlertDialog.Builder(this)
+        new Dlg.Builder(this)
                 .setTitle("Delete task?")
                 .setMessage(t.title)
                 .setPositiveButton("Delete", (d, w) -> {
@@ -1075,7 +1142,7 @@ public class MainActivity extends Activity {
     }
 
     private void confirmClearDone() {
-        new AlertDialog.Builder(this)
+        new Dlg.Builder(this)
                 .setTitle("Clear completed tasks?")
                 .setMessage("This permanently deletes them from this device.")
                 .setPositiveButton("Clear", (d, w) -> {
@@ -1130,12 +1197,39 @@ public class MainActivity extends Activity {
         private final LinearLayout textCol;
         private final LinearLayout subsBox;
         private final IconView delete;
+        private final LinearLayout card;
+        private final FrameLayout reveal;
+        private final GradientDrawable revealBg = new GradientDrawable();
+        private final IconView revealTick;
+        private final IconView revealTrash;
+        private final View prioBar;
+        private final int slop;
+        private Task bound;
+        private float downX;
+        private float downY;
+        private boolean swiping;
 
         Row(Context c) {
             super(c);
+            slop = ViewConfiguration.get(c).getScaledTouchSlop();
             setPadding(dp(20), dp(4), dp(20), dp(4));
 
-            LinearLayout card = new LinearLayout(c);
+            // Shown behind the card while swiping: green tick (right) / red bin (left).
+            reveal = new FrameLayout(c);
+            revealBg.setCornerRadius(dp(16));
+            reveal.setBackground(revealBg);
+            reveal.setVisibility(View.INVISIBLE);
+            revealTick = new IconView(c, IconView.SWIPE_DONE);
+            revealTick.setTint(Pal.onAccent);
+            revealTick.setClickable(false);
+            reveal.addView(revealTick, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.START | Gravity.CENTER_VERTICAL));
+            revealTrash = new IconView(c, IconView.TRASH);
+            revealTrash.setTint(Color.WHITE);
+            revealTrash.setClickable(false);
+            reveal.addView(revealTrash, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.END | Gravity.CENTER_VERTICAL));
+            addView(reveal, new FrameLayout.LayoutParams(-1, -1));
+
+            card = new LinearLayout(c);
             card.setOrientation(LinearLayout.HORIZONTAL);
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setMinimumHeight(dp(64));
@@ -1144,6 +1238,12 @@ public class MainActivity extends Activity {
             bg.setColor(Pal.card);
             bg.setCornerRadius(dp(16));
             card.setBackground(bg);
+
+            prioBar = new View(c);
+            prioBar.setVisibility(View.GONE);
+            LinearLayout.LayoutParams pbl = new LinearLayout.LayoutParams(dp(4), dp(32));
+            pbl.leftMargin = dp(6);
+            card.addView(prioBar, pbl);
 
             check = new IconView(c, IconView.CHECK);
             card.addView(check, new LinearLayout.LayoutParams(dp(48), dp(48)));
@@ -1169,13 +1269,102 @@ public class MainActivity extends Activity {
             addView(card, new FrameLayout.LayoutParams(-1, -2));
         }
 
+        // ---- swipe: right = done / not done, left = delete (asks first)
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent e) {
+            switch (e.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    downX = e.getX();
+                    downY = e.getY();
+                    swiping = false;
+                    break;
+                case MotionEvent.ACTION_MOVE:
+                    if (!swiping) {
+                        float dx = e.getX() - downX;
+                        float dy = e.getY() - downY;
+                        if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > Math.abs(dy) * 1.5f) {
+                            swiping = true;
+                            if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                        }
+                    }
+                    break;
+                default:
+                    break;
+            }
+            return swiping;
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent e) {
+            int a = e.getActionMasked();
+            if (a == MotionEvent.ACTION_DOWN) {
+                downX = e.getX();
+                downY = e.getY();
+                return true; // so a swipe that starts on the row padding still follows the finger
+            }
+            if (!swiping) {
+                if (a == MotionEvent.ACTION_MOVE) {
+                    float dx = e.getX() - downX;
+                    float dy = e.getY() - downY;
+                    if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > Math.abs(dy) * 1.5f) {
+                        swiping = true;
+                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                }
+                return true;
+            }
+            float dx = e.getX() - downX;
+            if (a == MotionEvent.ACTION_MOVE) {
+                showSwipe(dx);
+            } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+                swiping = false;
+                float limit = Math.max(dp(96), getWidth() * 0.3f);
+                Task t = bound;
+                card.animate().translationX(0).setDuration(160).withEndAction(
+                        () -> reveal.setVisibility(View.INVISIBLE)).start();
+                if (a == MotionEvent.ACTION_UP && t != null) {
+                    if (dx <= -limit) confirmDelete(t);
+                    else if (dx >= limit) toggleDone(t);
+                }
+            }
+            return true;
+        }
+
+        private void showSwipe(float dx) {
+            card.setTranslationX(dx);
+            reveal.setVisibility(View.VISIBLE);
+            boolean left = dx < 0;
+            revealBg.setColor(left ? 0xFFD64545 : Pal.accent);
+            revealTrash.setVisibility(left ? View.VISIBLE : View.INVISIBLE);
+            revealTick.setVisibility(left ? View.INVISIBLE : View.VISIBLE);
+        }
+
         void bind(final Task t) {
+            bound = t;
+            swiping = false;
+            card.animate().cancel();
+            card.setTranslationX(0);
+            reveal.setVisibility(View.INVISIBLE);
+
             title.setText(t.title);
-            Links.linkify(title); // links in the task text are tappable
-            title.setTextColor(t.done ? Pal.muted : Pal.ink);
             title.setPaintFlags(t.done
                     ? title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
                     : title.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
+            title.setTextColor(t.done ? Pal.muted : Pal.ink);
+            Links.linkify(title); // links show as pills; taps elsewhere still open the editor
+
+            if (t.priority > 0 && !t.done) {
+                GradientDrawable pg = new GradientDrawable();
+                pg.setCornerRadius(dp(2));
+                pg.setColor(priorityColor(t.priority));
+                prioBar.setBackground(pg);
+                prioBar.setVisibility(View.VISIBLE);
+                prioBar.setContentDescription(t.priority == 1 ? "Low priority"
+                        : t.priority == 2 ? "Medium priority" : "High priority");
+            } else {
+                prioBar.setVisibility(View.GONE);
+            }
 
             String line = subLine(t);
             if (line == null) {
@@ -1191,7 +1380,7 @@ public class MainActivity extends Activity {
             check.setOn(t.done);
             check.setContentDescription(t.done ? "Mark as not done" : "Mark as done");
             check.setOnClickListener(v -> toggleDone(t));
-            // Click lives on the column, so a tap on a link opens the link and any other tap edits.
+            // The whole text column opens the editor; only a tap exactly on a link pill opens the link.
             textCol.setOnClickListener(v -> editDialog(t, null));
             delete.setOnClickListener(v -> confirmDelete(t));
 
@@ -1215,9 +1404,12 @@ public class MainActivity extends Activity {
                         ? st.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
                         : st.getPaintFlags() & ~Paint.STRIKE_THRU_TEXT_FLAG);
                 Links.linkify(st);
+                // tapping a subtask's text also opens the editor
+                subRow.setOnClickListener(v -> editDialog(t, null));
                 subRow.addView(st, new LinearLayout.LayoutParams(0, -2, 1f));
                 subsBox.addView(subRow);
             }
+            Fonts.apply(this);
         }
     }
 }

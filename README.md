@@ -8,6 +8,14 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
   full editor with what you typed, for a reminder, repeat, subtasks or alarm style.
 - Search turns the pill into a live search over task and subtask text. Tap the X to leave search.
 
+## Task list gestures and extras
+- **Swipe a task right** to mark it done (or not done); **swipe left** to delete it (always asks first).
+- **Priority** (None / Low / Medium / High) is set in the New / Edit task popup. Higher priority sorts to the top, with a coloured bar on the card (blue, amber, red).
+- **Links** in a task show as small tinted pills. Tap the pill to open the link; tap anywhere else on the task to edit it.
+- The bin icon in the header clears all completed tasks (after asking).
+- Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
+- Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
+
 ## Notebook
 - Open it from the **notebook icon** in the header, next to the bell. Searchable list of notes, newest edit first.
 - **Editor toolbar:** heading, **bold**, *italic*, underline, ~~strikethrough~~, **highlight colours** (5 + none),

@@ -17,10 +17,10 @@ final class TaskDb extends SQLiteOpenHelper {
 
     private static final String[] COLS = {
             "id", "title", "done", "due_at", "repeat_mode", "repeat_unit", "is_alarm", "snooze_until", "fired",
-            "sound", "volume"};
+            "sound", "volume", "priority"};
 
     TaskDb(Context context) {
-        super(context, "tasks.db", null, 6);
+        super(context, "tasks.db", null, 7);
     }
 
     @Override
@@ -37,7 +37,8 @@ final class TaskDb extends SQLiteOpenHelper {
                 + "snooze_until INTEGER NOT NULL DEFAULT 0,"
                 + "fired INTEGER NOT NULL DEFAULT 0,"
                 + "sound TEXT NOT NULL DEFAULT '',"
-                + "volume INTEGER NOT NULL DEFAULT -1)");
+                + "volume INTEGER NOT NULL DEFAULT -1,"
+                + "priority INTEGER NOT NULL DEFAULT 0)");
         createSubtasks(db);
         createNotes(db);
     }
@@ -62,6 +63,9 @@ final class TaskDb extends SQLiteOpenHelper {
             db.execSQL("ALTER TABLE tasks ADD COLUMN sound TEXT NOT NULL DEFAULT ''");
             db.execSQL("ALTER TABLE tasks ADD COLUMN volume INTEGER NOT NULL DEFAULT -1");
         }
+        if (oldVersion < 7) { // priority: 0 none, 1 low, 2 medium, 3 high
+            db.execSQL("ALTER TABLE tasks ADD COLUMN priority INTEGER NOT NULL DEFAULT 0");
+        }
     }
 
     private static void createNotes(SQLiteDatabase db) {
@@ -85,7 +89,7 @@ final class TaskDb extends SQLiteOpenHelper {
     private static Task map(Cursor c) {
         return new Task(c.getLong(0), c.getString(1), c.getInt(2) == 1, c.getLong(3),
                 c.getInt(4), c.getInt(5), c.getInt(6) == 1, c.getLong(7), c.getInt(8) == 1,
-                c.getString(9), c.getInt(10));
+                c.getString(9), c.getInt(10), c.getInt(11));
     }
 
     List<Task> list(int filter) {
@@ -100,7 +104,7 @@ final class TaskDb extends SQLiteOpenHelper {
         }
         List<Task> out = new ArrayList<>();
         Cursor c = getReadableDatabase().query("tasks", COLS, where, args, null, null,
-                "done ASC, created DESC, id DESC");
+                "done ASC, priority DESC, created DESC, id DESC");
         try {
             while (c.moveToNext()) out.add(map(c));
         } finally {
@@ -140,6 +144,13 @@ final class TaskDb extends SQLiteOpenHelper {
         } finally {
             c.close();
         }
+    }
+
+    /** 0 none, 1 low, 2 medium, 3 high. */
+    void setPriority(long id, int priority) {
+        ContentValues v = new ContentValues();
+        v.put("priority", Math.max(0, Math.min(3, priority)));
+        getWritableDatabase().update("tasks", v, "id = ?", new String[]{String.valueOf(id)});
     }
 
     /** A task's own sound ("" = Settings) and volume (-1 = Settings). */

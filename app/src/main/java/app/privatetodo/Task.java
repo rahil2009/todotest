@@ -20,9 +20,11 @@ final class Task {
     final String sound;
     /** This task's own volume 0..100, -1 = use Settings. */
     final int volume;
+    /** 0 none, 1 low, 2 medium, 3 high. */
+    final int priority;
 
     Task(long id, String title, boolean done, long due, int repeat, int repeatUnit,
-         boolean alarm, long snooze, boolean fired, String sound, int volume) {
+         boolean alarm, long snooze, boolean fired, String sound, int volume, int priority) {
         this.id = id;
         this.title = title;
         this.done = done;
@@ -34,5 +36,6 @@ final class Task {
         this.fired = fired;
         this.sound = sound == null ? "" : sound;
         this.volume = volume;
+        this.priority = priority;
     }
 }

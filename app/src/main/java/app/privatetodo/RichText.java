@@ -244,6 +244,8 @@ final class RichText {
         for (int i = starts.size() - 1; i >= 0; i--) { // bottom up keeps earlier offsets valid
             int st = starts.get(i);
             int k = prefixAt(e, st);
+            boolean leavingTicked = k == P_CHECK_ON && !(check && !allSame);
+            if (leavingTicked) apply(e, STRIKE, st + 2, lineEnd(e, st), 0, false); // un-strike its text
             if (allSame) {
                 e.delete(st, st + 2);
                 delta -= 2;
