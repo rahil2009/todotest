@@ -103,7 +103,6 @@ final class RichEditText extends EditText {
             @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
             @Override public void afterTextChanged(Editable e) {
                 syncCircles(e);
-                resyncTables();
             }
         });
     }
@@ -137,42 +136,30 @@ final class RichEditText extends EditText {
         }
     }
 
-    /** Re-measures table columns (text size or width changed). */
-    void resyncTables() {
-        int avail = getWidth() > 0 ? getWidth() - getPaddingLeft() - getPaddingRight()
-                : getResources().getDisplayMetrics().widthPixels - Math.round(40 * getResources().getDisplayMetrics().density);
-        RichText.syncTables(getText(), getPaint(), avail);
+    interface TableTapListener {
+        void onTableTap(RichText.Tbl t);
+    }
+
+    private TableTapListener tableListener;
+
+    void setTableTapListener(TableTapListener l) {
+        tableListener = l;
     }
 
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         super.onSizeChanged(w, h, ow, oh);
-        if (w != ow) post(this::resyncTables);
+        RichText.tableWidth = Math.max(0, w - getPaddingLeft() - getPaddingRight());
     }
 
-    /** A tap anywhere in a table cell, even on empty space, puts the cursor in that cell. */
-    private boolean tapInTable(float x, float y) {
+    /** A tap on a table block opens its editor. */
+    private boolean tapOnTable(float x, float y) {
         android.text.Layout l = getLayout();
+        if (l == null || tableListener == null) return false;
         int line = l.getLineForVertical((int) (y - getTotalPaddingTop() + getScrollY()));
-        int ls = RichText.lineStart(getText(), l.getLineStart(line));
-        RichText.Tbl t = RichText.tableAt(getText(), ls);
-        if (t == null || t.widths.length == 0) return false;
-        float xl = x - getTotalPaddingLeft() + getScrollX();
-        int cell = t.widths.length - 1;
-        for (int k = 0; k < t.widths.length; k++) {
-            if (xl < t.edge(k + 1)) {
-                cell = k;
-                break;
-            }
-        }
-        int[] r = RichText.cellRange(getText(), ls, cell);
-        int off = getOffsetForPosition(x, y);
-        int target = (off >= r[0] && off <= r[1]) ? off : r[1];
-        requestFocus();
-        setSelection(target);
-        android.view.inputmethod.InputMethodManager imm =
-                getContext().getSystemService(android.view.inputmethod.InputMethodManager.class);
-        if (imm != null) imm.showSoftInput(this, 0);
+        RichText.Tbl t = RichText.tableOnLine(getText(), l.getLineStart(line));
+        if (t == null) return false;
+        tableListener.onTableTap(t);
         return true;
     }
 
@@ -206,7 +193,7 @@ final class RichEditText extends EditText {
         if (e.getActionMasked() == MotionEvent.ACTION_UP && getLayout() != null
                 && Math.abs(e.getX() - downX) < ViewConfiguration.get(getContext()).getScaledTouchSlop()
                 && Math.abs(e.getY() - downY) < ViewConfiguration.get(getContext()).getScaledTouchSlop()) {
-            if (tapInTable(e.getX(), e.getY())) return true;
+            if (tapOnTable(e.getX(), e.getY())) return true;
         }
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
             downX = e.getX();

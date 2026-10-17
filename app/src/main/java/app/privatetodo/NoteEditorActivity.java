@@ -87,7 +87,6 @@ public class NoteEditorActivity extends Activity {
             content.requestFocus(); // so the title does not grab focus and pop the keyboard up
             title.setText(n.title);
             RichText.fromJson(n.body, body.getText());
-            body.resyncTables();
             dateLabel.setText("Edited " + Reminders.when(this, n.updated));
         }
         dirty = false;
@@ -169,6 +168,7 @@ public class NoteEditorActivity extends Activity {
         body.setTextColor(Pal.ink);
         scale = Prefs.noteScale(this);
         body.setTextSize(17 * scale);
+        body.setTableTapListener(tb -> editTable(tb));
         body.setZoomListener((f, done) -> {
             if (done) {
                 Prefs.setNoteScale(this, scale);
@@ -276,27 +276,13 @@ public class NoteEditorActivity extends Activity {
         scale = Math.max(0.7f, Math.min(2.6f, v));
         body.setTextSize(17 * scale);
         title.setTextSize(22 * scale);
-        body.post(body::resyncTables);
     }
 
     private void tableMenu() {
-        final Editable e = body.getText();
-        final int s = selStart();
-        if (RichText.tableAt(e, s) == null) {
-            newTableDialog();
-            return;
-        }
-        new Dlg.Builder(this)
-                .setTitle("Table")
-                .setItems(new String[]{"Add row", "Add column", "Remove table"}, (d, i) -> {
-                    if (i == 0) body.setSelection(RichText.addRow(e, s));
-                    else if (i == 1) RichText.addColumn(e, s);
-                    else RichText.removeTable(e, s);
-                    body.resyncTables();
-                    dirty = true;
-                    refreshToolbar();
-                })
-                .show();
+        Editable e = body.getText();
+        RichText.Tbl t = RichText.tableOnLine(e, selStart());
+        if (t != null) editTable(t);
+        else newTableDialog();
     }
 
     private void newTableDialog() {
@@ -319,16 +305,154 @@ public class NoteEditorActivity extends Activity {
                 .setTitle("Insert table")
                 .setView(box)
                 .setPositiveButton("Insert", (d, w) -> {
-                    int c = RichText.insertTable(body.getText(), selStart(), cols.getValue(), rows.getValue());
-                    body.resyncTables();
-                    int he = RichText.lineEnd(body.getText(), c);
-                    body.setSelection(Math.min(c, he), he); // header 1 selected: type to replace it
-                    body.requestFocus();
+                    int at = RichText.insertTable(body.getText(), selStart(), cols.getValue(), rows.getValue());
+                    body.setSelection(Math.min(body.getText().length(), at + 2));
                     dirty = true;
-                    refreshToolbar();
+                    RichText.Tbl t = RichText.tableOnLine(body.getText(), at);
+                    if (t != null) editTable(t);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    // ----- table editor: a grid of real text fields (first row = column headers)
+
+    private String[][] tmpCells;
+    private LinearLayout tmpGrid;
+
+    private void editTable(final RichText.Tbl t) {
+        tmpCells = new String[t.rows()][];
+        for (int r = 0; r < t.rows(); r++) tmpCells[r] = t.cells[r].clone();
+        LinearLayout root = new LinearLayout(this);
+        root.setOrientation(LinearLayout.VERTICAL);
+        root.setPadding(dp(16), dp(8), dp(16), 0);
+
+        tmpGrid = new LinearLayout(this);
+        tmpGrid.setOrientation(LinearLayout.VERTICAL);
+        buildGrid();
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.addView(tmpGrid);
+        android.widget.ScrollView vs = new android.widget.ScrollView(this);
+        vs.addView(hs);
+        root.addView(vs, new LinearLayout.LayoutParams(-1, -2));
+
+        FlowLayout tools = new FlowLayout(this, dp(8), dp(8));
+        tools.setPadding(0, dp(8), 0, dp(4));
+        tools.addView(toolChip("+ Row", () -> {
+            if (tmpCells.length >= 40) return;
+            String[][] n2 = new String[tmpCells.length + 1][];
+            System.arraycopy(tmpCells, 0, n2, 0, tmpCells.length);
+            n2[tmpCells.length] = new String[tmpCells[0].length];
+            java.util.Arrays.fill(n2[tmpCells.length], "");
+            tmpCells = n2;
+            buildGrid();
+        }));
+        tools.addView(toolChip("+ Column", () -> {
+            if (tmpCells[0].length >= 8) return;
+            for (int r = 0; r < tmpCells.length; r++) {
+                String[] row = java.util.Arrays.copyOf(tmpCells[r], tmpCells[r].length + 1);
+                row[row.length - 1] = r == 0 ? "Column " + row.length : "";
+                tmpCells[r] = row;
+            }
+            buildGrid();
+        }));
+        tools.addView(toolChip("\u2212 Row", () -> {
+            if (tmpCells.length <= 2) return;
+            tmpCells = java.util.Arrays.copyOf(tmpCells, tmpCells.length - 1);
+            buildGrid();
+        }));
+        tools.addView(toolChip("\u2212 Column", () -> {
+            if (tmpCells[0].length <= 2) return;
+            for (int r = 0; r < tmpCells.length; r++) {
+                tmpCells[r] = java.util.Arrays.copyOf(tmpCells[r], tmpCells[r].length - 1);
+            }
+            buildGrid();
+        }));
+        root.addView(tools);
+
+        new Dlg.Builder(this)
+                .setTitle("Table")
+                .setView(root)
+                .setPositiveButton("Done", (d, w) -> {
+                    t.cells = tmpCells;
+                    RichText.refresh(body.getText(), t);
+                    dirty = true;
+                    body.invalidate();
+                })
+                .setNeutralButton("Remove table", (d, w) -> {
+                    Editable e = body.getText();
+                    int a = e.getSpanStart(t);
+                    if (a >= 0) {
+                        e.removeSpan(t);
+                        e.delete(a, Math.min(e.length(), a + 1));
+                        dirty = true;
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private TextView toolChip(String label, final Runnable action) {
+        TextView c = new TextView(this);
+        c.setText(label);
+        c.setTextSize(14);
+        c.setTypeface(Typeface.DEFAULT_BOLD);
+        c.setTextColor(Pal.accent);
+        c.setGravity(Gravity.CENTER);
+        c.setMinHeight(dp(44));
+        c.setPadding(dp(14), 0, dp(14), 0);
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(22));
+        g.setColor(Pal.chip);
+        c.setBackground(g);
+        c.setOnClickListener(v -> {
+            Hap.tick(v);
+            action.run();
+        });
+        return c;
+    }
+
+    private void buildGrid() {
+        tmpGrid.removeAllViews();
+        for (int r = 0; r < tmpCells.length; r++) {
+            LinearLayout row = new LinearLayout(this);
+            for (int k = 0; k < tmpCells[r].length; k++) {
+                final int rr = r;
+                final int kk = k;
+                EditText et = new EditText(this);
+                et.setText(tmpCells[r][k]);
+                et.setSingleLine(true);
+                et.setTextSize(15);
+                et.setTextColor(Pal.ink);
+                et.setHint(r == 0 ? "Header" : "");
+                et.setHintTextColor(Pal.muted);
+                et.setMaxLines(1);
+                et.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
+                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+                et.setTypeface(r == 0 ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+                et.setPadding(dp(10), 0, dp(10), 0);
+                GradientDrawable g = new GradientDrawable();
+                g.setCornerRadius(dp(8));
+                if (r == 0) {
+                    g.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x38000000 : 0x2E000000));
+                } else {
+                    g.setColor(Pal.chip);
+                }
+                et.setBackground(g);
+                et.addTextChangedListener(new SimpleWatcher() {
+                    @Override
+                    public void afterTextChanged(Editable s) {
+                        tmpCells[rr][kk] = s.toString();
+                    }
+                });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(128), dp(46));
+                lp.setMargins(0, 0, dp(6), dp(6));
+                row.addView(et, lp);
+            }
+            tmpGrid.addView(row);
+        }
+        Fonts.apply(tmpGrid);
     }
 
     private View labelled(String label, View v) {
@@ -376,7 +500,6 @@ public class NoteEditorActivity extends Activity {
         addButton(bar, BULLET_KEY, "\u2022", Typeface.BOLD, "Bullet list");
         addButton(bar, CHECK_KEY, "(\u2713)", Typeface.BOLD, "To-do list");
         addButton(bar, TABLE_KEY, "\u25A6", Typeface.BOLD, "Table");
-        addButton(bar, NEXT_KEY, "\u21E5", Typeface.BOLD, "Next table cell");
         addButton(bar, RichText.CODE, "`", Typeface.NORMAL, "Inline code").setTypeface(Typeface.MONOSPACE);
         addButton(bar, RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block").setTypeface(Typeface.MONOSPACE);
 
@@ -437,17 +560,6 @@ public class NoteEditorActivity extends Activity {
             tableMenu();
             return;
         }
-        if (key == NEXT_KEY) {
-            if (RichText.tableAt(e, s) == null) {
-                e.replace(s, en, "\t"); // outside a table: just a tab
-                dirty = true;
-            } else {
-                body.setSelection(RichText.nextCell(e, en));
-                dirty = true;
-            }
-            refreshToolbar();
-            return;
-        }
         boolean lineType = key == RichText.HEAD || key == RichText.BLOCK;
         if (s == en) {
             int a = RichText.lineStart(e, s);
@@ -504,7 +616,7 @@ public class NoteEditorActivity extends Activity {
             } else {
                 on = isOn(key, s, en);
             }
-            if (key == SIZE_KEY || key == NEXT_KEY) on = false;
+            if (key == SIZE_KEY) on = false;
             style(b.getValue(), on);
         }
     }
@@ -611,7 +723,7 @@ public class NoteEditorActivity extends Activity {
                 noteId = 0;
             }
         } else {
-            noteId = db.saveNote(noteId, t, RichText.toJson(b), b.toString());
+            noteId = db.saveNote(noteId, t, RichText.toJson(b), RichText.tablesPlain(b));
             getIntent().putExtra(EXTRA_ID, noteId);
             dateLabel.setText("Edited " + Reminders.when(this, System.currentTimeMillis()));
         }

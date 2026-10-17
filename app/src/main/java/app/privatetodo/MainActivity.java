@@ -799,7 +799,40 @@ public class MainActivity extends Activity {
         LinearLayout form = new LinearLayout(this);
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(24), dp(8), dp(24), dp(8));
-        form.addView(input, new LinearLayout.LayoutParams(-1, -2));
+
+        // title and emoji share one line; the emoji badge sits at the far right
+        final String[] emoji = {existing == null ? "" : existing.emoji};
+        final TextView emojiBtn = text("", 22, Pal.ink, false);
+        emojiBtn.setGravity(Gravity.CENTER);
+        emojiBtn.setIncludeFontPadding(false);
+        final Runnable updEmoji = () -> {
+            boolean none = emoji[0].isEmpty();
+            emojiBtn.setText(none ? "\u263A" : emoji[0]);
+            emojiBtn.setTextSize(none ? 20 : 22);
+            emojiBtn.setTextColor(none ? Pal.muted : Pal.ink);
+            GradientDrawable eg = new GradientDrawable();
+            eg.setShape(GradientDrawable.OVAL);
+            if (none) {
+                eg.setColor(Pal.chip);
+            } else {
+                eg.setColor((Pal.accent & 0x00FFFFFF) | 0x24000000);
+                eg.setStroke(dp(1), (Pal.accent & 0x00FFFFFF) | 0x59000000);
+            }
+            emojiBtn.setBackground(eg);
+        };
+        updEmoji.run();
+        emojiBtn.setContentDescription("Task emoji");
+        emojiBtn.setOnClickListener(v -> pickEmoji(emoji[0], picked -> {
+            emoji[0] = picked;
+            updEmoji.run();
+        }));
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+        titleRow.addView(input, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout.LayoutParams etl = new LinearLayout.LayoutParams(dp(44), dp(44));
+        etl.leftMargin = dp(8);
+        titleRow.addView(emojiBtn, etl);
+        form.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
 
         // Subtasks: press Enter on the keyboard to start the next one automatically.
         TextView subLabel = text("Subtasks", 13, Pal.muted, true);
@@ -821,32 +854,6 @@ public class MainActivity extends Activity {
             if (subRows.size() < 40) addSubRow(subBox, subRows, subRows.size(), "", false, true);
         });
         form.addView(addSub, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView emojiLabel = text("Emoji", 13, Pal.muted, true);
-        emojiLabel.setPadding(0, dp(12), 0, dp(6));
-        form.addView(emojiLabel);
-        final String[] emoji = {existing == null ? "" : existing.emoji};
-        final TextView emojiBtn = text("", 24, Pal.ink, false);
-        emojiBtn.setGravity(Gravity.CENTER);
-        final Runnable[] updEmoji = new Runnable[1];
-        updEmoji[0] = () -> {
-            boolean none = emoji[0].isEmpty();
-            emojiBtn.setText(none ? "\u263A  Add" : emoji[0] + "  Change");
-            emojiBtn.setTextSize(none ? 15 : 22);
-            emojiBtn.setTextColor(none ? Pal.muted : Pal.ink);
-            emojiBtn.setTypeface(none ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-            GradientDrawable eg = new GradientDrawable();
-            eg.setCornerRadius(dp(20));
-            eg.setColor(Pal.chip);
-            emojiBtn.setBackground(eg);
-        };
-        updEmoji[0].run();
-        emojiBtn.setPadding(dp(18), 0, dp(18), 0);
-        emojiBtn.setOnClickListener(v -> pickEmoji(emoji[0], picked -> {
-            emoji[0] = picked;
-            updEmoji[0].run();
-        }));
-        form.addView(emojiBtn, new LinearLayout.LayoutParams(-2, dp(44)));
 
         TextView prioLabel = text("Priority", 13, Pal.muted, true);
         prioLabel.setPadding(0, dp(12), 0, dp(6));
@@ -1610,11 +1617,6 @@ public class MainActivity extends Activity {
             check = new IconView(c, IconView.CHECK);
             card.addView(check, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
-            emojiView = text("", 24, Pal.ink, false);
-            emojiView.setGravity(Gravity.CENTER);
-            emojiView.setVisibility(View.GONE);
-            card.addView(emojiView, new LinearLayout.LayoutParams(dp(36), dp(48)));
-
             LinearLayout col = new LinearLayout(c);
             col.setOrientation(LinearLayout.VERTICAL);
             col.setPadding(0, dp(8), 0, dp(8));
@@ -1631,6 +1633,20 @@ public class MainActivity extends Activity {
             delete = new IconView(c, IconView.CROSS);
             delete.setContentDescription("Delete task");
             card.addView(delete, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+            // A task with an emoji shows it as a soft badge in the delete spot; tapping asks before deleting.
+            emojiView = text("", 22, Pal.ink, false);
+            emojiView.setGravity(Gravity.CENTER);
+            emojiView.setIncludeFontPadding(false);
+            GradientDrawable badge = new GradientDrawable();
+            badge.setShape(GradientDrawable.OVAL);
+            badge.setColor((Pal.accent & 0x00FFFFFF) | 0x24000000);
+            badge.setStroke(dp(1), (Pal.accent & 0x00FFFFFF) | 0x59000000);
+            emojiView.setBackground(badge);
+            emojiView.setVisibility(View.GONE);
+            LinearLayout.LayoutParams elp = new LinearLayout.LayoutParams(dp(42), dp(42));
+            elp.setMargins(dp(3), 0, dp(3), 0);
+            card.addView(emojiView, elp);
 
             addView(card, new FrameLayout.LayoutParams(-1, -2));
         }
@@ -1718,8 +1734,11 @@ public class MainActivity extends Activity {
             reveal.setVisibility(View.INVISIBLE);
 
             emojiView.setText(t.emoji);
-            emojiView.setAlpha(t.done ? 0.5f : 1f);
+            emojiView.setAlpha(t.done ? 0.45f : 1f);
             emojiView.setVisibility(t.emoji.isEmpty() ? View.GONE : View.VISIBLE);
+            delete.setVisibility(t.emoji.isEmpty() ? View.VISIBLE : View.GONE);
+            emojiView.setContentDescription("Delete task");
+            emojiView.setOnClickListener(v -> confirmDelete(t));
             title.setText(t.title);
             title.setPaintFlags(t.done
                     ? title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG

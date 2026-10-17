@@ -121,3 +121,6 @@ Dials: new own Wheel view (replaces NumberPicker) so the centred value is always
 
 ## v3.12
 Emoji per task (editor > Emoji; shows on the list, Plan and widgets). Date/time now shows as a squarish tile (red outline overdue, solid accent today, neutral later) so it never looks like a link pill. Plan: filling a free gap or an untimed task lets you pick the exact hour and minute (5 min steps), and tapping a time on the agenda moves that task. Tables rebuilt: column widths follow the content, padded cells, bold tinted header row (new tables start with "Column 1.." selected), and tapping anywhere in a cell puts the cursor in that cell. Database version 8 (adds the emoji column; updates in place).
+
+## v3.13
+Tables rebuilt a third time, properly: a table is one block in the note (a single placeholder character); tapping it opens a grid of real text fields where the first row is the tinted, bold header row, with + Row / + Column / - Row / - Column / Remove table. Cells are saved with the note. (Tables made with v3.11/3.12 stay as plain tab-separated text.) Emoji: shown as a soft round badge at the far right of the task in place of the X (tap it to get the delete confirmation); in the task editor it sits on the title line at the far right.

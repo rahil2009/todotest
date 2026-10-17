@@ -175,287 +175,182 @@ final class RichText {
 
     // ------------------------------------------------------------- tables
 
-    /** Column stop for a table row (recreated by {@link #syncTables}). */
-    static final class Stop extends android.text.style.TabStopSpan.Standard {
-        final int x;
+    /** Width (px) tables are drawn at; set by the editor from its own width. */
+    static int tableWidth = 0;
 
-        Stop(int x) {
-            super(x);
-            this.x = x;
-        }
-    }
-
-    /** Bold header row (not saved; re-applied to the first row of every table). */
-    static final class TblHead extends MetricAffectingSpan {
-        @Override
-        public void updateMeasureState(TextPaint p) {
-            p.setFakeBoldText(true);
-        }
-
-        @Override
-        public void updateDrawState(TextPaint p) {
-            p.setFakeBoldText(true);
-        }
-    }
+    /** Object-replacement character that stands in for a table in the text. */
+    static final char TABLE_CHAR = '\uFFFC';
 
     /**
-     * A table. Rows are lines, cells are separated by tab characters. Column widths follow the longest
-     * cell; the grid, a tinted header row and cell padding are drawn behind the text.
+     * A table drawn as one block in place of a single placeholder character. The cells live in the span
+     * (and in the saved note), and are edited in a dialog with real text fields, so typing always works.
+     * First row = column headers (bold, tinted).
      */
-    static final class Tbl implements LineBackgroundSpan, android.text.style.LeadingMarginSpan,
-            android.text.style.LineHeightSpan {
-        final int cols;
-        int[] widths = new int[0]; // per column, px
-        int padX = 10;
-        int padY = 6;
+    static final class Tbl extends android.text.style.ReplacementSpan {
+        String[][] cells;
 
-        Tbl(int cols) {
-            this.cols = cols;
+        Tbl(String[][] cells) {
+            this.cells = cells;
         }
 
-        int edge(int k) {
-            int x = 0;
-            for (int i = 0; i < k && i < widths.length; i++) x += widths[i];
-            return x;
+        int rows() {
+            return cells.length;
         }
 
-        @Override
-        public int getLeadingMargin(boolean first) {
-            return padX;
+        int cols() {
+            return cells.length == 0 ? 0 : cells[0].length;
         }
 
-        @Override
-        public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
-                                      int bottom, CharSequence text, int start, int end, boolean first,
-                                      android.text.Layout layout) {
-        }
-
-        @Override
-        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
-                                 Paint.FontMetricsInt fm) {
-            fm.ascent -= padY;
-            fm.top -= padY;
-            fm.descent += padY;
-            fm.bottom += padY;
-        }
-
-        @Override
-        public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
-                                   int bottom, CharSequence text, int start, int end, int lnum) {
-            int old = p.getColor();
-            Paint.Style os = p.getStyle();
-            boolean first = text instanceof Spanned && ((Spanned) text).getSpanStart(this) >= start;
-            boolean last = text instanceof Spanned && ((Spanned) text).getSpanEnd(this) <= end + 1;
-            int w = edge(widths.length);
-            if (w <= 0) return;
-            p.setStyle(Paint.Style.FILL);
-            if (first) {
-                p.setColor(Pal.chip);
-                c.drawRect(left, top, left + w, bottom, p);
+        static String[][] blank(int rows, int cols) {
+            String[][] c = new String[rows][cols];
+            for (int r = 0; r < rows; r++) {
+                for (int k = 0; k < cols; k++) c[r][k] = r == 0 ? "Column " + (k + 1) : "";
             }
-            float t = Math.max(1f, density);
-            int line = Pal.dark ? 0xFF4A5753 : 0xFF9AA5A1;
-            p.setColor(line);
-            if (first) c.drawRect(left, top, left + w, top + t, p);
-            if (last) c.drawRect(left, bottom - t, left + w, bottom, p);
-            if (!last) c.drawRect(left, bottom - t, left + w, bottom, p);
-            for (int k = 0; k <= widths.length; k++) {
-                float x = left + edge(k);
-                if (k == widths.length) x -= t;
-                c.drawRect(x, top, x + t, bottom, p);
+            return c;
+        }
+
+        private int width() {
+            return tableWidth > 0 ? tableWidth : Math.round(300 * density);
+        }
+
+        private int rowH(Paint p) {
+            return Math.round(p.getTextSize() * 1.25f + p.getTextSize() * 0.9f);
+        }
+
+        @Override
+        public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            if (fm != null) {
+                int h = rowH(p) * rows();
+                fm.ascent = -h;
+                fm.top = -h;
+                fm.descent = 0;
+                fm.bottom = 0;
             }
-            p.setColor(old);
-            p.setStyle(os);
+            return width();
+        }
+
+        @Override
+        public void draw(Canvas c, CharSequence text, int start, int end, float x, int top, int y,
+                         int bottom, Paint p) {
+            int rows = rows();
+            int cols = cols();
+            if (rows == 0 || cols == 0) return;
+            float w = width();
+            float rh = rowH(p);
+            float colW = w / cols;
+            float t0 = y - rh * rows;
+            float pad = p.getTextSize() * 0.5f;
+            float rad = 8 * density;
+            int oldColor = p.getColor();
+            Paint.Style oldStyle = p.getStyle();
+            Typeface oldFace = p.getTypeface();
+            boolean oldFake = p.isFakeBoldText();
+
+            Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+            Paint line = new Paint(Paint.ANTI_ALIAS_FLAG);
+            line.setColor(Pal.dark ? 0xFF4A5753 : 0xFF9AA5A1);
+            line.setStyle(Paint.Style.STROKE);
+            line.setStrokeWidth(Math.max(1f, density));
+
+            android.graphics.RectF box = new android.graphics.RectF(x + 1, t0 + 1, x + w - 1, y - 1);
+            c.save();
+            android.graphics.Path clip = new android.graphics.Path();
+            clip.addRoundRect(box, rad, rad, android.graphics.Path.Direction.CW);
+            c.clipPath(clip);
+            // header row: clearly different from the body rows
+            fill.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x38000000 : 0x2E000000));
+            c.drawRect(x, t0, x + w, t0 + rh, fill);
+            // body rows sit on a slightly raised card colour
+            fill.setColor(Pal.card);
+            c.drawRect(x, t0 + rh, x + w, y, fill);
+            c.restore();
+
+            for (int r = 1; r < rows; r++) c.drawLine(x, t0 + r * rh, x + w, t0 + r * rh, line);
+            for (int k = 1; k < cols; k++) c.drawLine(x + k * colW, t0, x + k * colW, y, line);
+            c.drawRoundRect(box, rad, rad, line);
+
+            android.text.TextPaint tp = new android.text.TextPaint(p);
+            tp.setStyle(Paint.Style.FILL);
+            tp.setColor(Pal.ink);
+            for (int r = 0; r < rows; r++) {
+                tp.setFakeBoldText(r == 0);
+                tp.setTypeface(r == 0 ? Typeface.create(oldFace, Typeface.BOLD) : oldFace);
+                Paint.FontMetrics fm = tp.getFontMetrics();
+                float base = t0 + r * rh + rh / 2f - (fm.ascent + fm.descent) / 2f;
+                for (int k = 0; k < cols; k++) {
+                    String cell = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
+                    if (cell.isEmpty()) continue;
+                    CharSequence cut = android.text.TextUtils.ellipsize(cell, tp, colW - 2 * pad,
+                            android.text.TextUtils.TruncateAt.END);
+                    c.drawText(cut, 0, cut.length(), x + k * colW + pad, base, tp);
+                }
+            }
+            p.setColor(oldColor);
+            p.setStyle(oldStyle);
+            p.setTypeface(oldFace);
+            p.setFakeBoldText(oldFake);
         }
     }
 
-    static Tbl tableAt(Spanned e, int pos) {
-        for (Tbl t : e.getSpans(Math.max(0, pos - 1), Math.min(e.length(), pos + 1), Tbl.class)) {
-            if (e.getSpanStart(t) <= pos && pos <= e.getSpanEnd(t)) return t;
+    /** The table whose placeholder is on the line containing {@code pos}, or null. */
+    static Tbl tableOnLine(Spanned e, int pos) {
+        int ls = lineStart(e, pos);
+        int le = lineEnd(e, pos);
+        Tbl[] found = e.getSpans(ls, Math.min(e.length(), le + 0), Tbl.class);
+        for (Tbl t : found) {
+            int a = e.getSpanStart(t);
+            if (a >= ls && a <= le) return t;
         }
         return null;
     }
 
-    /** Start / end (exclusive) of the cell index {@code cell} in the line starting at {@code ls}. */
-    static int[] cellRange(CharSequence e, int ls, int cell) {
-        int le = lineEnd(e, ls);
-        int cs = ls;
-        for (int k = 0; k < cell; k++) {
-            int i = cs;
-            while (i < le && e.charAt(i) != '\t') i++;
-            if (i >= le) return new int[]{le, le};
-            cs = i + 1;
-        }
-        int ce = cs;
-        while (ce < le && e.charAt(ce) != '\t') ce++;
-        return new int[]{cs, ce};
-    }
-
-    /** Keeps column widths, tab stops and the header style right (call after every text change). */
-    static void syncTables(Editable e, TextPaint paint, int availPx) {
-        Tbl[] tables = e.getSpans(0, e.length(), Tbl.class);
-        Stop[] stops = e.getSpans(0, e.length(), Stop.class);
-        boolean[] keep = new boolean[stops.length];
-        for (TblHead h : e.getSpans(0, e.length(), TblHead.class)) e.removeSpan(h);
-        float size = paint.getTextSize();
-        for (Tbl t : tables) {
-            int a = e.getSpanStart(t);
-            int b = e.getSpanEnd(t);
-            t.padX = Math.round(Math.max(8f, size * 0.5f));
-            t.padY = Math.round(Math.max(4f, size * 0.3f));
-            int[] w = new int[t.cols];
-            int minW = Math.round(size * 3.2f);
-            int p = a;
-            int row = 0;
-            while (p <= b) {
-                int le = Math.min(lineEnd(e, p), b);
-                for (int k = 0; k < t.cols; k++) {
-                    int[] r = cellRange(e, p, k);
-                    if (r[0] > le) break;
-                    float mw = paint.measureText(e, r[0], Math.min(r[1], le)) * (row == 0 ? 1.12f : 1f);
-                    w[k] = Math.max(w[k], Math.round(mw));
-                }
-                if (le >= b) break;
-                p = le + 1;
-                row++;
-            }
-            int total = 0;
-            for (int k = 0; k < t.cols; k++) {
-                w[k] = Math.max(minW, w[k]) + 2 * t.padX;
-                total += w[k];
-            }
-            if (total > availPx && availPx > 0) { // squeeze, but keep every column usable
-                float f = availPx / (float) total;
-                for (int k = 0; k < t.cols; k++) w[k] = Math.max(minW, Math.round(w[k] * f));
-            }
-            t.widths = w;
-            // tab stops sit at the column edges; the leading margin gives the first cell its padding
-            int[] want = new int[Math.max(0, t.cols - 1)];
-            for (int k = 1; k < t.cols; k++) want[k - 1] = t.edge(k);
-            boolean[] have = new boolean[want.length];
-            boolean ok = true;
-            for (int i = 0; i < stops.length; i++) {
-                if (e.getSpanStart(stops[i]) != a || e.getSpanEnd(stops[i]) != b) continue;
-                int idx = -1;
-                for (int k = 0; k < want.length; k++) {
-                    if (want[k] == stops[i].x && !have[k]) {
-                        idx = k;
-                        break;
-                    }
-                }
-                if (idx >= 0) {
-                    have[idx] = true;
-                    keep[i] = true;
-                }
-            }
-            for (int k = 0; k < want.length; k++) {
-                if (!have[k]) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (!ok) {
-                for (int k = 0; k < want.length; k++) {
-                    if (!have[k]) e.setSpan(new Stop(want[k]), a, b, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
-                }
-            }
-            // header = first row
-            int he = Math.min(lineEnd(e, a), b);
-            if (he > a) e.setSpan(new TblHead(), a, he, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
-        }
-        for (int i = 0; i < stops.length; i++) {
-            if (!keep[i]) e.removeSpan(stops[i]);
-        }
-    }
-
-    /** Inserts a table on its own lines at {@code pos}; returns the start of the table (header row). */
+    /** Puts a new table on its own line at {@code pos}; returns the placeholder's start. */
     static int insertTable(Editable e, int pos, int cols, int rows) {
-        StringBuilder sb = new StringBuilder();
         int at = lineStart(e, pos);
         boolean lineHasText = lineEnd(e, pos) > at;
         int ins = lineHasText ? lineEnd(e, pos) : at;
+        StringBuilder sb = new StringBuilder();
         if (lineHasText) sb.append('\n');
-        int startOfTable = ins + sb.length();
-        for (int r = 0; r < rows; r++) {
-            if (r > 0) sb.append('\n');
-            for (int c = 0; c < cols; c++) {
-                if (c > 0) sb.append('\t');
-                if (r == 0) sb.append("Column ").append(c + 1);
-            }
-        }
-        int tableLen = sb.length() - (lineHasText ? 1 : 0);
-        if (ins >= e.length()) sb.append('\n'); // leave a line below to keep typing on
+        int off = sb.length();
+        sb.append(TABLE_CHAR);
+        sb.append('\n'); // a line below to keep typing on
         e.insert(ins, sb.toString());
-        e.setSpan(new Tbl(cols), startOfTable, startOfTable + tableLen, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
-        return startOfTable;
+        int s = ins + off;
+        e.setSpan(new Tbl(Tbl.blank(rows, cols)), s, s + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return s;
     }
 
-    static int addRow(Editable e, int pos) {
-        Tbl t = tableAt(e, pos);
-        if (t == null) return pos;
-        int end = e.getSpanEnd(t);
-        StringBuilder sb = new StringBuilder("\n");
-        for (int c = 1; c < t.cols; c++) sb.append('\t');
-        e.insert(end, sb.toString());
-        e.setSpan(t, e.getSpanStart(t), end + sb.length(), Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
-        return end + 1;
-    }
-
-    static void addColumn(Editable e, int pos) {
-        Tbl t = tableAt(e, pos);
-        if (t == null) return;
+    /** Re-sets the span so the layout re-measures it after its cells changed. */
+    static void refresh(Editable e, Tbl t) {
         int a = e.getSpanStart(t);
         int b = e.getSpanEnd(t);
-        java.util.ArrayList<Integer> ends = new java.util.ArrayList<>();
-        int p = a;
-        while (true) {
-            int le = lineEnd(e, p);
-            if (le > b) le = b;
-            ends.add(le);
-            if (le >= b) break;
-            p = le + 1;
-        }
+        if (a < 0) return;
         e.removeSpan(t);
-        for (int i = ends.size() - 1; i >= 0; i--) e.insert(ends.get(i), i == 0 ? "\tColumn " + (t.cols + 1) : "\t");
-        int extra = ends.size() + ("Column " + (t.cols + 1)).length();
-        e.setSpan(new Tbl(t.cols + 1), a, b + extra, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
+        e.setSpan(t, a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
-    /** Turns the table back into plain lines (cells separated by two spaces). */
-    static void removeTable(Editable e, int pos) {
-        Tbl t = tableAt(e, pos);
-        if (t == null) return;
-        int a = e.getSpanStart(t);
-        int b = e.getSpanEnd(t);
-        e.removeSpan(t);
-        for (int i = b - 1; i >= a; i--) {
-            if (e.charAt(i) == '\t') e.replace(i, i + 1, "  ");
+    /** Text of every table's cells, for search. */
+    static String tablesPlain(CharSequence text) {
+        if (!(text instanceof Spanned)) return text.toString();
+        Spanned sp = (Spanned) text;
+        StringBuilder out = new StringBuilder(text);
+        Tbl[] tables = sp.getSpans(0, sp.length(), Tbl.class);
+        java.util.Arrays.sort(tables, (x, y) -> sp.getSpanStart(x) - sp.getSpanStart(y));
+        for (Tbl t : tables) {
+            StringBuilder cellText = new StringBuilder();
+            for (String[] row : t.cells) {
+                for (String cell : row) cellText.append(cell).append(' ');
+            }
+            int i = out.indexOf(String.valueOf(TABLE_CHAR));
+            if (i >= 0) out.replace(i, i + 1, cellText.toString().trim());
         }
-    }
-
-    /** Cursor position at the end of the next cell (adds a row after the last cell). */
-    static int nextCell(Editable e, int pos) {
-        Tbl t = tableAt(e, pos);
-        if (t == null) return pos;
-        int le = lineEnd(e, pos);
-        for (int i = pos; i < le; i++) {
-            if (e.charAt(i) == '\t') return cellEnd(e, i + 1);
-        }
-        if (le < e.getSpanEnd(t)) return cellEnd(e, le + 1);
-        return addRow(e, pos);
-    }
-
-    private static int cellEnd(CharSequence e, int from) {
-        int le = lineEnd(e, from);
-        int i = from;
-        while (i < le && e.charAt(i) != '\t') i++;
-        return i;
+        return out.toString();
     }
 
     static Object make(int type, int arg) {
         switch (type) {
             case TABLE:
-                return new Tbl(Math.max(2, arg));
+                return new Tbl(Tbl.blank(2, Math.max(2, arg)));
             case BOLD:
                 return new StyleSpan(Typeface.BOLD);
             case ITALIC:
@@ -490,7 +385,7 @@ final class RichText {
     }
 
     private static int argOf(Object o) {
-        if (o instanceof Tbl) return ((Tbl) o).cols;
+        if (o instanceof Tbl) return ((Tbl) o).cols();
         return o instanceof Hl ? ((Hl) o).color : 0;
     }
 
@@ -644,6 +539,20 @@ final class RichText {
                 }
             }
             o.put("s", arr);
+            if (text instanceof Spanned) {
+                JSONObject tb = new JSONObject();
+                Spanned sp = (Spanned) text;
+                for (Tbl t : sp.getSpans(0, sp.length(), Tbl.class)) {
+                    JSONArray rows = new JSONArray();
+                    for (String[] row : t.cells) {
+                        JSONArray r = new JSONArray();
+                        for (String cell : row) r.put(cell == null ? "" : cell);
+                        rows.put(r);
+                    }
+                    tb.put(String.valueOf(sp.getSpanStart(t)), rows);
+                }
+                if (tb.length() > 0) o.put("tb", tb);
+            }
             return o.toString();
         } catch (JSONException ex) {
             return text.toString();
@@ -662,6 +571,19 @@ final class RichText {
                 JSONArray r = arr.getJSONArray(i);
                 int a = Math.max(0, r.getInt(1));
                 int b = Math.min(t.length(), r.getInt(2));
+                if (r.getInt(0) == TABLE) { // tables carry their cells in "tb"; older tab-based ones are dropped
+                    JSONObject tb = o.optJSONObject("tb");
+                    JSONArray rows = tb == null ? null : tb.optJSONArray(String.valueOf(a));
+                    if (rows == null || rows.length() == 0 || b - a != 1) continue;
+                    String[][] cells = new String[rows.length()][];
+                    for (int x = 0; x < rows.length(); x++) {
+                        JSONArray rr = rows.getJSONArray(x);
+                        cells[x] = new String[rr.length()];
+                        for (int y = 0; y < rr.length(); y++) cells[x][y] = rr.getString(y);
+                    }
+                    out.setSpan(new Tbl(cells), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    continue;
+                }
                 if (a < b) out.setSpan(make(r.getInt(0), r.optInt(3)), a, b, FLAGS);
             }
             for (Object blk : out.getSpans(0, out.length(), Block.class)) { // old notes: drop code-in-block
