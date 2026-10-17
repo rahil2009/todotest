@@ -914,6 +914,7 @@ public class MainActivity extends Activity {
         alarmDesc.setPadding(0, dp(2), 0, 0);
         alarmText.addView(alarmDesc);
         alarmRow.addView(alarmText, new LinearLayout.LayoutParams(0, -2, 1f));
+        final LinearLayout alwaysRow = new LinearLayout(this);
         final ToggleView alarmSwitch = new ToggleView(this);
         alarmSwitch.set(alarm[0], false);
         alarmSwitch.setListener(on -> {
@@ -928,7 +929,6 @@ public class MainActivity extends Activity {
         extras.addView(alarmRow, new LinearLayout.LayoutParams(-1, -2));
 
         // Full screen even while the phone is in use (needs "display over other apps")
-        final LinearLayout alwaysRow = new LinearLayout(this);
         alwaysRow.setOrientation(LinearLayout.HORIZONTAL);
         alwaysRow.setGravity(Gravity.CENTER_VERTICAL);
         alwaysRow.setMinimumHeight(dp(64));
