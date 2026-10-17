@@ -22,9 +22,12 @@ final class Task {
     final int volume;
     /** 0 none, 1 low, 2 medium, 3 high. */
     final int priority;
+    /** Alarm style that also takes over the screen while the phone is unlocked. */
+    final boolean always;
 
     Task(long id, String title, boolean done, long due, int repeat, int repeatUnit,
-         boolean alarm, long snooze, boolean fired, String sound, int volume, int priority) {
+         boolean alarm, long snooze, boolean fired, String sound, int volume, int priority,
+         boolean always) {
         this.id = id;
         this.title = title;
         this.done = done;
@@ -37,5 +40,6 @@ final class Task {
         this.sound = sound == null ? "" : sound;
         this.volume = volume;
         this.priority = priority;
+        this.always = alarm && always;
     }
 }

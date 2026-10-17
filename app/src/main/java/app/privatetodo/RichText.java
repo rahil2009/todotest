@@ -96,9 +96,10 @@ final class RichText {
         }
     }
 
-    /** Terminal-style code block: near-black full-width panel, light monospace text, accent bar. */
-    static final class Block extends MetricAffectingSpan implements LineBackgroundSpan {
-        static final int BG = 0xFF0D1117;
+    /** Terminal-style code block: black panel with a border, indented light monospace text, accent bar. */
+    static final class Block extends MetricAffectingSpan implements LineBackgroundSpan,
+            android.text.style.LeadingMarginSpan {
+        static final int BG = 0xFF000000;
         static final int FG = 0xFFE6EDF3;
 
         @Override
@@ -113,14 +114,39 @@ final class RichText {
         }
 
         @Override
+        public int getLeadingMargin(boolean first) {
+            return Math.round(14 * density);
+        }
+
+        @Override
+        public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
+                                      int bottom, CharSequence text, int start, int end, boolean first,
+                                      android.text.Layout layout) {
+        }
+
+        @Override
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
             int old = p.getColor();
+            Paint.Style os = p.getStyle();
+            float sw = p.getStrokeWidth();
+            p.setStyle(Paint.Style.FILL);
             p.setColor(BG);
             c.drawRect(left, top, right, bottom, p);
+            // border so the panel stands out in dark mode too
+            p.setColor(Pal.dark ? 0xFF4A5753 : 0xFF000000);
+            float t = 1.5f * density;
+            c.drawRect(right - t, top, right, bottom, p);
+            if (text instanceof Spanned) {
+                Spanned sp = (Spanned) text;
+                if (sp.getSpanStart(this) >= start) c.drawRect(left, top, right, top + t, p);
+                if (sp.getSpanEnd(this) <= end + 1) c.drawRect(left, bottom - t, right, bottom, p);
+            }
             p.setColor(Pal.accent);
-            c.drawRect(left, top, left + 3 * density, bottom, p);
+            c.drawRect(left, top, left + 4 * density, bottom, p);
             p.setColor(old);
+            p.setStyle(os);
+            p.setStrokeWidth(sw);
         }
     }
 

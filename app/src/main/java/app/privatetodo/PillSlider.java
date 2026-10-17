@@ -56,6 +56,11 @@ final class PillSlider extends View {
         setMeasuredDimension(w, Math.round(48 * d)); // 48 dp tall: a chunky, easy-to-grab bar
     }
 
+    /** White fill in dark mode, near-black in light mode. */
+    private static int fillColor() {
+        return Pal.dark ? 0xFFFFFFFF : 0xFF0E1513;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         float w = getWidth();
@@ -70,7 +75,7 @@ final class PillSlider extends View {
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Pal.chip);
         canvas.drawRect(0, 0, w, h, paint);
-        paint.setColor(Pal.accent);
+        paint.setColor(fillColor());
         canvas.drawRect(0, 0, w * value / 100f, h, paint);
         canvas.restore();
 
@@ -78,7 +83,7 @@ final class PillSlider extends View {
         float x = 18 * d;
         float cy = h / 2f;
         boolean onFill = w * value / 100f > x + 10 * d;
-        int ic = onFill ? Pal.onAccent : Pal.muted;
+        int ic = onFill ? (Pal.dark ? 0xFF111513 : 0xFFFFFFFF) : Pal.muted;
         paint.setColor(ic);
         paint.setStyle(Paint.Style.FILL);
         canvas.drawRect(x, cy - 3.2f * d, x + 4 * d, cy + 3.2f * d, paint);

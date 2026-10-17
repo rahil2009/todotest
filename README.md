@@ -103,3 +103,6 @@ If you ever install a build signed with a different key, Android forces an unins
 
 ## Repeat on chosen days
 In the task editor, Repeat > Choose days lets you tick Mon to Sun (Mon to Fri by default; Sat and Sun stay off).
+
+## Show even when unlocked
+Alarm style has a second toggle, "Show even when unlocked". It makes the alarm screen open over whatever you are doing (it asks for "Display over other apps" once). The notification's Open link button now silences the ring and vibration as it opens the link.

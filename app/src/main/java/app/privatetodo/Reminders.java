@@ -193,6 +193,7 @@ final class Reminders {
 
     static void cancelNotification(Context ctx, long id) {
         RingService.stopFor(ctx, id); // also ends the looping alarm sound
+        if (!RingService.isRinging()) Sound.stop(); // a normal reminder's one-off sound
         ctx.getSystemService(NotificationManager.class).cancel((int) id);
     }
 
@@ -238,6 +239,16 @@ final class Reminders {
                 nm.notify((int) t.id, build(ctx, t, subs));
                 Sound.play(ctx, Prefs.ALARM, true, 60_000L, null, t.sound, t.volume);
             }
+            if (t.always && android.provider.Settings.canDrawOverlays(ctx)) {
+                try { // the overlay permission lets the alarm screen open even while the phone is in use
+                    ctx.startActivity(new Intent(ctx, AlarmActivity.class)
+                            .putExtra(EXTRA_ID, t.id)
+                            .setData(Uri.parse("todo://alarm/" + t.id))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION));
+                } catch (RuntimeException ignored) {
+                    // the notification's full-screen intent still covers the locked case
+                }
+            }
             if (done != null) done.run();
         } else {
             nm.notify((int) t.id, build(ctx, t, subs));
@@ -281,8 +292,12 @@ final class Reminders {
         b.setStyle(new Notification.BigTextStyle().bigText(body));
         List<String> links = Links.find(texts);
         if (!links.isEmpty()) {
+            // Goes through LinkActivity so the ringing and vibration stop as the link opens.
             PendingIntent openLink = PendingIntent.getActivity(ctx, (int) t.id + 2_000_000,
-                    new Intent(Intent.ACTION_VIEW, Uri.parse(Links.normalize(links.get(0))))
+                    new Intent(ctx, LinkActivity.class)
+                            .putExtra(EXTRA_ID, t.id)
+                            .putExtra("url", Links.normalize(links.get(0)))
+                            .setData(Uri.parse("todo://link/" + t.id))
                             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             b.addAction(new Notification.Action.Builder(icon,

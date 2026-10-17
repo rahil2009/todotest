@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Only so an alarm you mark "show even when unlocked" can open full screen over other apps. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Lets an alarm keep ringing (your chosen sound, looping) while the screen is off. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -49,6 +51,14 @@
             android:exported="false"
             android:parentActivityName=".NotesActivity"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".LinkActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <service
             android:name=".RingService"

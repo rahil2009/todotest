@@ -607,6 +607,18 @@ public class MainActivity extends Activity {
         parent.addView(row, new LinearLayout.LayoutParams(-1, -2));
     }
 
+    private void askOverlayPermission() {
+        new Dlg.Builder(this)
+                .setTitle("Allow display over other apps")
+                .setMessage("Android needs this so an alarm can open full screen while the phone is unlocked. "
+                        + "It is only used for your alarms.")
+                .setPositiveButton("Open settings", (d, w) -> startActivity(new Intent(
+                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:" + getPackageName()))))
+                .setNegativeButton("Not now", null)
+                .show();
+    }
+
     private void ensureReminderPermissions(boolean needFullScreen) {
         if (!notifOk() || !exactOk() || (needFullScreen && !fullScreenOk())) {
             showSetup();
@@ -623,6 +635,7 @@ public class MainActivity extends Activity {
         final boolean[] custom = {existing != null && existing.repeat > 0 && existing.repeatUnit != 5
                 && !(existing.repeat == 1 && (existing.repeatUnit == 2 || existing.repeatUnit == 3))};
         final boolean[] alarm = {existing != null && existing.alarm};
+        final boolean[] always = {existing != null && existing.always};
         final Runnable[] upd = new Runnable[1];
         final Runnable[] updSnd = new Runnable[1];
         final DialView dial = new DialView(this, true);
@@ -877,9 +890,10 @@ public class MainActivity extends Activity {
                 upd[0].run();
             });
             dayViews[i] = dv;
-            LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            dlp.rightMargin = i == 6 ? 0 : dp(6);
-            daysRow.addView(dv, dlp);
+            // equal-width cell with a fixed 40dp circle inside, so the shape stays round
+            FrameLayout cell = new FrameLayout(this);
+            cell.addView(dv, new FrameLayout.LayoutParams(dp(40), dp(40), Gravity.CENTER));
+            daysRow.addView(cell, new LinearLayout.LayoutParams(0, dp(44), 1f));
         }
         LinearLayout.LayoutParams dayslp = new LinearLayout.LayoutParams(-1, -2);
         dayslp.topMargin = dp(10);
@@ -904,6 +918,7 @@ public class MainActivity extends Activity {
         alarmSwitch.set(alarm[0], false);
         alarmSwitch.setListener(on -> {
             alarm[0] = on;
+            alwaysRow.setVisibility(on ? View.VISIBLE : View.GONE);
             if (updSnd[0] != null) updSnd[0].run(); // default volume differs for alarms
         });
         LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(-2, -2);
@@ -911,6 +926,33 @@ public class MainActivity extends Activity {
         alarmRow.addView(alarmSwitch, swLp);
         alarmRow.setOnClickListener(v -> alarmSwitch.performClick());
         extras.addView(alarmRow, new LinearLayout.LayoutParams(-1, -2));
+
+        // Full screen even while the phone is in use (needs "display over other apps")
+        final LinearLayout alwaysRow = new LinearLayout(this);
+        alwaysRow.setOrientation(LinearLayout.HORIZONTAL);
+        alwaysRow.setGravity(Gravity.CENTER_VERTICAL);
+        alwaysRow.setMinimumHeight(dp(64));
+        alwaysRow.setPadding(0, dp(8), 0, 0);
+        LinearLayout alwaysText = new LinearLayout(this);
+        alwaysText.setOrientation(LinearLayout.VERTICAL);
+        alwaysText.addView(text("Show even when unlocked", 16, Pal.ink, true));
+        TextView alwaysDesc = text("Takes over the screen while you are using the phone, so you never miss it.",
+                13, Pal.muted, false);
+        alwaysDesc.setPadding(0, dp(2), 0, 0);
+        alwaysText.addView(alwaysDesc);
+        alwaysRow.addView(alwaysText, new LinearLayout.LayoutParams(0, -2, 1f));
+        final ToggleView alwaysSwitch = new ToggleView(this);
+        alwaysSwitch.set(always[0], false);
+        alwaysSwitch.setListener(on -> {
+            always[0] = on;
+            if (on && !android.provider.Settings.canDrawOverlays(this)) askOverlayPermission();
+        });
+        LinearLayout.LayoutParams swLp2 = new LinearLayout.LayoutParams(-2, -2);
+        swLp2.leftMargin = dp(16);
+        alwaysRow.addView(alwaysSwitch, swLp2);
+        alwaysRow.setOnClickListener(v -> alwaysSwitch.performClick());
+        extras.addView(alwaysRow, new LinearLayout.LayoutParams(-1, -2));
+        alwaysRow.setVisibility(alarm[0] ? View.VISIBLE : View.GONE);
 
         // Per-task sound and volume. Off by default: the task simply follows Settings.
         final String[] tSound = {existing == null ? "" : existing.sound};
@@ -1096,6 +1138,7 @@ public class MainActivity extends Activity {
             }
             db.setSound(id, tSound[0], tVol[0]);
             db.setPriority(id, prio[0]);
+            db.setAlarmMode(id, alarm[0], alarm[0] && always[0]);
             db.replaceSubs(id, subsToSave);
             Reminders.schedule(this, db.get(id));
             if (d > 0) ensureReminderPermissions(alarm[0]);

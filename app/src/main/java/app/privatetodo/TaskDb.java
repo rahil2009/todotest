@@ -88,8 +88,8 @@ final class TaskDb extends SQLiteOpenHelper {
 
     private static Task map(Cursor c) {
         return new Task(c.getLong(0), c.getString(1), c.getInt(2) == 1, c.getLong(3),
-                c.getInt(4), c.getInt(5), c.getInt(6) == 1, c.getLong(7), c.getInt(8) == 1,
-                c.getString(9), c.getInt(10), c.getInt(11));
+                c.getInt(4), c.getInt(5), c.getInt(6) != 0, c.getLong(7), c.getInt(8) == 1,
+                c.getString(9), c.getInt(10), c.getInt(11), c.getInt(6) == 2);
     }
 
     List<Task> list(int filter) {
@@ -147,6 +147,13 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     /** 0 none, 1 low, 2 medium, 3 high. */
+    /** is_alarm: 0 = normal, 1 = alarm style, 2 = alarm style that also shows full screen when unlocked. */
+    void setAlarmMode(long id, boolean alarm, boolean always) {
+        ContentValues v = new ContentValues();
+        v.put("is_alarm", alarm ? (always ? 2 : 1) : 0);
+        getWritableDatabase().update("tasks", v, "id = ? AND due_at > 0", new String[]{String.valueOf(id)});
+    }
+
     void setPriority(long id, int priority) {
         ContentValues v = new ContentValues();
         v.put("priority", Math.max(0, Math.min(3, priority)));
