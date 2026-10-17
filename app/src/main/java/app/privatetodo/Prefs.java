@@ -48,6 +48,15 @@ final class Prefs {
         sp(c).edit().putInt(key("volume", kind), Math.max(0, Math.min(100, v))).apply();
     }
 
+    /** The quick "Remind me" buttons, as a ';'-separated list (see Presets). */
+    static String presets(Context c, String fallback) {
+        return sp(c).getString("presets", fallback);
+    }
+
+    static void setPresets(Context c, String v) {
+        sp(c).edit().putString("presets", v).apply();
+    }
+
     private static String key(String what, int kind) {
         return what + (kind == ALARM ? "_alarm" : "_notif");
     }

@@ -109,3 +109,6 @@ Alarm style has a second toggle, "Show even when unlocked". It makes the alarm s
 
 ## v3.8 additions
 Undo pill (4 s, draining bar) after delete / clear / complete; Duplicate in the edit dialog; ticking the last subtask completes the task; haptic taps; Today / Tomorrow / Upcoming / Priority filters; a placeholder Plan icon; roomier code blocks; the unlocked full-screen alarm no longer also slides in as a heads-up notification.
+
+## v3.9
+Plan mode (week strip, day agenda, progress ring, one-tap scheduling, "Plan my day"), custom quick "Remind me" buttons (add with + Add, long-press to remove), a slider-style Undo pill, and ticking the last subtask now moves the task to Done with its subtasks left ticked.

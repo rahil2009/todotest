@@ -63,9 +63,7 @@ public class MainActivity extends Activity {
     private IconView bell;
     private final TextView[] chips = new TextView[7];
     // undo pill: "Task deleted  [Undo]" with a bar that drains over 4 seconds
-    private LinearLayout undoPill;
-    private TextView undoMsg;
-    private View undoFill;
+    private UndoPill undoPill;
     private Runnable undoAction;
     private final Runnable undoHide = () -> hideUndo(true);
     private LinearLayout emptyView;
@@ -158,20 +156,20 @@ public class MainActivity extends Activity {
         titles.addView(subtitle);
         header.addView(titles, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        IconView plan = new IconView(this, IconView.PLAN);
-        plan.setContentDescription("Plan");
-        plan.setOnClickListener(v -> {
-            Hap.tick(v);
-            toast("Plan is coming soon");
-        });
-        header.addView(plan, new LinearLayout.LayoutParams(dp(48), dp(48)));
-
         IconView trash = new IconView(this, IconView.TRASH);
         trash.setTint(Pal.ink);
         trash.setContentDescription("Clear completed tasks");
         trash.setOnClickListener(v -> confirmClearDone());
         clearDone = trash;
         header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
+
+        IconView plan = new IconView(this, IconView.PLAN);
+        plan.setContentDescription("Plan");
+        plan.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, PlanActivity.class));
+        });
+        header.addView(plan, new LinearLayout.LayoutParams(dp(48), dp(48)));
 
         IconView notebook = new IconView(this, IconView.NOTE);
         notebook.setContentDescription("Notebook");
@@ -354,28 +352,10 @@ public class MainActivity extends Activity {
         blp.gravity = Gravity.BOTTOM;
         root.addView(bar, blp);
 
-        // Undo pill, floating just above the bar
-        undoPill = new LinearLayout(this);
-        undoPill.setOrientation(LinearLayout.VERTICAL);
-        undoPill.setPadding(dp(20), dp(4), dp(8), dp(10));
-        GradientDrawable ubg = new GradientDrawable();
-        ubg.setColor(Pal.ink);
-        ubg.setCornerRadius(dp(28));
-        undoPill.setBackground(ubg);
-        undoPill.setElevation(0);
+        // Undo pill, floating just above the bar; the whole pill drains like the volume slider
+        undoPill = new UndoPill(this);
         undoPill.setVisibility(View.GONE);
-        final int undoOn = Pal.dark ? 0xFF111513 : 0xFFFFFFFF;
-        final int undoAccent = Pal.dark ? 0xFF0B6B5D : 0xFF6FCDBD;
-        LinearLayout urow = new LinearLayout(this);
-        urow.setOrientation(LinearLayout.HORIZONTAL);
-        urow.setGravity(Gravity.CENTER_VERTICAL);
-        undoMsg = text("", 15, undoOn, true);
-        urow.addView(undoMsg, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView undoBtn = text("Undo", 15, undoAccent, true);
-        undoBtn.setGravity(Gravity.CENTER);
-        undoBtn.setMinHeight(dp(44));
-        undoBtn.setMinWidth(dp(64));
-        undoBtn.setOnClickListener(v -> {
+        undoPill.setOnClickListener(v -> {
             Runnable r = undoAction;
             hideUndo(false);
             if (r != null) {
@@ -383,25 +363,9 @@ public class MainActivity extends Activity {
                 r.run();
             }
         });
-        urow.addView(undoBtn);
-        undoPill.addView(urow, new LinearLayout.LayoutParams(-1, -2));
-        FrameLayout track = new FrameLayout(this);
-        GradientDrawable tbg = new GradientDrawable();
-        tbg.setColor((undoOn & 0x00FFFFFF) | 0x33000000);
-        tbg.setCornerRadius(dp(2));
-        track.setBackground(tbg);
-        undoFill = new View(this);
-        GradientDrawable fbg = new GradientDrawable();
-        fbg.setColor(undoAccent);
-        fbg.setCornerRadius(dp(2));
-        undoFill.setBackground(fbg);
-        track.addView(undoFill, new FrameLayout.LayoutParams(-1, -1));
-        LinearLayout.LayoutParams trlp = new LinearLayout.LayoutParams(-1, dp(3));
-        trlp.rightMargin = dp(12);
-        undoPill.addView(track, trlp);
-        FrameLayout.LayoutParams ulp = new FrameLayout.LayoutParams(-1, -2);
-        ulp.gravity = Gravity.BOTTOM;
-        ulp.setMargins(dp(16), 0, dp(16), dp(88));
+        FrameLayout.LayoutParams ulp = new FrameLayout.LayoutParams(-2, -2);
+        ulp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        ulp.bottomMargin = dp(92);
         root.addView(undoPill, ulp);
         return root;
     }
@@ -824,40 +788,49 @@ public class MainActivity extends Activity {
         remindLabel.setPadding(0, dp(16), 0, dp(6));
         form.addView(remindLabel);
 
-        // Quick presets
-        LinearLayout quick = new LinearLayout(this);
-        quick.setOrientation(LinearLayout.HORIZONTAL);
-        String[] qNames = {"In 1 hour", "Tonight 8 pm", "Tomorrow 9 am"};
-        for (int i = 0; i < qNames.length; i++) {
-            final int which = i;
-            TextView q = formChip(qNames[i], false);
-            q.setTextSize(13);
-            q.setPadding(dp(4), 0, dp(4), 0);
-            q.setOnClickListener(v -> {
-                Calendar c = Calendar.getInstance();
-                if (which == 0) {
-                    c.add(Calendar.HOUR_OF_DAY, 1);
-                } else if (which == 1) {
-                    c.set(Calendar.HOUR_OF_DAY, 20);
-                    c.set(Calendar.MINUTE, 0);
-                    if (c.getTimeInMillis() <= System.currentTimeMillis()) {
-                        c.add(Calendar.DAY_OF_YEAR, 1);
-                    }
-                } else {
-                    c.add(Calendar.DAY_OF_YEAR, 1);
-                    c.set(Calendar.HOUR_OF_DAY, 9);
-                    c.set(Calendar.MINUTE, 0);
-                }
-                c.set(Calendar.SECOND, 0);
-                c.set(Calendar.MILLISECOND, 0);
-                due[0] = c.getTimeInMillis();
-                dial.setTime(due[0]);
-                upd[0].run();
+        // Quick presets: yours to add (+ Add) and remove (long-press a button)
+        final FlowLayout quick = new FlowLayout(this, dp(8), dp(8));
+        final Runnable[] buildQuick = new Runnable[1];
+        buildQuick[0] = () -> {
+            quick.removeAllViews();
+            for (final String spec : Presets.load(this)) {
+                TextView q = formChip(Presets.label(spec), false);
+                q.setTextSize(13);
+                q.setMinHeight(dp(44));
+                q.setPadding(dp(14), 0, dp(14), 0);
+                q.setOnClickListener(v -> {
+                    Hap.tick(v);
+                    due[0] = Presets.time(spec);
+                    dial.setTime(due[0]);
+                    upd[0].run();
+                });
+                q.setOnLongClickListener(v -> {
+                    Hap.confirm(v);
+                    new Dlg.Builder(this)
+                            .setTitle("Remove \u201C" + Presets.label(spec) + "\u201D?")
+                            .setMessage("It disappears from your quick buttons. You can add it again any time.")
+                            .setPositiveButton("Remove", (d2, w2) -> {
+                                Presets.remove(this, spec);
+                                buildQuick[0].run();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                    return true;
+                });
+                quick.addView(q);
+            }
+            TextView add = formChip("+ Add", false);
+            add.setTextSize(13);
+            add.setMinHeight(dp(44));
+            add.setPadding(dp(14), 0, dp(14), 0);
+            add.setTextColor(Pal.accent);
+            add.setOnClickListener(v -> {
+                Hap.tick(v);
+                newPreset(buildQuick[0]);
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1f);
-            if (i < qNames.length - 1) lp.rightMargin = dp(8);
-            quick.addView(q, lp);
-        }
+            quick.addView(add);
+        };
+        buildQuick[0].run();
         form.addView(quick, new LinearLayout.LayoutParams(-1, -2));
 
         // Picked time + clear
@@ -1330,24 +1303,19 @@ public class MainActivity extends Activity {
 
     private void showUndo(String msg, Runnable undo) {
         undoAction = undo;
-        undoMsg.setText(msg);
+        undoPill.setContentDescription("Undo: " + msg);
         undoPill.removeCallbacks(undoHide);
-        undoFill.animate().cancel();
         undoPill.animate().cancel();
         undoPill.setVisibility(View.VISIBLE);
         undoPill.setAlpha(0f);
         undoPill.animate().alpha(1f).setDuration(150).start();
-        undoFill.setPivotX(0f);
-        undoFill.setScaleX(1f);
-        // linear, so the bar shrinks evenly: 4 seconds from full to empty
-        undoFill.animate().scaleX(0f).setDuration(4000)
-                .setInterpolator(new android.view.animation.LinearInterpolator()).start();
+        undoPill.start(4000); // linear, 4 seconds from full to empty
         undoPill.postDelayed(undoHide, 4000);
     }
 
     private void hideUndo(boolean fade) {
         undoPill.removeCallbacks(undoHide);
-        undoFill.animate().cancel();
+        undoPill.stop();
         undoAction = null;
         if (fade) {
             undoPill.animate().alpha(0f).setDuration(180)
@@ -1356,6 +1324,42 @@ public class MainActivity extends Activity {
             undoPill.animate().cancel();
             undoPill.setVisibility(View.GONE);
         }
+    }
+
+    /** Dialog flow for making a new quick button. */
+    private void newPreset(final Runnable done) {
+        String[] items = {"In\u2026 (for example 45 min or 2 days)", "At a time of day\u2026",
+                "Tomorrow at\u2026", "Back to the standard three"};
+        new Dlg.Builder(this)
+                .setTitle("New quick button")
+                .setItems(items, (d, which) -> {
+                    if (which == 0) {
+                        final DialView every = new DialView(this, false, true);
+                        every.setRelative(30, 0);
+                        new Dlg.Builder(this)
+                                .setTitle("Remind me in")
+                                .setView(every)
+                                .setPositiveButton("Add", (d2, w2) -> {
+                                    Presets.add(this, Presets.specIn(every.everyAmount(), every.everyUnit()));
+                                    done.run();
+                                })
+                                .setNegativeButton("Cancel", null)
+                                .show();
+                    } else if (which == 3) {
+                        Presets.reset(this);
+                        done.run();
+                    } else {
+                        final boolean tomorrow = which == 2;
+                        int theme = Pal.dark ? android.R.style.Theme_DeviceDefault_Dialog_Alert
+                                : android.R.style.Theme_DeviceDefault_Light_Dialog_Alert;
+                        new android.app.TimePickerDialog(this, theme, (tp, h, m) -> {
+                            Presets.add(this, Presets.specAt(tomorrow, h, m));
+                            done.run();
+                        }, tomorrow ? 9 : 20, 0, true).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void confirmDelete(final Task t) {
@@ -1660,12 +1664,7 @@ public class MainActivity extends Activity {
                     java.util.List<Sub> all = db.subs(t.id);
                     for (Sub x : all) allDone &= x.done;
                     if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
-                        if (t.repeat == 0) {
-                            setDoneAndSchedule(t.id, true);
-                        } else {
-                            Reminders.complete(MainActivity.this, t.id); // repeating: waits for its next time
-                            db.resetSubs(t.id);
-                        }
+                        setDoneAndSchedule(t.id, true); // moves to Done, subtasks stay ticked
                         Hap.confirm(v);
                         toast("All subtasks done \u00B7 task completed");
                     } else if (!nowDone && t.done) { // un-ticking one re-opens the task
