@@ -1976,7 +1976,7 @@ public class MainActivity extends Activity {
                     java.util.List<Sub> all = db.subs(t.id);
                     for (Sub x : all) allDone &= x.done;
                     if (allDone && !all.isEmpty() && !t.done && t.repeat > 0) { // repeating: this round is done
-                        Reminders.toggleDay(this, db, t, startOfDayOf(t.due));
+                        Reminders.toggleDay(MainActivity.this, db, t, startOfDayOf(t.due));
                         Hap.confirm(v);
                         toast("All subtasks done \u00B7 next round is scheduled");
                     } else if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
