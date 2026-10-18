@@ -14,8 +14,8 @@ import java.util.regex.Pattern;
 /**
  * Turns "call mom @sat 2pm" into a task "call mom" due on Saturday at 14:00.
  * Only text after the trigger symbol (default @) is read, so ordinary titles are never touched.
- * Understands today, tomorrow, weekdays, "next sunday", "in 2 hours", "dec 25", clock times,
- * and repeats such as "every monday 2pm", "every 3 days", "every weekday 9am", "daily".
+ * Understands today, tomorrow, weekdays, "next sunday", "in 2 hours", "dec 25", "12 may 2027", "12/05/2027",
+ * "the 15th", clock times, and repeats such as "every monday 2pm", "every 3 days", "every weekday 9am", "daily".
  * Your own shortcuts from Settings (e.g. "gym" = "every mon wed fri 6pm") are expanded first.
  */
 final class SmartDate {
@@ -36,6 +36,7 @@ final class SmartDate {
     private static final String[] MONTHS = {"jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep",
             "oct", "nov", "dec"};
     private static final Pattern TIME = Pattern.compile("^(\\d{1,2})(?::(\\d{2}))?(am|pm|a|p)?$");
+    private static final Pattern DATE_NUM = Pattern.compile("^(\\d{1,4})[/.\\-](\\d{1,2})(?:[/.\\-](\\d{1,4}))?$");
     private static final Pattern NUM = Pattern.compile("^(\\d{1,2})(?:st|nd|rd|th)?$");
 
     static Map<String, String> aliases(Context c) {
@@ -66,7 +67,7 @@ final class SmartDate {
         List<Integer> ownerEnd = new ArrayList<>(); // end offset (in phrase) of the typed word each token came from
         Matcher tm = Pattern.compile("\\S+").matcher(phrase);
         while (tm.find()) {
-            String w = tm.group().toLowerCase(Locale.ROOT).replaceAll("[.;!?]+$", "");
+            String w = tm.group().toLowerCase(Locale.ROOT).replaceAll("[.;!?,]+$", "");
             String use = al.containsKey(w) ? al.get(w) : w;
             for (String part : use.toLowerCase(Locale.ROOT).split("[\\s,]+")) {
                 if (part.isEmpty()) continue;
@@ -112,9 +113,11 @@ final class SmartDate {
             d.set(Calendar.HOUR_OF_DAY, h);
             d.set(Calendar.MINUTE, mi);
             if (p.month >= 0) {
+                d.set(Calendar.DAY_OF_MONTH, 1);
                 d.set(Calendar.MONTH, p.month);
-                d.set(Calendar.DAY_OF_MONTH, p.dom);
-                if (d.before(c)) d.add(Calendar.YEAR, 1);
+                if (p.year >= 0) d.set(Calendar.YEAR, p.year);
+                d.set(Calendar.DAY_OF_MONTH, Math.min(p.dom, d.getActualMaximum(Calendar.DAY_OF_MONTH)));
+                if (p.year < 0 && d.before(c)) d.add(Calendar.YEAR, 1);
             } else if (p.weekday >= 0 || p.mask != 0) {
                 int today = (c.get(Calendar.DAY_OF_WEEK) + 5) % 7;
                 for (int k = p.next ? 1 : 0; k <= 14; k++) {
@@ -127,6 +130,14 @@ final class SmartDate {
                         d = d2;
                         break;
                     }
+                }
+            } else if (p.domOnly) { // "the 15th": this month if it is still ahead, else next month
+                d.set(Calendar.DAY_OF_MONTH, 1);
+                d.set(Calendar.DAY_OF_MONTH, Math.min(p.dom, d.getActualMaximum(Calendar.DAY_OF_MONTH)));
+                if (!d.after(c)) {
+                    d.set(Calendar.DAY_OF_MONTH, 1);
+                    d.add(Calendar.MONTH, 1);
+                    d.set(Calendar.DAY_OF_MONTH, Math.min(p.dom, d.getActualMaximum(Calendar.DAY_OF_MONTH)));
                 }
             } else if (p.dayOffset >= 0) {
                 d.add(Calendar.DAY_OF_YEAR, p.dayOffset);
@@ -178,6 +189,8 @@ final class SmartDate {
         int mask;
         int month = -1;
         int dom;
+        int year = -1;
+        boolean domOnly;
         int everyN;
         int everyUnit = -1;
         int relAmount;
@@ -286,6 +299,13 @@ final class SmartDate {
                     minute = 0;
                     any = true;
                     return 1;
+                case "day":
+                    if (at(i + 1).equals("after") && at(i + 2).equals("tomorrow")) {
+                        dayOffset = 2;
+                        any = true;
+                        return 3;
+                    }
+                    return 0;
                 case "daily": case "everyday":
                     return rep(1, 2, 1);
                 case "weekly":
@@ -315,7 +335,7 @@ final class SmartDate {
                     month = mo;
                     dom = Integer.parseInt(m.group(1));
                     any = true;
-                    return 2;
+                    return 2 + takeYear(i + 2);
                 }
             }
             Matcher nm = NUM.matcher(w);
@@ -324,7 +344,44 @@ final class SmartDate {
                 month = month(at(i + 1));
                 dom = Integer.parseInt(nm.group(1));
                 any = true;
-                return 2;
+                return 2 + takeYear(i + 2);
+            }
+            // "the 15th" on its own: the next 15th
+            if (w.matches("\\d{1,2}(st|nd|rd|th)") && validDom(w.replaceAll("\\D", ""))) {
+                dom = Integer.parseInt(w.replaceAll("\\D", ""));
+                domOnly = true;
+                any = true;
+                return 1;
+            }
+            // numeric dates: 12/05/2027, 12.5.27, 2027-05-12, 5/12
+            Matcher dm = DATE_NUM.matcher(w);
+            if (dm.matches()) {
+                int a = Integer.parseInt(dm.group(1));
+                int b = Integer.parseInt(dm.group(2));
+                String ys = dm.group(3);
+                int yy = -1;
+                int mm;
+                int dd;
+                if (dm.group(1).length() == 4) { // year first: 2027-05-12
+                    yy = a;
+                    mm = b;
+                    dd = ys == null ? 1 : Integer.parseInt(ys);
+                } else {
+                    boolean monthFirst = java.util.Locale.getDefault().getCountry().equals("US");
+                    if (a > 12) monthFirst = false;
+                    else if (b > 12) monthFirst = true;
+                    mm = monthFirst ? a : b;
+                    dd = monthFirst ? b : a;
+                    if (ys != null) yy = ys.length() == 2 ? 2000 + Integer.parseInt(ys) : Integer.parseInt(ys);
+                }
+                if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+                    month = mm - 1;
+                    dom = dd;
+                    if (yy >= 0) year = yy;
+                    any = true;
+                    return 1;
+                }
+                return 0;
             }
             Matcher tmt = TIME.matcher(w);
             if (tmt.matches()) {
@@ -353,6 +410,16 @@ final class SmartDate {
                 minute = mi;
                 any = true;
                 return used;
+            }
+            return 0;
+        }
+
+        /** An optional four-digit year right after a date ("12 may 2027"); returns tokens used (0 or 1). */
+        private int takeYear(int i) {
+            String y = at(i);
+            if (y.matches("(19|20)\\d\\d")) {
+                year = Integer.parseInt(y);
+                return 1;
             }
             return 0;
         }

@@ -12,7 +12,7 @@ import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.TextView;
 
-/** Makes every dialog match the design: bottom-anchored rounded 28dp card, big bold title, accent text buttons. */
+/** Makes every dialog match the design: bottom-anchored rounded 28dp card, big bold title, pill buttons (filled accent, tonal, or red for destructive). */
 final class Dlg {
     private Dlg() { }
 
@@ -72,8 +72,42 @@ final class Dlg {
             b.setAllCaps(false);
             b.setTextSize(16);
             b.setTypeface(Typeface.DEFAULT_BOLD);
-            b.setTextColor(Pal.accent);
-            b.setMinHeight(Math.round(48 * dn));
+            String label = b.getText().toString().toLowerCase(java.util.Locale.ROOT);
+            boolean danger = label.startsWith("delete") || label.startsWith("remove") || label.startsWith("clear")
+                    || label.startsWith("discard") || label.startsWith("reset");
+            int bg;
+            int fg;
+            if (danger && k == AlertDialog.BUTTON_POSITIVE) { // confirming something destructive
+                bg = Pal.overdue;
+                fg = Pal.dark ? 0xFF3B0A07 : 0xFFFFFFFF;
+            } else if (danger) { // a destructive side action, e.g. "Remove table"
+                bg = HabitUi.alpha(Pal.overdue, 0x26);
+                fg = Pal.overdue;
+            } else if (k == AlertDialog.BUTTON_POSITIVE) {
+                bg = Pal.accent;
+                fg = Pal.onAccent;
+            } else if (k == AlertDialog.BUTTON_NEGATIVE) {
+                bg = Pal.chip;
+                fg = Pal.ink;
+            } else {
+                bg = Pal.chip;
+                fg = Pal.accent;
+            }
+            GradientDrawable pill = new GradientDrawable();
+            pill.setColor(bg);
+            pill.setCornerRadius(100 * dn);
+            b.setBackground(pill);
+            b.setTextColor(fg);
+            b.setStateListAnimator(null);
+            b.setMinHeight(Math.round(46 * dn));
+            b.setMinWidth(Math.round(84 * dn));
+            b.setPadding(Math.round(22 * dn), 0, Math.round(22 * dn), 0);
+            android.view.ViewGroup.LayoutParams lp = b.getLayoutParams();
+            if (lp instanceof android.view.ViewGroup.MarginLayoutParams) {
+                android.view.ViewGroup.MarginLayoutParams mp = (android.view.ViewGroup.MarginLayoutParams) lp;
+                mp.setMargins(Math.round(4 * dn), Math.round(6 * dn), Math.round(4 * dn), Math.round(6 * dn));
+                b.setLayoutParams(mp);
+            }
         }
         if (w != null) Fonts.apply(w.getDecorView());
     }

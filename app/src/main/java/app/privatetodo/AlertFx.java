@@ -1,13 +1,17 @@
 package app.privatetodo;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
+import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.RadialGradient;
 import android.graphics.Shader;
 import android.view.View;
@@ -15,24 +19,30 @@ import android.view.View;
 import java.util.Random;
 
 /**
- * Animated backdrops for the full-screen alert. Five styles (pick one in Settings): edge glow, pulse rings,
- * aurora, sparkles and waves. All time-based and drawn with plain canvas calls, so they run smoothly and
+ * Animated backdrops for the full-screen alert. Ten styles (pick one in Settings): edge glow, aurora, waves,
+ * mesh, liquid, beams, warp, grid, ribbons and orbit. All time-based and drawn with plain canvas calls, so they run smoothly and
  * stop the moment the screen closes. They never take touches.
  */
 final class AlertFx extends View {
     static final int OFF = 0;
     static final int EDGE = 1;
-    static final int PULSE = 2;
-    static final int AURORA = 3;
-    static final int SPARKLES = 4;
-    static final int WAVES = 5;
+    static final int AURORA = 2;
+    static final int WAVES = 3;
+    static final int MESH = 4;
+    static final int LIQUID = 5;
+    static final int BEAMS = 6;
+    static final int WARP = 7;
+    static final int GRID = 8;
+    static final int RIBBONS = 9;
+    static final int ORBIT = 10;
 
-    static final String[] NAMES = {"Off", "Edge glow", "Pulse", "Aurora", "Sparkles", "Waves"};
+    static final String[] NAMES = {"Off", "Edge glow", "Aurora", "Waves", "Mesh", "Liquid", "Beams", "Warp",
+            "Grid", "Ribbons", "Orbit"};
 
     /** The view for a style, or null for Off. */
     static View create(Context c, int mode) {
         if (mode == EDGE) return new GlowView(c);
-        if (mode >= PULSE && mode <= WAVES) return new AlertFx(c, mode);
+        if (mode >= AURORA && mode <= ORBIT) return new AlertFx(c, mode);
         return null;
     }
 
@@ -41,6 +51,7 @@ final class AlertFx extends View {
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();
     private final Matrix m = new Matrix();
+    private final RectF rect = new RectF();
     private long t0;
     private RadialGradient blob;
     private RadialGradient core;
@@ -98,50 +109,35 @@ final class AlertFx extends View {
         if (getWidth() == 0) return;
         float t = (System.nanoTime() - t0) / 1e9f;
         switch (mode) {
-            case PULSE:
-                pulse(c, t);
-                break;
             case AURORA:
                 aurora(c, t);
                 break;
-            case SPARKLES:
-                sparkles(c, t);
+            case MESH:
+                mesh(c, t);
+                break;
+            case LIQUID:
+                liquid(c, t);
+                break;
+            case BEAMS:
+                beams(c, t);
+                break;
+            case WARP:
+                warp(c, t);
+                break;
+            case GRID:
+                grid(c, t);
+                break;
+            case RIBBONS:
+                ribbons(c, t);
+                break;
+            case ORBIT:
+                orbit(c, t);
                 break;
             default:
                 waves(c, t);
                 break;
         }
         postInvalidateOnAnimation();
-    }
-
-    private void pulse(Canvas c, float t) {
-        float w = getWidth();
-        float h = getHeight();
-        float cx = w / 2f;
-        float cy = h * 0.30f;
-        float reach = Math.max(w, h) * 0.8f;
-        // a soft breathing core behind the clock
-        float breath = 0.85f + 0.15f * (float) Math.sin(t * 2.1f);
-        m.setTranslate(cx, cy);
-        m.postScale(breath, breath, cx, cy);
-        core.setLocalMatrix(m);
-        p.setStyle(Paint.Style.FILL);
-        p.setShader(core);
-        p.setColor(0xFFFFFFFF);
-        p.setAlpha(0);
-        p.setShader(new RadialGradient(cx, cy, w * 0.55f * breath,
-                new int[]{HabitUi.alpha(pal(t * 0.4f), 0x55), 0x00000000}, null, Shader.TileMode.CLAMP));
-        c.drawRect(0, 0, w, h, p);
-        p.setShader(null);
-        p.setStyle(Paint.Style.STROKE);
-        for (int i = 0; i < 4; i++) {
-            float ph = ((t / 3.4f) + i / 4f) % 1f;
-            float rad = ph * reach;
-            float a = (float) Math.pow(1f - ph, 1.7f);
-            p.setStrokeWidth((2f + ph * 12f) * d);
-            p.setColor(HabitUi.alpha(pal(t * 0.35f + i * 1.1f), Math.round(150 * a)));
-            c.drawCircle(cx, cy, rad, p);
-        }
     }
 
     private void aurora(Canvas c, float t) {
@@ -167,32 +163,6 @@ final class AlertFx extends View {
         fill.setXfermode(null);
     }
 
-    private void sparkles(Canvas c, float t) {
-        float w = getWidth();
-        float h = getHeight();
-        p.setStyle(Paint.Style.FILL);
-        for (int i = 0; i < sx.length; i++) {
-            float rise = (sy[i] + t * ss[i]) % 1f;
-            float y = h * (1f - rise);
-            float x = sx[i] * w + (float) Math.sin(t * 0.7f + sp[i]) * 14 * d;
-            float tw = (float) Math.sin(t * (1.4f + ss[i] * 8f) + sp[i]);
-            float a = 0.25f + 0.75f * tw * tw;
-            float edge = Math.min(1f, Math.min(rise, 1f - rise) * 6f); // fade in at the bottom, out at the top
-            float r = (1.6f + ss[i] * 48f) * d;
-            int col = sc[i];
-            p.setColor(HabitUi.alpha(col, Math.round(40 * a * edge)));
-            c.drawCircle(x, y, r * 3.2f, p);
-            p.setColor(HabitUi.alpha(0xFFFFFFFF, Math.round(230 * a * edge)));
-            if (r > 3.2f * d) { // the bigger ones are four-point stars
-                float len = r * 2.1f;
-                float th = r * 0.32f;
-                c.drawRect(x - len, y - th / 2f, x + len, y + th / 2f, p);
-                c.drawRect(x - th / 2f, y - len, x + th / 2f, y + len, p);
-            }
-            c.drawCircle(x, y, r * 0.6f, p);
-        }
-    }
-
     private void waves(Canvas c, float t) {
         float w = getWidth();
         float h = getHeight();
@@ -216,5 +186,256 @@ final class AlertFx extends View {
             c.drawPath(path, p);
         }
         p.setShader(null);
+    }
+
+    // ---- Mesh: big saturated blobs drifting over each other, with a fine film grain on top
+    private void mesh(Canvas c, float t) {
+        float w = getWidth();
+        float h = getHeight();
+        p.setStyle(Paint.Style.FILL);
+        float r = Math.max(w, h) * 0.62f;
+        for (int i = 0; i < 5; i++) {
+            float x = w * (0.5f + 0.46f * (float) Math.sin(t * (0.11f + i * 0.037f) + i * 2.1f));
+            float y = h * (0.5f + 0.46f * (float) Math.cos(t * (0.09f + i * 0.043f) + i * 1.3f));
+            int col = pal(i * 1.0f + t * 0.06f);
+            p.setShader(new RadialGradient(x, y, r, new int[]{HabitUi.alpha(col, 0xB0), HabitUi.alpha(col, 0x00)},
+                    null, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, p);
+        }
+        // a soft vignette keeps the clock readable
+        p.setShader(new RadialGradient(w / 2f, h * 0.35f, Math.max(w, h) * 0.75f,
+                new int[]{0x00000000, 0x99000000}, null, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        p.setShader(null);
+        for (int i = 0; i < sx.length; i++) { // grain: twinkling pin-pricks that never move
+            float a = 0.5f + 0.5f * (float) Math.sin(t * (0.8f + ss[i] * 10f) + sp[i]);
+            p.setColor(HabitUi.alpha(0xFFFFFFFF, Math.round(60 * a)));
+            c.drawCircle(sx[i] * w, sy[i] * h, 1.2f * d, p);
+        }
+    }
+
+    // ---- Liquid: metaballs that melt into each other
+    private Bitmap goo;
+    private Canvas gooCanvas;
+    private final Paint gooPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+    private final Paint gooBlob = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Rect gooSrc = new Rect();
+    private final Rect gooDst = new Rect();
+
+    private void liquid(Canvas c, float t) {
+        float w = getWidth();
+        float h = getHeight();
+        int gw = Math.max(24, Math.round(w / 7f));
+        int gh = Math.max(24, Math.round(h / 7f));
+        if (goo == null || goo.getWidth() != gw || goo.getHeight() != gh) {
+            if (goo != null) goo.recycle();
+            goo = Bitmap.createBitmap(gw, gh, Bitmap.Config.ARGB_8888);
+            gooCanvas = new Canvas(goo);
+            gooPaint.setColorFilter(new ColorMatrixColorFilter(new float[]{
+                    1, 0, 0, 0, 0,
+                    0, 1, 0, 0, 0,
+                    0, 0, 1, 0, 0,
+                    0, 0, 0, 16, -16 * 110}));
+        }
+        goo.eraseColor(0);
+        gooBlob.setStyle(Paint.Style.FILL);
+        int n = 6;
+        for (int i = 0; i < n; i++) {
+            float fx = 0.5f + 0.34f * (float) Math.sin(t * (0.23f + i * 0.051f) + i * 1.9f);
+            float fy = 0.5f + 0.42f * (float) Math.cos(t * (0.17f + i * 0.047f) + i * 2.7f);
+            float rad = gw * (0.22f + 0.05f * (float) Math.sin(t * 0.5f + i));
+            int col = pal(i * 0.9f + t * 0.1f);
+            gooBlob.setShader(new RadialGradient(fx * gw, fy * gh, rad,
+                    new int[]{col, HabitUi.alpha(col, 0)}, null, Shader.TileMode.CLAMP));
+            gooCanvas.drawCircle(fx * gw, fy * gh, rad, gooBlob);
+        }
+        gooSrc.set(0, 0, gw, gh);
+        gooDst.set(0, 0, (int) w, (int) h);
+        gooPaint.setAlpha(150);
+        c.drawBitmap(goo, gooSrc, gooDst, gooPaint);
+        gooPaint.setAlpha(255);
+    }
+
+    // ---- Beams: stage-light shafts fanning from above, swaying slowly
+    private void beams(Canvas c, float t) {
+        float w = getWidth();
+        float h = getHeight();
+        p.setStyle(Paint.Style.FILL);
+        p.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
+        float ox = w / 2f;
+        float oy = -h * 0.08f;
+        float len = h * 1.25f;
+        for (int i = 0; i < 7; i++) {
+            float base = -62f + i * (124f / 6f);
+            float ang = base + 9f * (float) Math.sin(t * (0.35f + i * 0.06f) + i * 1.4f);
+            float spread = 5.5f + 2.5f * (float) Math.sin(t * 0.5f + i * 0.9f);
+            double a1 = Math.toRadians(90 + ang - spread);
+            double a2 = Math.toRadians(90 + ang + spread);
+            path.reset();
+            path.moveTo(ox, oy);
+            path.lineTo(ox + (float) Math.cos(a1) * len, oy + (float) Math.sin(a1) * len);
+            path.lineTo(ox + (float) Math.cos(a2) * len, oy + (float) Math.sin(a2) * len);
+            path.close();
+            int col = pal(i * 0.85f + t * 0.08f);
+            float flick = 0.65f + 0.35f * (float) Math.sin(t * 0.9f + i * 2f);
+            p.setShader(new LinearGradient(ox, oy, ox, oy + len, HabitUi.alpha(col, Math.round(130 * flick)),
+                    HabitUi.alpha(col, 0), Shader.TileMode.CLAMP));
+            c.drawPath(path, p);
+        }
+        p.setShader(new RadialGradient(ox, 0, w * 0.6f, new int[]{0x66FFFFFF, 0x00FFFFFF}, null,
+                Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h * 0.5f, p);
+        p.setShader(null);
+        p.setXfermode(null);
+    }
+
+    // ---- Warp: stars streaking out of the clock like a jump to hyperspace
+    private void warp(Canvas c, float t) {
+        float w = getWidth();
+        float h = getHeight();
+        float cx = w / 2f;
+        float cy = h * 0.30f;
+        float reach = (float) Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy));
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        for (int i = 0; i < sx.length; i++) {
+            for (int k = 0; k < 2; k++) {
+                float ang = (sx[i] + k * 0.5f) * 6.2832f * 1.0f + sp[i];
+                float prog = (sy[i] + t * (0.10f + ss[i] * 2.2f) + k * 0.37f) % 1f;
+                float e = prog * prog;
+                float r1 = e * reach;
+                float r0 = Math.max(0f, (e - (0.02f + 0.16f * e)) * reach);
+                float a = Math.min(1f, prog * 4f) * (1f - prog * 0.35f);
+                p.setStrokeWidth((0.8f + e * 2.6f) * d);
+                p.setColor(HabitUi.alpha(k == 0 ? 0xFFFFFFFF : sc[i], Math.round(230 * a)));
+                float co = (float) Math.cos(ang);
+                float si = (float) Math.sin(ang);
+                c.drawLine(cx + co * r0, cy + si * r0, cx + co * r1, cy + si * r1, p);
+            }
+        }
+        p.setStrokeCap(Paint.Cap.BUTT);
+        p.setStyle(Paint.Style.FILL);
+        p.setShader(new RadialGradient(cx, cy, w * 0.55f, new int[]{HabitUi.alpha(pal(t * 0.2f), 0x70), HabitUi.alpha(pal(t * 0.2f), 0)},
+                null, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        p.setShader(null);
+    }
+
+    // ---- Grid: a lattice of dots that swell and glow as two light waves roll across it
+    private void grid(Canvas c, float t) {
+        float w = getWidth();
+        float h = getHeight();
+        float gap = 20 * d;
+        p.setStyle(Paint.Style.FILL);
+        float c1x = w * (0.5f + 0.35f * (float) Math.sin(t * 0.21f));
+        float c1y = h * (0.35f + 0.2f * (float) Math.cos(t * 0.17f));
+        float c2x = w * (0.5f + 0.4f * (float) Math.cos(t * 0.15f + 2f));
+        float c2y = h * (0.7f + 0.2f * (float) Math.sin(t * 0.19f));
+        int cols = (int) (w / gap) + 2;
+        int rows = (int) (h / gap) + 2;
+        float ox = (w - (cols - 1) * gap) / 2f;
+        float oy = (h - (rows - 1) * gap) / 2f;
+        for (int j = 0; j < rows; j++) {
+            for (int i = 0; i < cols; i++) {
+                float x = ox + i * gap;
+                float y = oy + j * gap;
+                float d1 = (float) Math.hypot(x - c1x, y - c1y);
+                float d2 = (float) Math.hypot(x - c2x, y - c2y);
+                float w1 = (float) Math.sin(d1 / (38f * d) - t * 2.2f);
+                float w2 = (float) Math.sin(d2 / (46f * d) - t * 1.7f);
+                float e = Math.max(0f, 0.5f * (w1 + w2) * 0.5f + 0.5f);
+                e = e * e * e;
+                float fall = 1f / (1f + (Math.min(d1, d2) / (w * 0.7f)));
+                float lvl = Math.min(1f, e * 1.4f * fall + 0.04f);
+                p.setColor(HabitUi.alpha(pal(d1 / (160f * d) + t * 0.2f), Math.round(30 + 225 * lvl)));
+                c.drawCircle(x, y, (1.1f + 2.4f * lvl) * d, p);
+            }
+        }
+    }
+
+    // ---- Ribbons: glossy silk strands weaving across the screen
+    private void ribbons(Canvas c, float t) {
+        float w = getWidth();
+        float h = getHeight();
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
+        for (int r = 0; r < 6; r++) {
+            float yMid = h * (0.18f + r * 0.13f);
+            float amp = h * (0.07f + 0.02f * (float) Math.sin(t * 0.3f + r));
+            float k = (1.3f + r * 0.18f) * 6.2832f / w;
+            float sp2 = t * (0.5f + r * 0.11f) * (r % 2 == 0 ? 1 : -1);
+            path.reset();
+            for (float x = -10 * d; x <= w + 10 * d; x += 10 * d) {
+                float y = yMid + amp * (float) Math.sin(x * k + sp2 + r) + amp * 0.5f * (float) Math.sin(x * k * 2.3f - sp2 * 0.6f);
+                if (x < 0) path.moveTo(x, y);
+                else path.lineTo(x, y);
+            }
+            int col = pal(r * 0.9f + t * 0.1f);
+            p.setShader(new LinearGradient(0, 0, w, 0, new int[]{HabitUi.alpha(col, 0),
+                    HabitUi.alpha(col, 0xC0), HabitUi.alpha(pal(r * 0.9f + 1.5f + t * 0.1f), 0xC0),
+                    HabitUi.alpha(col, 0)}, null, Shader.TileMode.CLAMP));
+            p.setStrokeWidth(16 * d);
+            p.setAlpha(40);
+            c.drawPath(path, p);
+            p.setStrokeWidth(7 * d);
+            p.setAlpha(110);
+            c.drawPath(path, p);
+            p.setStrokeWidth(1.6f * d);
+            p.setAlpha(255);
+            c.drawPath(path, p);
+        }
+        p.setShader(null);
+        p.setXfermode(null);
+        p.setStrokeCap(Paint.Cap.BUTT);
+    }
+
+    // ---- Orbit: tilted rings with comets circling a glowing core
+    private void orbit(Canvas c, float t) {
+        float w = getWidth();
+        float h = getHeight();
+        float cx = w / 2f;
+        float cy = h * 0.32f;
+        p.setStyle(Paint.Style.FILL);
+        float breath = 0.9f + 0.1f * (float) Math.sin(t * 1.6f);
+        p.setShader(new RadialGradient(cx, cy, w * 0.62f * breath,
+                new int[]{HabitUi.alpha(pal(t * 0.25f), 0x66), HabitUi.alpha(pal(t * 0.25f), 0)}, null, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, p);
+        p.setShader(null);
+        for (int i = 0; i < 4; i++) {
+            float rx = w * (0.30f + i * 0.085f);
+            float ry = rx * (0.30f + 0.06f * i);
+            float tilt = 24f * i - 30f + 10f * (float) Math.sin(t * 0.25f + i);
+            c.save();
+            c.rotate(tilt + t * (3f + i * 1.5f) * (i % 2 == 0 ? 1 : -1), cx, cy);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(1.2f * d);
+            p.setColor(HabitUi.alpha(pal(i * 0.8f + t * 0.1f), 90));
+            rect.set(cx - rx, cy - ry, cx + rx, cy + ry);
+            c.drawOval(rect, p);
+            p.setStyle(Paint.Style.FILL);
+            float ang = t * (0.9f - i * 0.15f) * (i % 2 == 0 ? 1 : -1) + i * 1.7f;
+            for (int tail = 0; tail < 9; tail++) { // comet: a fading trail behind the head
+                float a2 = ang - tail * 0.07f * (i % 2 == 0 ? 1 : -1);
+                float px = cx + rx * (float) Math.cos(a2);
+                float py = cy + ry * (float) Math.sin(a2);
+                p.setColor(HabitUi.alpha(0xFFFFFFFF, Math.round(255 * (1f - tail / 9f))));
+                c.drawCircle(px, py, (4.2f - tail * 0.35f) * d, p);
+            }
+            float hx = cx + rx * (float) Math.cos(ang);
+            float hy = cy + ry * (float) Math.sin(ang);
+            p.setColor(HabitUi.alpha(pal(i * 0.8f + t * 0.1f), 70));
+            c.drawCircle(hx, hy, 14 * d, p);
+            c.restore();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (goo != null) {
+            goo.recycle();
+            goo = null;
+        }
+        super.onDetachedFromWindow();
     }
 }

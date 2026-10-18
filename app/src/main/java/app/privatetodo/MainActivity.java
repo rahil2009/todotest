@@ -179,7 +179,7 @@ public class MainActivity extends Activity {
         trash.setContentDescription("Clear completed tasks");
         trash.setOnClickListener(v -> confirmClearDone());
         clearDone = trash;
-        header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(trash, new LinearLayout.LayoutParams(dp(41), dp(48)));
 
         IconView habit = new IconView(this, IconView.HABIT);
         habit.setContentDescription("Habits");
@@ -187,7 +187,7 @@ public class MainActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, HabitActivity.class));
         });
-        header.addView(habit, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(habit, new LinearLayout.LayoutParams(dp(41), dp(48)));
 
         IconView pomodoro = new IconView(this, IconView.POMODORO);
         pomodoro.setContentDescription("Pomodoro focus timer");
@@ -195,7 +195,15 @@ public class MainActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, PomodoroActivity.class));
         });
-        header.addView(pomodoro, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(pomodoro, new LinearLayout.LayoutParams(dp(41), dp(48)));
+
+        IconView calendar = new IconView(this, IconView.CALENDAR);
+        calendar.setContentDescription("Calendar");
+        calendar.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, CalendarActivity.class));
+        });
+        header.addView(calendar, new LinearLayout.LayoutParams(dp(41), dp(48)));
 
         IconView plan = new IconView(this, IconView.PLAN);
         plan.setContentDescription("Plan");
@@ -203,12 +211,12 @@ public class MainActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, PlanActivity.class));
         });
-        header.addView(plan, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(plan, new LinearLayout.LayoutParams(dp(41), dp(48)));
 
         IconView notebook = new IconView(this, IconView.NOTE);
         notebook.setContentDescription("Notebook");
         notebook.setOnClickListener(v -> startActivity(new Intent(this, NotesActivity.class)));
-        header.addView(notebook, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(notebook, new LinearLayout.LayoutParams(dp(41), dp(48)));
 
         bell = new IconView(this, IconView.BELL);
         bell.setContentDescription("Reminder setup");
@@ -858,7 +866,46 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams etl = new LinearLayout.LayoutParams(dp(44), dp(44));
         etl.leftMargin = dp(8);
         titleRow.addView(emojiBtn, etl);
-        form.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
+        // Hero banner: the task title on a deep accent gradient with a live progress bar.
+        // light mode: black banner; dark: light banner; AMOLED: black banner with a thin outline
+        final int heroA = Pal.amoled ? 0xFF000000 : Pal.dark ? 0xFFE9EFEC : 0xFF0E1513;
+        final int heroB = Pal.amoled ? 0xFF000000 : Pal.dark ? 0xFFCDD7D3 : 0xFF2A3431;
+        final int heroInk = Pal.dark && !Pal.amoled ? 0xFF0E1513 : Color.WHITE;
+        input.setTextColor(heroInk);
+        input.setHintTextColor(HabitUi.alpha(heroInk, 150));
+        Links.pillWatch(input, heroInk);
+        input.setBackground(null);
+        input.setPadding(0, 0, 0, 0);
+        input.setTypeface(input.getTypeface(), android.graphics.Typeface.BOLD);
+        LinearLayout hero = new LinearLayout(this);
+        hero.setOrientation(LinearLayout.VERTICAL);
+        hero.setPadding(dp(18), dp(14), dp(14), dp(14));
+        GradientDrawable hg = new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{heroA, heroB});
+        hg.setCornerRadius(dp(20));
+        if (Pal.amoled) hg.setStroke(dp(1), 0xFF3A4643);
+        hero.setBackground(hg);
+        hero.addView(titleRow, new LinearLayout.LayoutParams(-1, -2));
+        final View progTrack = new View(this);
+        GradientDrawable pt = new GradientDrawable();
+        pt.setCornerRadius(dp(3));
+        pt.setColor(HabitUi.alpha(heroInk, 70));
+        progTrack.setBackground(pt);
+        final View progFill = new View(this);
+        GradientDrawable pf = new GradientDrawable();
+        pf.setCornerRadius(dp(3));
+        pf.setColor(heroInk);
+        progFill.setBackground(pf);
+        android.widget.FrameLayout progBox = new android.widget.FrameLayout(this);
+        progBox.addView(progTrack, new android.widget.FrameLayout.LayoutParams(-1, dp(6)));
+        progBox.addView(progFill, new android.widget.FrameLayout.LayoutParams(0, dp(6)));
+        LinearLayout.LayoutParams pbl = new LinearLayout.LayoutParams(-1, dp(6));
+        pbl.topMargin = dp(10);
+        hero.addView(progBox, pbl);
+        final TextView progText = text("", 12, heroInk, true);
+        progText.setPadding(0, dp(6), 0, 0);
+        hero.addView(progText);
+        form.addView(hero, new LinearLayout.LayoutParams(-1, -2));
 
         // Subtasks: press Enter on the keyboard to start the next one automatically.
         TextView subLabel = text("Subtasks", 13, Pal.muted, true);
@@ -867,19 +914,40 @@ public class MainActivity extends Activity {
         final LinearLayout subBox = new LinearLayout(this);
         subBox.setOrientation(LinearLayout.VERTICAL);
         final List<SubRow> subRows = new ArrayList<>();
+        subChanged = () -> {
+            final int n = subRows.size();
+            int cnt = 0;
+            for (SubRow r : subRows) if (r.done) cnt++;
+            final int d = cnt;
+            progBox.post(() -> {
+                int w = progBox.getWidth();
+                android.widget.FrameLayout.LayoutParams lp =
+                        (android.widget.FrameLayout.LayoutParams) progFill.getLayoutParams();
+                lp.width = n == 0 ? 0 : Math.round(w * d / (float) n);
+                progFill.setLayoutParams(lp);
+            });
+            progText.setText(n == 0 ? "No subtasks yet" : d + " of " + n + " done");
+        };
         if (existing != null) {
             for (Sub old : db.subs(existing.id)) {
                 addSubRow(subBox, subRows, subRows.size(), old.title, old.done, false);
             }
         }
+        subChanged.run();
         form.addView(subBox, new LinearLayout.LayoutParams(-1, -2));
         TextView addSub = text("+ Add subtask", 15, Pal.accent, true);
-        addSub.setGravity(Gravity.CENTER_VERTICAL);
+        addSub.setGravity(Gravity.CENTER);
         addSub.setMinHeight(dp(48));
+        GradientDrawable adg = new GradientDrawable();
+        adg.setCornerRadius(dp(16));
+        adg.setStroke(dp(2), HabitUi.alpha(Pal.muted, 110), dp(6), dp(4));
+        addSub.setBackground(adg);
         addSub.setOnClickListener(v -> {
             if (subRows.size() < 40) addSubRow(subBox, subRows, subRows.size(), "", false, true);
         });
-        form.addView(addSub, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams asl = new LinearLayout.LayoutParams(-1, -2);
+        asl.topMargin = dp(10);
+        form.addView(addSub, asl);
 
         TextView prioLabel = text("Priority", 13, Pal.muted, true);
         prioLabel.setPadding(0, dp(12), 0, dp(6));
@@ -1356,6 +1424,8 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------ subtask rows (editor)
 
+    private Runnable subChanged;
+
     private final class SubRow {
         boolean done;
         final LinearLayout view;
@@ -1368,6 +1438,15 @@ public class MainActivity extends Activity {
             view = new LinearLayout(MainActivity.this);
             view.setOrientation(LinearLayout.HORIZONTAL);
             view.setGravity(Gravity.CENTER_VERTICAL);
+            // filled card; an accent ring shows on the row being edited
+            final GradientDrawable card = new GradientDrawable();
+            card.setCornerRadius(dp(16));
+            card.setColor(Pal.chip);
+            view.setBackground(card);
+            view.setPadding(dp(4), 0, dp(4), 0);
+            LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(-1, -2);
+            vlp.topMargin = dp(8);
+            view.setLayoutParams(vlp);
 
             check = new IconView(MainActivity.this, IconView.CHECK);
             check.setOn(done);
@@ -1381,6 +1460,14 @@ public class MainActivity extends Activity {
             et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
             et.setImeOptions(EditorInfo.IME_ACTION_NEXT);
             et.setText(text);
+            Links.pillWatch(et, Pal.accent);
+            et.setBackground(null);
+            et.setTextColor(Pal.ink);
+            et.setHintTextColor(Pal.muted);
+            et.setPadding(0, dp(10), 0, dp(10));
+            et.setOnFocusChangeListener((v, has) -> {
+                if (has) card.setStroke(dp(2), Pal.accent); else card.setStroke(0, 0);
+            });
             view.addView(et, new LinearLayout.LayoutParams(0, -2, 1f));
 
             remove = new IconView(MainActivity.this, IconView.CROSS);
@@ -1399,6 +1486,7 @@ public class MainActivity extends Activity {
         r.check.setOnClickListener(v -> {
             r.done = !r.done;
             r.check.setOn(r.done);
+            if (subChanged != null) subChanged.run();
         });
         r.remove.setOnClickListener(v -> removeSubRow(box, rows, r));
 
@@ -1425,6 +1513,7 @@ public class MainActivity extends Activity {
             return false;
         });
         if (focus) r.et.requestFocus();
+        if (subChanged != null) subChanged.run();
         return r;
     }
 
@@ -1434,6 +1523,7 @@ public class MainActivity extends Activity {
         rows.remove(i);
         box.removeView(r.view);
         if (i > 0) rows.get(i - 1).et.requestFocus();
+        if (subChanged != null) subChanged.run();
     }
 
     private void showUndo(String msg, Runnable undo) {

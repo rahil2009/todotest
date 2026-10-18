@@ -37,8 +37,23 @@ public class SettingsActivity extends Activity {
         setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
+        page = getIntent().getIntExtra("page", 0);
         setContentView(build());
         Fonts.apply(getWindow().getDecorView());
+    }
+
+    private boolean resumedOnce;
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (resumedOnce && page == 0) { // tiles show live status, so refresh after a sub-page
+            blocks.clear();
+            blockWords.clear();
+            setContentView(build());
+            Fonts.apply(getWindow().getDecorView());
+        }
+        resumedOnce = true;
     }
 
     @Override
@@ -48,6 +63,15 @@ public class SettingsActivity extends Activity {
     }
 
     // ------------------------------------------------------------------ UI
+
+    private int page; // 0 = main screen, 1 smart dates, 2 habit units, 3 full-screen alert, 4 backup
+    private final java.util.List<View[]> blocks = new java.util.ArrayList<>();
+    private final java.util.List<String> blockWords = new java.util.ArrayList<>();
+
+    private void block(String words, View... views) {
+        blocks.add(views);
+        blockWords.add(words.toLowerCase(Locale.ROOT));
+    }
 
     private View build() {
         ScrollView scroll = new ScrollView(this);
@@ -59,6 +83,7 @@ public class SettingsActivity extends Activity {
         col.setPadding(dp(16), dp(12), dp(16), dp(32));
         scroll.addView(col, new ScrollView.LayoutParams(-1, -2));
 
+        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup"};
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -66,11 +91,47 @@ public class SettingsActivity extends Activity {
         back.setContentDescription("Back");
         back.setOnClickListener(v -> finish());
         header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        header.addView(text("Settings", 30, Pal.ink, true));
+        header.addView(text(titles[page], 30, Pal.ink, true));
         col.addView(header);
 
+        if (page == 1) {
+            col.addView(smartCard());
+        } else if (page == 2) {
+            col.addView(unitsCard());
+        } else if (page == 3) {
+            col.addView(alertCard());
+        } else if (page == 4) {
+            col.addView(backupCard());
+            TextView bnote = text("Backups are plain files you choose where to save. Nothing is sent anywhere.",
+                    13, Pal.muted, false);
+            bnote.setPadding(dp(8), dp(16), dp(8), 0);
+            col.addView(bnote);
+        } else {
+            buildMain(col);
+        }
+        return scroll;
+    }
+
+    /** The main screen: search, the everyday cards inline, and tiles that open the bigger sections. */
+    private void buildMain(LinearLayout col) {
+        final android.widget.EditText search = new android.widget.EditText(this);
+        search.setHint("Search settings");
+        search.setSingleLine(true);
+        search.setTextSize(16);
+        search.setTextColor(Pal.ink);
+        search.setHintTextColor(Pal.muted);
+        GradientDrawable sg = new GradientDrawable();
+        sg.setColor(Pal.card);
+        sg.setCornerRadius(dp(25));
+        search.setBackground(sg);
+        search.setPadding(dp(20), 0, dp(20), 0);
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, dp(50));
+        slp.topMargin = dp(10);
+        col.addView(search, slp);
+
         // ---- appearance
-        col.addView(sectionLabel("Appearance"));
+        View appLabel = sectionLabel("Appearance");
+        col.addView(appLabel);
         LinearLayout themeCard = card();
         LinearLayout chips = new LinearLayout(this);
         chips.setOrientation(LinearLayout.HORIZONTAL);
@@ -96,25 +157,103 @@ public class SettingsActivity extends Activity {
         }
         themeCard.addView(chips);
         col.addView(themeCard);
+        block("appearance theme light dark amoled auto", appLabel, themeCard);
 
-        // ---- sounds
-        col.addView(sectionLabel("Reminder notifications"));
-        col.addView(soundCard(Prefs.NOTIF));
-        col.addView(sectionLabel("Alarms"));
-        col.addView(soundCard(Prefs.ALARM));
-        col.addView(sectionLabel("Pomodoro"));
-        col.addView(soundCard(Prefs.POMO));
+        // ---- sounds, inline
+        View l1 = sectionLabel("Reminder notifications");
+        View c1 = soundCard(Prefs.NOTIF);
+        col.addView(l1);
+        col.addView(c1);
+        block("reminder notifications sound volume", l1, c1);
+        View l2 = sectionLabel("Alarms");
+        View c2 = soundCard(Prefs.ALARM);
+        col.addView(l2);
+        col.addView(c2);
+        block("alarms alarm sound volume", l2, c2);
+        View l3 = sectionLabel("Pomodoro");
+        View c3 = soundCard(Prefs.POMO);
+        col.addView(l3);
+        col.addView(c3);
+        block("pomodoro focus timer sound volume", l3, c3);
 
-        // ---- smart dates
-        col.addView(sectionLabel("Smart dates"));
-        col.addView(smartCard());
+        // ---- tiles
+        View moreLabel = sectionLabel("More");
+        col.addView(moreLabel);
+        final int units = HabitEditor.units(this).size();
+        Object[][] tiles = {
+                {IconView.CLOCK, "Smart dates", Prefs.smartOn(this) ? "On \u00b7 " + Prefs.smartTrigger(this) : "Off", 1,
+                        "smart dates natural language at symbol trigger shortcuts"},
+                {IconView.HABIT, "Habit units", units + " units", 2, "habit units ml min quick amounts"},
+                {IconView.BELL, "Full-screen alert", AlertFx.NAMES[Math.min(AlertFx.NAMES.length - 1, Prefs.alertAnim(this))], 3,
+                        "full screen alert animation glow aurora test lock screen"},
+                {IconView.LOCK, "Backup", "Export \u00b7 Import", 4, "backup export import restore"},
+        };
+        final java.util.List<View> tileViews = new java.util.ArrayList<>();
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        for (int r = 0; r < 2; r++) {
+            LinearLayout line = new LinearLayout(this);
+            for (int k = 0; k < 2; k++) {
+                final Object[] t = tiles[r * 2 + k];
+                LinearLayout tile = new LinearLayout(this);
+                tile.setOrientation(LinearLayout.VERTICAL);
+                tile.setPadding(dp(16), dp(16), dp(16), dp(14));
+                GradientDrawable tg = new GradientDrawable();
+                tg.setColor(Pal.card);
+                tg.setCornerRadius(dp(22));
+                tile.setBackground(tg);
+                LinearLayout badge = new LinearLayout(this);
+                badge.setGravity(Gravity.CENTER);
+                GradientDrawable bg2 = new GradientDrawable();
+                bg2.setShape(GradientDrawable.OVAL);
+                bg2.setColor(Pal.chip);
+                badge.setBackground(bg2);
+                badge.addView(new IconView(this, (Integer) t[0]), new LinearLayout.LayoutParams(dp(30), dp(30)));
+                tile.addView(badge, new LinearLayout.LayoutParams(dp(46), dp(46)));
+                TextView name = text((String) t[1], 16, Pal.ink, true);
+                name.setPadding(0, dp(14), 0, 0);
+                tile.addView(name);
+                tile.addView(text((String) t[2], 13, Pal.muted, false));
+                final int target = (Integer) t[3];
+                tile.setOnClickListener(v -> {
+                    Hap.tick(v);
+                    startActivity(new Intent(this, SettingsActivity.class).putExtra("page", target));
+                });
+                LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, -2, 1f);
+                tlp.setMargins(k == 0 ? 0 : dp(6), dp(6), k == 0 ? dp(6) : 0, dp(6));
+                line.addView(tile, tlp);
+                tileViews.add(tile);
+                block(((String) t[1]) + " " + t[4], tile);
+            }
+            grid.addView(line);
+        }
+        col.addView(grid);
+        block("more", moreLabel);
+        TextView note = text("Volume is relative to your phone's own notification and alarm volume, "
+                + "so it can only turn a sound down. Sounds are read from your phone and never leave it.",
+                13, Pal.muted, false);
+        note.setPadding(dp(8), dp(16), dp(8), 0);
+        col.addView(note);
 
-        // ---- habit units
-        col.addView(sectionLabel("Habit units"));
-        col.addView(unitsCard());
+        // ---- search: hides what does not match; tiles hide inside their row, so a row hides when both do
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override public void onTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override
+            public void afterTextChanged(android.text.Editable e) {
+                String q = e.toString().trim().toLowerCase(Locale.ROOT);
+                for (int i = 0; i < blocks.size(); i++) {
+                    boolean show = q.isEmpty() || blockWords.get(i).contains(q);
+                    for (View v : blocks.get(i)) v.setVisibility(show ? View.VISIBLE : View.GONE);
+                }
+                boolean anyTile = false;
+                for (View t : tileViews) anyTile |= t.getVisibility() == View.VISIBLE;
+                moreLabel.setVisibility(q.isEmpty() || anyTile ? View.VISIBLE : View.GONE);
+            }
+        });
+    }
 
-        // ---- full-screen alert: glow + test
-        col.addView(sectionLabel("Full-screen alert"));
+    private LinearLayout alertCard() {
         LinearLayout alertCard = card();
         alertCard.addView(text("Animation", 16, Pal.ink, true));
         alertCard.addView(text("Plays behind the alarm screen. Tap one to preview it.", 13, Pal.muted, false));
@@ -169,10 +308,10 @@ public class SettingsActivity extends Activity {
                 "Shows the alarm screen right now with sample data", v -> testAlert(0)));
         alertCard.addView(backupRow("Test on the lock screen",
                 "Rings in 10 seconds: press the power button to lock the phone first", v -> testAlert(10)));
-        col.addView(alertCard);
+        return alertCard;
+    }
 
-        // ---- backup
-        col.addView(sectionLabel("Backup"));
+    private LinearLayout backupCard() {
         LinearLayout backupCard = card();
         backupCard.addView(backupRow("Export backup",
                 "Save all tasks, subtasks and notes to a file you choose", v -> {
@@ -194,14 +333,7 @@ public class SettingsActivity extends Activity {
                                                 .setType("*/*"), REQ_IMPORT))
                                 .setNegativeButton("Cancel", null)
                                 .show()));
-        col.addView(backupCard);
-
-        TextView note = text("Volume is relative to your phone's own notification and alarm volume, "
-                + "so it can only turn a sound down. Sounds are read from your phone and never leave it.",
-                13, Pal.muted, false);
-        note.setPadding(dp(8), dp(16), dp(8), 0);
-        col.addView(note);
-        return scroll;
+        return backupCard;
     }
 
     private LinearLayout soundCard(final int kind) {
@@ -329,12 +461,28 @@ public class SettingsActivity extends Activity {
     private LinearLayout smartCard() {
         LinearLayout card = card();
         String trig = Prefs.smartTrigger(this);
-        card.addView(toggleRow("Type a date in the task",
-                "Write " + trig + "sat 2pm, " + trig + "tomorrow 7pm, " + trig + "next sunday 5am, "
-                        + trig + "every monday 2pm or " + trig + "today 3:40pm after your task",
+        card.addView(toggleRow("Smart dates in new tasks",
+                "Write the task, then " + trig + " and when: \u201CCall mum " + trig + "sat 2pm\u201D. The date becomes the "
+                        + "reminder and is removed from the title.",
                 Prefs.smartOn(this), on -> Prefs.setSmartOn(this, on)));
+        TextView guide = text("Read the guide", 16, Pal.onAccent, true);
+        guide.setGravity(Gravity.CENTER);
+        GradientDrawable guideBg = new GradientDrawable();
+        guideBg.setColor(Pal.accent);
+        guideBg.setCornerRadius(dp(26));
+        guide.setBackground(guideBg);
+        guide.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, SmartGuideActivity.class));
+        });
+        LinearLayout.LayoutParams glp = new LinearLayout.LayoutParams(-1, dp(50));
+        glp.topMargin = dp(4);
+        glp.bottomMargin = dp(6);
+        card.addView(guide, glp);
+        card.addView(text("Days, exact dates like " + trig + "12 may 2027, times, \u201Cin 3 hours\u201D and repeats like "
+                + trig + "every mon wed fri 6pm, each with what it means right now.", 13, Pal.muted, false));
         card.addView(backupRow("Trigger symbol: " + trig,
-                "Only text after this symbol is read as a date", v -> {
+                "Dates are only read after this symbol. Tap to change it", v -> {
                     final android.widget.EditText et = new android.widget.EditText(this);
                     et.setText(Prefs.smartTrigger(this));
                     et.setSingleLine(true);
@@ -358,23 +506,23 @@ public class SettingsActivity extends Activity {
         int mi = Prefs.smartMinute(this);
         String when = new SimpleDateFormat(android.text.format.DateFormat.is24HourFormat(this) ? "HH:mm" : "h:mm a",
                 Locale.getDefault()).format(new Date(0, 0, 1, h, mi));
-        card.addView(backupRow("Time when only a day is given: " + when,
-                "Used for things like " + trig + "sat or " + trig + "tomorrow", v ->
+        card.addView(backupRow("Default time: " + when,
+                "Used when you give a day but no time, like " + trig + "sat or " + trig + "12 may 2027", v ->
                         new android.app.TimePickerDialog(this, (tp, hh, mm) -> {
                             Prefs.setSmartTime(this, hh, mm);
                             recreate();
                         }, Prefs.smartHour(this), Prefs.smartMinute(this),
                                 android.text.format.DateFormat.is24HourFormat(this)).show()));
-        card.addView(toggleRow("Ring as alarm",
-                "Tasks made this way use the full-screen alarm instead of a normal notification",
+        card.addView(toggleRow("Ring as a full-screen alarm",
+                "Off: a normal notification. On: tasks made with " + trig + "dates ring the full-screen alarm",
                 Prefs.smartAlarm(this), on -> Prefs.setSmartAlarm(this, on)));
 
         TextView sc = text("MY SHORTCUTS", 12, Pal.muted, true);
         sc.setLetterSpacing(0.12f);
         sc.setPadding(0, dp(14), 0, dp(2));
         card.addView(sc);
-        card.addView(text("Short words that expand into any date phrase. Example: gym = every mon wed fri 6pm, "
-                + "then type " + trig + "gym", 13, Pal.muted, false));
+        card.addView(text("A shortcut is one word that stands for a whole date phrase. Add gym = every mon wed fri 6pm, then "
+                + "type \u201CWorkout " + trig + "gym\u201D. Tap a shortcut to change it.", 13, Pal.muted, false));
         final java.util.List<String[]> rules = new java.util.ArrayList<>();
         for (String line : Prefs.smartAliases(this).split("\n")) {
             int eq = line.indexOf('=');

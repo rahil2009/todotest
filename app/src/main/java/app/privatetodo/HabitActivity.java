@@ -178,7 +178,9 @@ public class HabitActivity extends Activity {
         badge.setOnClickListener(v -> logTap(h, v));
         badge.setOnLongClickListener(v -> {
             Hap.confirm(v);
-            quickSheet(h);
+            db.setAmount(h.id, selected, 0); // hold = start this day over
+            Toast.makeText(this, h.name + " reset for the day", Toast.LENGTH_SHORT).show();
+            render();
             return true;
         });
         top.addView(badge, new LinearLayout.LayoutParams(dp(68), dp(68)));
@@ -234,35 +236,6 @@ public class HabitActivity extends Activity {
         }
         card.addView(week);
         return card;
-    }
-
-    /** Long-press on the badge: the habit's quick amounts, a custom amount (dial), or reset the day. */
-    private void quickSheet(final Habit h) {
-        final List<Integer> quick = h.quickAmounts();
-        final List<String> items = new java.util.ArrayList<>();
-        if (h.goal > 0) {
-            for (int q : quick) items.add("+" + q + (h.unit.isEmpty() ? "" : " " + h.unit));
-            items.add("Custom amount\u2026");
-        }
-        items.add("Reset this day");
-        new Dlg.Builder(this)
-                .setTitle(h.name)
-                .setItems(items.toArray(new String[0]), (d, which) -> {
-                    if (h.goal > 0 && which < quick.size()) {
-                        db.add(h.id, selected, quick.get(which));
-                        render();
-                    } else if (h.goal > 0 && which == quick.size()) {
-                        HabitEditor.askAmount(this, h, v -> {
-                            db.add(h.id, selected, v);
-                            render();
-                        });
-                    } else {
-                        db.setAmount(h.id, selected, 0);
-                        render();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
     }
 
     /** One tap on the badge adds a step to the selected day (or ticks a simple habit). */

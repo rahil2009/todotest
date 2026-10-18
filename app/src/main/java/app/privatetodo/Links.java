@@ -53,6 +53,29 @@ final class Links {
         linkify(t, Pal.accent);
     }
 
+    /** Keeps links inside an editable field drawn as pills while typing (display only; text is unchanged). */
+    static void pillWatch(final android.widget.EditText et, final int color) {
+        final boolean[] busy = {false};
+        final Runnable apply = () -> {
+            if (busy[0]) return;
+            busy[0] = true;
+            android.text.Editable ed = et.getText();
+            for (Pill o : ed.getSpans(0, ed.length(), Pill.class)) ed.removeSpan(o);
+            Matcher m = Patterns.WEB_URL.matcher(ed);
+            while (m.find()) {
+                ed.setSpan(new Pill(et.getContext(), m.group(), color), m.start(), m.end(),
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            busy[0] = false;
+        };
+        et.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int a, int b, int d) { }
+            @Override public void onTextChanged(CharSequence c, int a, int b, int d) { }
+            @Override public void afterTextChanged(android.text.Editable e) { apply.run(); }
+        });
+        apply.run();
+    }
+
     /** A link drawn as a rounded pill; long ones are shortened with an ellipsis. */
     static final class Pill extends ReplacementSpan {
         final String url;

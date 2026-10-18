@@ -84,6 +84,69 @@ final class Reminders {
         return due + 86_400_000L;
     }
 
+    /**
+     * Where this task lands on the day starting at {@code d0}: its own time if it is due that day, a projected
+     * time if it repeats onto that day, or 0 if it does not occur then. Repeats only project forward.
+     */
+    static long occurrence(Task t, long d0) {
+        if (t.due <= 0) return 0;
+        Calendar start = Calendar.getInstance();
+        start.setTimeInMillis(t.due);
+        Calendar day = Calendar.getInstance();
+        day.setTimeInMillis(d0);
+        Calendar dueDay = (Calendar) start.clone();
+        dueDay.set(Calendar.HOUR_OF_DAY, 0);
+        dueDay.set(Calendar.MINUTE, 0);
+        dueDay.set(Calendar.SECOND, 0);
+        dueDay.set(Calendar.MILLISECOND, 0);
+        long dueStart = dueDay.getTimeInMillis();
+        if (d0 == dueStart) return t.due;
+        if (t.repeat <= 0 || d0 < dueStart || t.done) return 0;
+        int days = (int) Math.round((d0 - dueStart) / 86_400_000.0);
+        Calendar at = (Calendar) day.clone();
+        at.set(Calendar.HOUR_OF_DAY, start.get(Calendar.HOUR_OF_DAY));
+        at.set(Calendar.MINUTE, start.get(Calendar.MINUTE));
+        at.set(Calendar.SECOND, 0);
+        at.set(Calendar.MILLISECOND, 0);
+        switch (t.repeatUnit) {
+            case 5:
+                return (t.repeat & (1 << ((day.get(Calendar.DAY_OF_WEEK) + 5) % 7))) != 0 ? at.getTimeInMillis() : 0;
+            case 2:
+                return days % t.repeat == 0 ? at.getTimeInMillis() : 0;
+            case 3:
+                return days % (7 * t.repeat) == 0 ? at.getTimeInMillis() : 0;
+            case 4: {
+                int months = (day.get(Calendar.YEAR) - start.get(Calendar.YEAR)) * 12
+                        + day.get(Calendar.MONTH) - start.get(Calendar.MONTH);
+                if (months <= 0 || months % t.repeat != 0) return 0;
+                int want = Math.min(start.get(Calendar.DAY_OF_MONTH), day.getActualMaximum(Calendar.DAY_OF_MONTH));
+                return day.get(Calendar.DAY_OF_MONTH) == want ? at.getTimeInMillis() : 0;
+            }
+            default: { // minutes and hours: the first run of that day
+                long step = t.repeat * (t.repeatUnit == 0 ? 60_000L : 3_600_000L);
+                long k = Math.max(0, (d0 - t.due + step - 1) / step);
+                long first = t.due + k * step;
+                return first >= d0 && first < d0 + 86_400_000L + 3_600_000L && startOf(first) == d0 ? first : 0;
+            }
+        }
+    }
+
+    private static long startOf(long t) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(t);
+        c.set(Calendar.HOUR_OF_DAY, 0);
+        c.set(Calendar.MINUTE, 0);
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
+    /** The task as it shows on the day starting at {@code d0}, or null when it does not occur. */
+    static Task onDay(Task t, long d0) {
+        long at = occurrence(t, d0);
+        return at == 0 ? null : (at == t.due ? t : t.ghostAt(at));
+    }
+
     /** Moves {@code due} forward to the first day (same clock time) allowed by the Mon..Sun mask. */
     static long nextAllowedDay(long due, int mask) {
         Calendar c = Calendar.getInstance();

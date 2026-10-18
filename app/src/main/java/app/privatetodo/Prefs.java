@@ -138,12 +138,17 @@ final class Prefs {
     /** Which AlertFx style plays behind the full-screen alert (0 = off). Starts from the old glow switch. */
     static int alertAnim(Context c) {
         SharedPreferences s = sp(c);
-        if (s.contains("alert_anim")) return s.getInt("alert_anim", AlertFx.EDGE);
+        if (s.contains("alert_fx")) return s.getInt("alert_fx", AlertFx.EDGE);
+        if (s.contains("alert_anim")) { // older numbering: 1 edge, 2 pulse, 3 aurora, 4 sparkles, 5 waves
+            int old = s.getInt("alert_anim", 1);
+            return old == 3 ? AlertFx.AURORA : old == 5 ? AlertFx.WAVES : old == 4 ? AlertFx.MESH
+                    : old == 0 ? AlertFx.OFF : AlertFx.EDGE;
+        }
         return s.getBoolean("glow", true) ? AlertFx.EDGE : AlertFx.OFF;
     }
 
     static void setAlertAnim(Context c, int v) {
-        sp(c).edit().putInt("alert_anim", v).apply();
+        sp(c).edit().putInt("alert_fx", v).apply();
     }
 
     static void setGlow(Context c, boolean v) {

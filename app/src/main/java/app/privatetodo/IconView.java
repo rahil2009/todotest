@@ -26,6 +26,7 @@ final class IconView extends View {
     static final int PLAN = 15;
     static final int POMODORO = 16;
     static final int HABIT = 17;
+    static final int CALENDAR = 18;
 
     private final int kind;
     private boolean on;
@@ -199,6 +200,21 @@ final class IconView extends View {
                 canvas.drawPath(path, paint);
                 canvas.drawLine(cx + 7 * d, cy - 9 * d, cx + 7 * d, cy - 6 * d, paint);
                 canvas.drawLine(cx + 5.5f * d, cy - 7.5f * d, cx + 8.5f * d, cy - 7.5f * d, paint);
+                break;
+            case CALENDAR: // month grid with one day filled in
+                stroke(1.8f, Pal.ink);
+                rect.set(cx - 9 * d, cy - 9 * d, cx + 9 * d, cy + 9 * d);
+                canvas.drawRoundRect(rect, 3.5f * d, 3.5f * d, paint);
+                canvas.drawLine(cx - 9 * d, cy - 4 * d, cx + 9 * d, cy - 4 * d, paint);
+                paint.setStyle(Paint.Style.FILL);
+                for (int gy = 0; gy < 2; gy++) {
+                    for (int gx = 0; gx < 3; gx++) {
+                        if (gy == 1 && gx == 1) continue;
+                        canvas.drawCircle(cx + (gx - 1) * 5 * d, cy + 1 * d + gy * 5 * d, 1.1f * d, paint);
+                    }
+                }
+                paint.setColor(Pal.accent);
+                canvas.drawCircle(cx, cy + 6 * d, 2.6f * d, paint);
                 break;
             case LOCK: // padlock, used in the "stored only on this device" line
                 stroke(1.7f, Pal.muted);

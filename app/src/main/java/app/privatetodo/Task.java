@@ -27,6 +27,17 @@ final class Task {
     /** Optional emoji shown before the title ("" = none). */
     final String emoji;
 
+    /** true for a projected future occurrence of a repeating task (shown in Plan and Calendar, not stored). */
+    boolean ghost;
+
+    /** A copy of this task placed at another time, marked as a projected occurrence. */
+    Task ghostAt(long at) {
+        Task g = new Task(id, title, false, at, repeat, repeatUnit, alarm, 0, false, sound, volume, priority,
+                always, emoji);
+        g.ghost = at != due;
+        return g;
+    }
+
     Task(long id, String title, boolean done, long due, int repeat, int repeatUnit,
          boolean alarm, long snooze, boolean fired, String sound, int volume, int priority,
          boolean always, String emoji) {

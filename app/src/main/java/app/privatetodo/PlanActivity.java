@@ -111,6 +111,8 @@ public class PlanActivity extends Activity {
         nav.addView(prev, new LinearLayout.LayoutParams(dp(48), dp(40)));
         monthLabel = text("", 16, Pal.ink, true);
         monthLabel.setGravity(Gravity.CENTER);
+        monthLabel.setContentDescription("Open the month calendar");
+        monthLabel.setOnClickListener(v -> startActivity(new android.content.Intent(this, CalendarActivity.class)));
         nav.addView(monthLabel, new LinearLayout.LayoutParams(0, -2, 1f));
         TextView next = text("›", 28, Pal.ink, true);
         next.setGravity(Gravity.CENTER);
@@ -183,9 +185,8 @@ public class PlanActivity extends Activity {
             // up to three dots for what is due that day
             int pending = 0;
             for (Task t : all) {
-                if (t.due >= d0 && t.due < d0 + DAY + 3_600_000L && startOfDay(t.due) == d0 && !t.done) {
-                    pending++;
-                }
+                Task o = Reminders.onDay(t, d0);
+                if (o != null && !o.done) pending++;
             }
             LinearLayout dots = new LinearLayout(this);
             dots.setGravity(Gravity.CENTER);
@@ -218,10 +219,19 @@ public class PlanActivity extends Activity {
         List<Task> loose = new ArrayList<>();
         int total = 0;
         int done = 0;
-        for (Task t : all) {
-            if (t.due <= 0) {
-                if (!t.done) loose.add(t);
+        for (Task real : all) {
+            Task t = real;
+            if (real.due <= 0) {
+                if (!real.done) loose.add(real);
                 continue;
+            }
+            if (real.repeat > 0 && startOfDay(real.due) != day) {
+                t = Reminders.onDay(real, day); // a repeat that lands on this day
+                if (t == null) {
+                    if (startOfDay(real.due) < day && day == todayStart && !real.done
+                            && startOfDay(real.due) < todayStart) overdue.add(real);
+                    continue;
+                }
             }
             long td = startOfDay(t.due);
             if (td < day && day == todayStart && !t.done && td < todayStart) {
@@ -533,7 +543,7 @@ public class PlanActivity extends Activity {
                 ? new SimpleDateFormat("d MMM", Locale.getDefault()).format(new Date(t.due))
                 : String.format(Locale.US, "%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE));
         TextView time = text(when, 13, overdue ? Pal.overdue : Pal.muted, true);
-        if (!t.done) {
+        if (!t.done && !t.ghost) {
             time.setOnClickListener(v -> {
                 Hap.tick(v);
                 final Task tt = t;
@@ -570,6 +580,11 @@ public class PlanActivity extends Activity {
         check.setOn(t.done);
         check.setContentDescription(t.done ? "Mark not done" : "Mark done");
         check.setOnClickListener(v -> {
+            if (t.ghost) {
+                android.widget.Toast.makeText(this, "It repeats: you can tick it off on the day",
+                        android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
             Hap.confirm(v);
             db.setDone(t.id, !t.done);
             if (t.done) Reminders.schedule(this, db.get(t.id));
@@ -589,7 +604,7 @@ public class PlanActivity extends Activity {
         }
         card.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        if (!t.done) {
+        if (!t.done && !t.ghost) {
             TextView move = text(overdue ? "Today" : "+1 day", 13, Pal.accent, true);
             move.setGravity(Gravity.CENTER);
             move.setMinHeight(dp(44));

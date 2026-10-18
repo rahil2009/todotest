@@ -36,6 +36,8 @@ public class PomodoroActivity extends Activity {
     private int builtDark;
     private LinearLayout content;
     private Ring ring;
+    private boolean aodOn;
+    private AodView aodView;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable tick = new Runnable() {
         @Override
@@ -118,7 +120,22 @@ public class PomodoroActivity extends Activity {
         back.setContentDescription("Back");
         back.setOnClickListener(v -> finish());
         header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        header.addView(text("Pomodoro", 30, Pal.ink, true));
+        header.addView(text("Pomodoro", 30, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView aodChip = text("\u263E  Always on", 14, Pal.muted, true);
+        aodChip.setGravity(Gravity.CENTER);
+        aodChip.setMinHeight(dp(40));
+        aodChip.setPadding(dp(14), 0, dp(14), 0);
+        GradientDrawable aodBg = new GradientDrawable();
+        aodBg.setCornerRadius(dp(20));
+        aodBg.setColor(Pal.chip);
+        aodChip.setBackground(aodBg);
+        aodChip.setContentDescription("Always-on display: dim clock that slowly drifts to protect the screen");
+        aodChip.setOnClickListener(v -> {
+            Hap.tick(v);
+            aodOn = true;
+            attachAod();
+        });
+        header.addView(aodChip);
         content.addView(header);
 
         // phase chips
@@ -235,6 +252,7 @@ public class PomodoroActivity extends Activity {
 
         update();
         Fonts.apply(getWindow().getDecorView());
+        if (aodOn) attachAod();
     }
 
     private String motto() {
@@ -447,6 +465,121 @@ public class PomodoroActivity extends Activity {
         return Math.round(v * density);
     }
 
+    // ------------------------------------------------------------------ always-on display
+
+    /** Full-screen dim clock. Tap anywhere to leave. */
+    private void attachAod() {
+        aodView = new AodView();
+        addContentView(aodView, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = 0.03f; // as dim as the phone allows
+        getWindow().setAttributes(lp);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
+    }
+
+    private void leaveAod() {
+        aodOn = false;
+        android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+        lp.screenBrightness = android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+        getWindow().setAttributes(lp);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        render();
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (aodOn) {
+            leaveAod();
+            return;
+        }
+        super.onBackPressed();
+    }
+
+    /**
+     * Black screen with a dim outline clock. Mostly unlit pixels save battery on OLED, and the whole picture
+     * wanders on two slow, unrelated cycles so no pixel stays lit in one place (no burn-in).
+     */
+    private final class AodView extends View {
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF r = new RectF();
+        private final Runnable beat = new Runnable() {
+            @Override
+            public void run() {
+                invalidate();
+                postDelayed(this, 1000);
+            }
+        };
+
+        AodView() {
+            super(PomodoroActivity.this);
+            setBackgroundColor(0xFF000000);
+            setOnClickListener(v -> leaveAod());
+            setContentDescription("Tap to leave always-on display");
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            post(beat);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            removeCallbacks(beat);
+            super.onDetachedFromWindow();
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float d = density;
+            float w = getWidth();
+            float h = getHeight();
+            double sec = System.currentTimeMillis() / 1000.0;
+            // two slow cycles (about 4 and 6 minutes): a drift of well under a pixel a second
+            float dx = (float) (Math.sin(sec / 241.0 * 6.2832) * 30 * d);
+            float dy = (float) (Math.sin(sec / 367.0 * 6.2832 + 1.3) * 56 * d);
+            long left = Pomo.left(PomodoroActivity.this);
+            long total = Math.max(1, Pomo.total(PomodoroActivity.this));
+            boolean run = Pomo.running(PomodoroActivity.this);
+            int col = HabitUi.blend(phaseColor(), 0xFF000000, 0.55f);
+            float cx = w / 2f + dx;
+            float cy = h / 2f + dy;
+            float radius = Math.min(w, h) * 0.36f;
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeWidth(2 * d);
+            p.setColor(HabitUi.alpha(col, 0x30));
+            c.drawCircle(cx, cy, radius, p);
+            p.setColor(col);
+            r.set(cx - radius, cy - radius, cx + radius, cy + radius);
+            c.drawArc(r, -90, 360f * Math.max(0f, Math.min(1f, left / (float) total)), false, p);
+            p.setStyle(Paint.Style.FILL);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTypeface(Typeface.create("sans-serif-light", Typeface.NORMAL));
+            p.setTextSize(64 * d);
+            p.setColor(HabitUi.blend(phaseColor(), 0xFF000000, 0.75f));
+            long secs = (left + 999) / 1000;
+            c.drawText(String.format(Locale.US, "%02d:%02d", secs / 60, secs % 60), cx, cy + 22 * d, p);
+            p.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            p.setTextSize(13 * d);
+            p.setLetterSpacing(0.2f);
+            p.setColor(HabitUi.alpha(col, 0xC0));
+            c.drawText(Pomo.phaseName(Pomo.phase(PomodoroActivity.this)).toUpperCase(Locale.ROOT) + (run ? "" : "  \u00b7  PAUSED"),
+                    cx, cy - 46 * d, p);
+            p.setLetterSpacing(0f);
+            if (run) {
+                p.setTextSize(13 * d);
+                c.drawText("ends at " + new java.text.SimpleDateFormat("HH:mm", Locale.getDefault())
+                        .format(new java.util.Date(Pomo.endAt(PomodoroActivity.this))), cx, cy + 54 * d, p);
+            }
+            p.setTextAlign(Paint.Align.LEFT);
+        }
+    }
+
     // ------------------------------------------------------------------ ring
 
     /**
@@ -531,7 +664,9 @@ public class PomodoroActivity extends Activity {
             // ambient glow behind everything
             p.setStyle(Paint.Style.FILL);
             p.setShader(new RadialGradient(cx, cy, outer * 1.18f,
-                    new int[]{HabitUi.alpha(color, Math.round((running ? 70 : 38) + 30 * breath)), 0x00000000},
+                    new int[]{HabitUi.alpha(Pal.dark ? color : light,
+                            Math.round(((running ? 70 : 38) + 30 * breath) * (Pal.dark ? 0.5f : 0.38f))),
+                            HabitUi.alpha(Pal.dark ? color : light, 0)},
                     new float[]{0.55f, 1f}, Shader.TileMode.CLAMP));
             c.drawCircle(cx, cy, outer * 1.18f, p);
             // the disc the clock sits on
@@ -592,7 +727,7 @@ public class PomodoroActivity extends Activity {
                 float hy = cy + (float) Math.sin(a) * arcR;
                 p.setStyle(Paint.Style.FILL);
                 p.setShader(new RadialGradient(hx, hy, (20 + 8 * breath) * d,
-                        new int[]{HabitUi.alpha(light, 0xB0), 0x00000000}, null, Shader.TileMode.CLAMP));
+                        new int[]{HabitUi.alpha(light, 0xB0), HabitUi.alpha(light, 0)}, null, Shader.TileMode.CLAMP));
                 c.drawCircle(hx, hy, (20 + 8 * breath) * d, p);
                 p.setShader(null);
                 p.setColor(0xFFFFFFFF);

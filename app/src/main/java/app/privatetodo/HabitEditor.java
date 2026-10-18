@@ -165,29 +165,67 @@ final class HabitEditor {
 
     static void show(final Activity a, final Habit existing, final Runnable saved) {
         final float d = a.getResources().getDisplayMetrics().density;
+        final android.app.Dialog dlg = new android.app.Dialog(a, android.R.style.Theme_DeviceDefault_NoActionBar);
+        LinearLayout page = new LinearLayout(a);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setBackgroundColor(Pal.bg);
+
+        // ---- header: back, title, Save pill
+        LinearLayout head = new LinearLayout(a);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        head.setPadding(Math.round(8 * d), Math.round(10 * d), Math.round(16 * d), Math.round(6 * d));
+        IconView close = new IconView(a, IconView.BACK);
+        close.setContentDescription("Close");
+        close.setOnClickListener(v -> dlg.dismiss());
+        head.addView(close, new LinearLayout.LayoutParams(Math.round(48 * d), Math.round(48 * d)));
+        TextView title = new TextView(a);
+        title.setText(existing == null ? "New habit" : "Edit habit");
+        title.setTextSize(26);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextColor(Pal.ink);
+        head.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView save = new TextView(a);
+        save.setText("Save");
+        save.setTextSize(16);
+        save.setTypeface(Typeface.DEFAULT_BOLD);
+        save.setTextColor(Pal.onAccent);
+        save.setGravity(Gravity.CENTER);
+        save.setPadding(Math.round(26 * d), 0, Math.round(26 * d), 0);
+        GradientDrawable sg = new GradientDrawable();
+        sg.setColor(Pal.accent);
+        sg.setCornerRadius(100 * d);
+        save.setBackground(sg);
+        head.addView(save, new LinearLayout.LayoutParams(-2, Math.round(46 * d)));
+        page.addView(head);
+
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(Math.round(22 * d), Math.round(6 * d), Math.round(22 * d), Math.round(4 * d));
+        box.setPadding(Math.round(16 * d), Math.round(6 * d), Math.round(16 * d), Math.round(40 * d));
 
+        // ---- name card
+        LinearLayout nameCard = section(a);
         LinearLayout top = new LinearLayout(a);
         top.setGravity(Gravity.CENTER_VERTICAL);
-        final EditText emoji = field(a, "😀", InputType.TYPE_CLASS_TEXT);
+        final EditText emoji = field(a, "\uD83D\uDE00", InputType.TYPE_CLASS_TEXT);
         emoji.setGravity(Gravity.CENTER);
-        emoji.setTextSize(24);
+        emoji.setTextSize(26);
         final EditText name = field(a, "Habit name", InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        top.addView(emoji, new LinearLayout.LayoutParams(Math.round(64 * d), Math.round(52 * d)));
-        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(0, Math.round(52 * d), 1f);
-        nlp.leftMargin = Math.round(8 * d);
+        name.setTextSize(18);
+        top.addView(emoji, new LinearLayout.LayoutParams(Math.round(68 * d), Math.round(60 * d)));
+        LinearLayout.LayoutParams nlp = new LinearLayout.LayoutParams(0, Math.round(60 * d), 1f);
+        nlp.leftMargin = Math.round(10 * d);
         top.addView(name, nlp);
-        box.addView(top);
+        nameCard.addView(top);
+        box.addView(nameCard);
 
-        // ---- unit chips
-        box.addView(label(a, "UNIT"));
+        // ---- unit card
+        LinearLayout unitCard = section(a);
+        unitCard.addView(label(a, "UNIT"));
         final String[] unit = {existing == null ? "" : existing.unit};
         final EditText extras = field(a, "e.g. 100, 250, 500", InputType.TYPE_CLASS_TEXT);
         final String[] lastTemplate = {""};
-        final FlowLayout chips = new FlowLayout(a, Math.round(6 * d), Math.round(6 * d));
+        final FlowLayout chips = new FlowLayout(a, Math.round(8 * d), Math.round(8 * d));
         final NumDial goal = new NumDial(a, existing == null ? 0 : existing.goal, true);
         final NumDial step = new NumDial(a, existing == null ? 1 : existing.step, false);
         final Runnable[] drawChips = new Runnable[1];
@@ -197,7 +235,7 @@ final class HabitEditor {
                 unit[0] = "";
                 goal.set(0);
                 drawChips[0].run();
-            }), new ViewGroup.LayoutParams(-2, Math.round(38 * d)));
+            }), new ViewGroup.LayoutParams(-2, Math.round(44 * d)));
             for (final String[] u : units(a)) {
                 chips.addView(chip(a, u[0], u[0].equals(unit[0]), v -> {
                     String cur = extras.getText().toString().trim();
@@ -205,38 +243,47 @@ final class HabitEditor {
                     if (cur.isEmpty() || cur.equals(lastTemplate[0])) extras.setText(u[1]);
                     lastTemplate[0] = u[1];
                     drawChips[0].run();
-                }), new ViewGroup.LayoutParams(-2, Math.round(38 * d)));
+                }), new ViewGroup.LayoutParams(-2, Math.round(44 * d)));
             }
             chips.addView(chip(a, "+ New", false, v -> editUnit(a, -1, drawChips[0])),
-                    new ViewGroup.LayoutParams(-2, Math.round(38 * d)));
+                    new ViewGroup.LayoutParams(-2, Math.round(44 * d)));
             Fonts.apply(chips);
         };
-        box.addView(chips);
+        unitCard.addView(chips);
+        box.addView(unitCard);
 
-        // ---- dials
+        // ---- dials card: each dial sits in its own soft panel
+        LinearLayout dialCard = section(a);
         LinearLayout dials = new LinearLayout(a);
-        LinearLayout g1 = new LinearLayout(a);
-        g1.setOrientation(LinearLayout.VERTICAL);
-        g1.addView(label(a, "DAILY GOAL"));
-        g1.addView(goal.wheel, new LinearLayout.LayoutParams(-1, -2));
-        LinearLayout g2 = new LinearLayout(a);
-        g2.setOrientation(LinearLayout.VERTICAL);
-        g2.addView(label(a, "ONE TAP ADDS"));
-        g2.addView(step.wheel, new LinearLayout.LayoutParams(-1, -2));
-        dials.addView(g1, new LinearLayout.LayoutParams(0, -2, 1f));
-        dials.addView(g2, new LinearLayout.LayoutParams(0, -2, 1f));
-        box.addView(dials);
+        dials.addView(dialPanel(a, "DAILY GOAL", goal.wheel), new LinearLayout.LayoutParams(0, -2, 1f));
+        View gap = new View(a);
+        dials.addView(gap, new LinearLayout.LayoutParams(Math.round(12 * d), 1));
+        dials.addView(dialPanel(a, "ONE TAP ADDS", step.wheel), new LinearLayout.LayoutParams(0, -2, 1f));
+        dialCard.addView(dials);
         TextView hint = new TextView(a);
-        hint.setText("Goal 0 is a simple tick. Swipe a dial, or double-tap its number to type one.");
-        hint.setTextSize(12);
+        hint.setText("Goal 0 makes it a simple tick. Swipe a dial, or double-tap its number to type any value.");
+        hint.setTextSize(13);
+        hint.setLineSpacing(0, 1.1f);
         hint.setTextColor(Pal.muted);
-        hint.setPadding(Math.round(4 * d), Math.round(4 * d), 0, Math.round(6 * d));
-        box.addView(hint);
+        hint.setPadding(Math.round(4 * d), Math.round(12 * d), Math.round(4 * d), 0);
+        dialCard.addView(hint);
+        box.addView(dialCard);
 
-        box.addView(label(a, "MORE QUICK AMOUNTS"));
-        box.addView(extras, new LinearLayout.LayoutParams(-1, Math.round(48 * d)));
+        // ---- quick amounts card
+        LinearLayout extraCard = section(a);
+        extraCard.addView(label(a, "MORE QUICK AMOUNTS"));
+        extraCard.addView(extras, new LinearLayout.LayoutParams(-1, Math.round(54 * d)));
+        TextView eh = new TextView(a);
+        eh.setText("Separate with commas. They appear as one-tap buttons on the habit's page.");
+        eh.setTextSize(13);
+        eh.setTextColor(Pal.muted);
+        eh.setPadding(Math.round(4 * d), Math.round(8 * d), Math.round(4 * d), 0);
+        extraCard.addView(eh);
+        box.addView(extraCard);
 
-        box.addView(label(a, "COLOUR"));
+        // ---- colour card
+        LinearLayout colorCard = section(a);
+        colorCard.addView(label(a, "COLOUR"));
         final int[] color = {existing != null ? existing.color : HabitDb.COLORS[0]};
         final LinearLayout colors = new LinearLayout(a);
         final View[] dots = new View[HabitDb.COLORS.length];
@@ -247,15 +294,17 @@ final class HabitEditor {
                 color[0] = HabitDb.COLORS[idx];
                 paint(dots, color[0], d);
             });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.round(30 * d), Math.round(30 * d));
-            lp.rightMargin = Math.round(8 * d);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.round(38 * d), Math.round(38 * d));
+            lp.rightMargin = Math.round(12 * d);
             colors.addView(dots[i], lp);
         }
         paint(dots, color[0], d);
         android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(a);
         hs.setHorizontalScrollBarEnabled(false);
         hs.addView(colors);
-        box.addView(hs);
+        hs.setPadding(Math.round(4 * d), Math.round(4 * d), 0, Math.round(4 * d));
+        colorCard.addView(hs);
+        box.addView(colorCard);
 
         if (existing != null) {
             emoji.setText(existing.emoji);
@@ -263,32 +312,77 @@ final class HabitEditor {
             extras.setText(existing.extras);
         }
         drawChips[0].run();
-        Fonts.apply(box);
+
+        save.setOnClickListener(v -> {
+            String n = name.getText().toString().trim();
+            if (n.isEmpty()) {
+                name.setError("Give it a name");
+                return;
+            }
+            String em = emoji.getText().toString().trim();
+            if (em.length() > 8) em = em.substring(0, 8);
+            int g = goal.value();
+            int s = Math.max(1, step.value());
+            String ex = extras.getText().toString().trim();
+            HabitDb db = new HabitDb(a);
+            try {
+                if (existing == null) db.add(n, em, color[0], g, unit[0], s, ex);
+                else db.update(existing.id, n, em, color[0], g, unit[0], s, ex);
+            } finally {
+                db.close();
+            }
+            dlg.dismiss();
+            if (saved != null) saved.run();
+        });
 
         ScrollView sv = new ScrollView(a);
+        sv.setVerticalScrollBarEnabled(false);
         sv.addView(box);
-        new Dlg.Builder(a)
-                .setTitle(existing == null ? "New habit" : "Edit habit")
-                .setView(sv)
-                .setPositiveButton("Save", (dlg, w) -> {
-                    String n = name.getText().toString().trim();
-                    if (n.isEmpty()) return;
-                    String em = emoji.getText().toString().trim();
-                    if (em.length() > 8) em = em.substring(0, 8);
-                    int g = goal.value();
-                    int s = Math.max(1, step.value());
-                    String ex = extras.getText().toString().trim();
-                    HabitDb db = new HabitDb(a);
-                    try {
-                        if (existing == null) db.add(n, em, color[0], g, unit[0], s, ex);
-                        else db.update(existing.id, n, em, color[0], g, unit[0], s, ex);
-                    } finally {
-                        db.close();
-                    }
-                    if (saved != null) saved.run();
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
+        page.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
+        Fonts.apply(page);
+        dlg.setContentView(page);
+        android.view.Window w = dlg.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Pal.bg));
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        }
+        dlg.show();
+    }
+
+    /** A rounded white card holding one group of settings. */
+    private static LinearLayout section(Activity a) {
+        float d = a.getResources().getDisplayMetrics().density;
+        LinearLayout c = new LinearLayout(a);
+        c.setOrientation(LinearLayout.VERTICAL);
+        c.setPadding(Math.round(18 * d), Math.round(8 * d), Math.round(18 * d), Math.round(18 * d));
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(Pal.card);
+        g.setCornerRadius(22 * d);
+        c.setBackground(g);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = Math.round(12 * d);
+        c.setLayoutParams(lp);
+        return c;
+    }
+
+    /** A dial with its caption inside a soft rounded panel. */
+    private static View dialPanel(Activity a, String caption, Wheel wheel) {
+        float d = a.getResources().getDisplayMetrics().density;
+        LinearLayout p = new LinearLayout(a);
+        p.setOrientation(LinearLayout.VERTICAL);
+        p.setGravity(Gravity.CENTER_HORIZONTAL);
+        p.setPadding(Math.round(6 * d), Math.round(2 * d), Math.round(6 * d), Math.round(8 * d));
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(Pal.chip);
+        g.setCornerRadius(20 * d);
+        p.setBackground(g);
+        TextView t = label(a, caption);
+        t.setPadding(0, Math.round(12 * d), 0, Math.round(2 * d));
+        t.setGravity(Gravity.CENTER);
+        p.addView(t, new LinearLayout.LayoutParams(-1, -2));
+        p.addView(wheel, new LinearLayout.LayoutParams(-1, -2));
+        return p;
     }
 
     private static TextView label(Activity a, String s) {
@@ -313,7 +407,7 @@ final class HabitEditor {
         t.setPadding(Math.round(14 * d), 0, Math.round(14 * d), 0);
         t.setTextColor(on ? Pal.onSel : Pal.muted);
         GradientDrawable g = new GradientDrawable();
-        g.setCornerRadius(19 * d);
+        g.setCornerRadius(22 * d);
         g.setColor(on ? Pal.sel : Pal.chip);
         t.setBackground(g);
         t.setOnClickListener(l);
