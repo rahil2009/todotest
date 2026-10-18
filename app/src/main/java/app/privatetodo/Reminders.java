@@ -104,7 +104,11 @@ final class Reminders {
         if (t.repeat <= 0 || t.done) return 0;
         // A daily/weekly series also shows on the days from today up to its next stored time.
         boolean back = d0 < dueStart;
-        if (back && (d0 < startOf(System.currentTimeMillis()) || t.repeatUnit <= 1)) return 0;
+        if (back && d0 < startOf(System.currentTimeMillis())) {
+            // history: a past day only appears if that occurrence was ticked off
+            return t.occDone.contains(d0) ? clockOn(d0, start) : 0;
+        }
+        if (back && t.repeatUnit <= 1) return 0;
         int days = (int) Math.round((d0 - dueStart) / 86_400_000.0);
         Calendar at = (Calendar) day.clone();
         at.set(Calendar.HOUR_OF_DAY, start.get(Calendar.HOUR_OF_DAY));
@@ -150,7 +154,7 @@ final class Reminders {
             for (int i = 0; i < 2000; i++) {
                 c.add(Calendar.DAY_OF_YEAR, -stepDays);
                 if (c.getTimeInMillis() <= now) break;
-                best = c.getTimeInMillis();
+                if (!t.occDone.contains(startOf(c.getTimeInMillis()))) best = c.getTimeInMillis();
             }
             return best;
         }
@@ -164,7 +168,8 @@ final class Reminders {
             c.set(Calendar.MILLISECOND, 0);
             for (int k = 0; k < 8; k++) {
                 if ((t.repeat & (1 << ((c.get(Calendar.DAY_OF_WEEK) + 5) % 7))) != 0
-                        && c.getTimeInMillis() > now && c.getTimeInMillis() < t.due) {
+                        && c.getTimeInMillis() > now && c.getTimeInMillis() < t.due
+                        && !t.occDone.contains(startOf(c.getTimeInMillis()))) {
                     return c.getTimeInMillis();
                 }
                 c.add(Calendar.DAY_OF_YEAR, 1);
@@ -190,6 +195,16 @@ final class Reminders {
         }
     }
 
+    private static long clockOn(long d0, Calendar clock) {
+        Calendar c = Calendar.getInstance();
+        c.setTimeInMillis(d0);
+        c.set(Calendar.HOUR_OF_DAY, clock.get(Calendar.HOUR_OF_DAY));
+        c.set(Calendar.MINUTE, clock.get(Calendar.MINUTE));
+        c.set(Calendar.SECOND, 0);
+        c.set(Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
+    }
+
     private static long startOf(long t) {
         Calendar c = Calendar.getInstance();
         c.setTimeInMillis(t);
@@ -203,7 +218,59 @@ final class Reminders {
     /** The task as it shows on the day starting at {@code d0}, or null when it does not occur. */
     static Task onDay(Task t, long d0) {
         long at = occurrence(t, d0);
-        return at == 0 ? null : (at == t.due ? t : t.ghostAt(at));
+        if (at == 0) return null;
+        if (t.repeat > 0) {
+            boolean dn = t.occDone.contains(d0);
+            return at == t.due && !dn ? t : t.copyAt(at, dn);
+        }
+        return at == t.due ? t : t.ghostAt(at);
+    }
+
+    /** Next stored time for a repeating task, skipping days that were already ticked off. */
+    static long skipDone(Task t, long due) {
+        for (int i = 0; i < 400 && t.occDone.contains(startOf(due)); i++) {
+            due = advance(due, t.repeat, t.repeatUnit, due);
+        }
+        return due;
+    }
+
+    /**
+     * Ticks (or un-ticks) one day of a task. A one-off task is simply done/not done. A repeating task only gets that
+     * day ticked: the series itself is never "done", so it stays in the list and on every other day. Returns the
+     * new state of that day.
+     */
+    static boolean toggleDay(Context ctx, TaskDb db, Task t, long day) {
+        if (t.repeat <= 0) {
+            boolean nd = !t.done;
+            db.setDone(t.id, nd);
+            if (nd) cancel(ctx, t.id); else schedule(ctx, db.get(t.id));
+            return nd;
+        }
+        boolean was = t.occDone.contains(day);
+        if (!was) {
+            db.occSet(t.id, day, true);
+            Task fresh = db.get(t.id);
+            cancelNotification(ctx, t.id);
+            if (fresh != null && startOf(fresh.due) == day) { // the stored next time is the one just ticked
+                long nd = skipDone(fresh, advance(fresh.due, fresh.repeat, fresh.repeatUnit, fresh.due));
+                db.setState(t.id, nd, false, 0);
+                db.resetSubs(t.id); // the next round starts with fresh subtasks
+                schedule(ctx, db.get(t.id));
+            }
+            return true;
+        }
+        db.occSet(t.id, day, false);
+        Task fresh = db.get(t.id);
+        if (fresh != null) {
+            Calendar clock = Calendar.getInstance();
+            clock.setTimeInMillis(fresh.due);
+            long inst = clockOn(day, clock);
+            if (inst < fresh.due && inst > System.currentTimeMillis()) { // un-ticking an upcoming one: bring it back
+                db.setState(t.id, inst, false, 0);
+                schedule(ctx, db.get(t.id));
+            }
+        }
+        return false;
     }
 
     /** Moves {@code due} forward to the first day (same clock time) allowed by the Mon..Sun mask. */
@@ -305,6 +372,7 @@ final class Reminders {
                 db.setDone(id, true);
                 cancel(ctx, id);
             } else {
+                db.occSet(id, startOf(System.currentTimeMillis()), true); // "Done" ticks today's round
                 db.setSnooze(id, 0);
                 schedule(ctx, db.get(id));
             }

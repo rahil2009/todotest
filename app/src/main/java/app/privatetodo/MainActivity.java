@@ -1625,6 +1625,19 @@ public class MainActivity extends Activity {
     }
 
     private void toggleDone(final Task t) {
+        if (t.repeat > 0) { // a repeating task: tick this round only, the series carries on
+            final long day = startOfDayOf(t.due);
+            boolean nowDone = Reminders.toggleDay(this, db, t, day);
+            Hap.confirm(listView);
+            refresh();
+            if (nowDone) {
+                showUndo("Done \u00B7 next round is scheduled", () -> {
+                    Reminders.toggleDay(this, db, db.get(t.id), day);
+                    refresh();
+                });
+            }
+            return;
+        }
         setDoneAndSchedule(t.id, !t.done);
         Hap.confirm(listView);
         refresh();
@@ -1634,6 +1647,16 @@ public class MainActivity extends Activity {
                 refresh();
             });
         }
+    }
+
+    private static long startOfDayOf(long t) {
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.setTimeInMillis(t);
+        c.set(java.util.Calendar.HOUR_OF_DAY, 0);
+        c.set(java.util.Calendar.MINUTE, 0);
+        c.set(java.util.Calendar.SECOND, 0);
+        c.set(java.util.Calendar.MILLISECOND, 0);
+        return c.getTimeInMillis();
     }
 
     private void setDoneAndSchedule(long id, boolean done) {
@@ -1903,7 +1926,17 @@ public class MainActivity extends Activity {
                     fg = Pal.ink;
                 }
                 sub.setVisibility(View.VISIBLE);
-                sub.setText(line);
+                if (t.alarm && line.endsWith("Alarm")) { // a bell before the word "Alarm"
+                    android.text.SpannableStringBuilder sbb = new android.text.SpannableStringBuilder(line);
+                    int at = line.length() - 5;
+                    sbb.insert(at, "\uFFFC ");
+                    BellDrawable alarmBell = new BellDrawable(fg, dp(14));
+                    sbb.setSpan(new android.text.style.ImageSpan(alarmBell, android.text.style.ImageSpan.ALIGN_BOTTOM),
+                            at, at + 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    sub.setText(sbb);
+                } else {
+                    sub.setText(line);
+                }
                 sub.setTextColor(fg);
                 sub.setTypeface(Typeface.DEFAULT_BOLD);
                 sub.setBackground(wb);
@@ -1942,7 +1975,11 @@ public class MainActivity extends Activity {
                     boolean allDone = true;
                     java.util.List<Sub> all = db.subs(t.id);
                     for (Sub x : all) allDone &= x.done;
-                    if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
+                    if (allDone && !all.isEmpty() && !t.done && t.repeat > 0) { // repeating: this round is done
+                        Reminders.toggleDay(this, db, t, startOfDayOf(t.due));
+                        Hap.confirm(v);
+                        toast("All subtasks done \u00B7 next round is scheduled");
+                    } else if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
                         setDoneAndSchedule(t.id, true); // moves to Done, subtasks stay ticked
                         Hap.confirm(v);
                         toast("All subtasks done \u00B7 task completed");

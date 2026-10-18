@@ -191,41 +191,45 @@ public class SettingsActivity extends Activity {
         final java.util.List<View> tileViews = new java.util.ArrayList<>();
         LinearLayout grid = new LinearLayout(this);
         grid.setOrientation(LinearLayout.VERTICAL);
-        for (int r = 0; r < 2; r++) {
-            LinearLayout line = new LinearLayout(this);
-            for (int k = 0; k < 2; k++) {
-                final Object[] t = tiles[r * 2 + k];
-                LinearLayout tile = new LinearLayout(this);
-                tile.setOrientation(LinearLayout.VERTICAL);
-                tile.setPadding(dp(16), dp(16), dp(16), dp(14));
-                GradientDrawable tg = new GradientDrawable();
-                tg.setColor(Pal.card);
-                tg.setCornerRadius(dp(22));
-                tile.setBackground(tg);
-                LinearLayout badge = new LinearLayout(this);
-                badge.setGravity(Gravity.CENTER);
-                GradientDrawable bg2 = new GradientDrawable();
-                bg2.setShape(GradientDrawable.OVAL);
-                bg2.setColor(Pal.chip);
-                badge.setBackground(bg2);
-                badge.addView(new IconView(this, (Integer) t[0]), new LinearLayout.LayoutParams(dp(30), dp(30)));
-                tile.addView(badge, new LinearLayout.LayoutParams(dp(46), dp(46)));
-                TextView name = text((String) t[1], 16, Pal.ink, true);
-                name.setPadding(0, dp(14), 0, 0);
-                tile.addView(name);
-                tile.addView(text((String) t[2], 13, Pal.muted, false));
-                final int target = (Integer) t[3];
-                tile.setOnClickListener(v -> {
-                    Hap.tick(v);
-                    startActivity(new Intent(this, SettingsActivity.class).putExtra("page", target));
-                });
-                LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(0, -2, 1f);
-                tlp.setMargins(k == 0 ? 0 : dp(6), dp(6), k == 0 ? dp(6) : 0, dp(6));
-                line.addView(tile, tlp);
-                tileViews.add(tile);
-                block(((String) t[1]) + " " + t[4], tile);
-            }
-            grid.addView(line);
+        for (int r = 0; r < tiles.length; r++) {
+            final Object[] t = tiles[r];
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.HORIZONTAL);
+            tile.setGravity(Gravity.CENTER_VERTICAL);
+            tile.setPadding(dp(14), dp(12), dp(16), dp(12));
+            GradientDrawable tg = new GradientDrawable();
+            tg.setColor(Pal.card);
+            tg.setCornerRadius(dp(22));
+            tile.setBackground(tg);
+            LinearLayout badge = new LinearLayout(this);
+            badge.setGravity(Gravity.CENTER);
+            GradientDrawable bg2 = new GradientDrawable();
+            bg2.setShape(GradientDrawable.OVAL);
+            bg2.setColor(Pal.chip);
+            badge.setBackground(bg2);
+            badge.addView(new IconView(this, (Integer) t[0]), new LinearLayout.LayoutParams(dp(26), dp(26)));
+            tile.addView(badge, new LinearLayout.LayoutParams(dp(44), dp(44)));
+            TextView name = text((String) t[1], 16, Pal.ink, true);
+            name.setPadding(dp(14), 0, dp(8), 0);
+            tile.addView(name, new LinearLayout.LayoutParams(0, -2, 1f)); // the detail sits at the far right
+            TextView detail = text((String) t[2], 14, Pal.muted, false);
+            detail.setSingleLine(true);
+            detail.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            detail.setGravity(Gravity.END);
+            tile.addView(detail, new LinearLayout.LayoutParams(-2, -2));
+            TextView chev = text("\u203A", 22, Pal.muted, true);
+            chev.setPadding(dp(8), 0, 0, 0);
+            tile.addView(chev);
+            final int target = (Integer) t[3];
+            tile.setOnClickListener(v -> {
+                Hap.tick(v);
+                startActivity(new Intent(this, SettingsActivity.class).putExtra("page", target));
+            });
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, -2);
+            tlp.setMargins(0, dp(5), 0, dp(5));
+            grid.addView(tile, tlp);
+            tileViews.add(tile);
+            block(((String) t[1]) + " " + t[4], tile);
         }
         col.addView(grid);
         block("more", moreLabel);

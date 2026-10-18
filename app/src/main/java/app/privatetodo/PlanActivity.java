@@ -234,7 +234,7 @@ public class PlanActivity extends Activity {
                 if (!real.done) loose.add(real);
                 continue;
             }
-            if (real.repeat > 0 && startOfDay(real.due) != day) {
+            if (real.repeat > 0) {
                 t = Reminders.onDay(real, day); // a repeat that lands on this day
                 if (t == null) {
                     if (startOfDay(real.due) < day && day == todayStart && !real.done
@@ -589,15 +589,8 @@ public class PlanActivity extends Activity {
         check.setOn(t.done);
         check.setContentDescription(t.done ? "Mark not done" : "Mark done");
         check.setOnClickListener(v -> {
-            if (t.ghost) {
-                android.widget.Toast.makeText(this, "It repeats: you can tick it off on the day",
-                        android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
             Hap.confirm(v);
-            db.setDone(t.id, !t.done);
-            if (t.done) Reminders.schedule(this, db.get(t.id));
-            else Reminders.cancel(this, t.id);
+            Reminders.toggleDay(this, db, t, startOfDay(t.due));
             render();
         });
         card.addView(check, new LinearLayout.LayoutParams(dp(44), dp(44)));
@@ -613,7 +606,7 @@ public class PlanActivity extends Activity {
         }
         card.addView(title, new LinearLayout.LayoutParams(0, -2, 1f));
 
-        if (!t.done && !t.ghost) {
+        if (!t.done && !t.ghost && t.repeat == 0) {
             TextView move = text(overdue ? "Today" : "+1 day", 13, Pal.accent, true);
             move.setGravity(Gravity.CENTER);
             move.setMinHeight(dp(44));

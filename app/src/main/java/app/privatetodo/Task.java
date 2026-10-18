@@ -27,6 +27,18 @@ final class Task {
     /** Optional emoji shown before the title ("" = none). */
     final String emoji;
 
+    /** Days (local midnight, millis) on which this repeating task's occurrence was ticked off. */
+    java.util.Set<Long> occDone = java.util.Collections.emptySet();
+
+    /** This task as it appears at {@code at}: a ticked/unticked copy, marked as projected when it is not the stored time. */
+    Task copyAt(long at, boolean isDone) {
+        Task g = new Task(id, title, isDone, at, repeat, repeatUnit, alarm, 0, false, sound, volume, priority,
+                always, emoji);
+        g.ghost = at != due;
+        g.occDone = occDone;
+        return g;
+    }
+
     /** true for a projected future occurrence of a repeating task (shown in Plan and Calendar, not stored). */
     boolean ghost;
 

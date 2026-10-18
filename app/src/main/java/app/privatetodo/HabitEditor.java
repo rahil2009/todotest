@@ -168,7 +168,10 @@ final class HabitEditor {
         final android.app.Dialog dlg = new android.app.Dialog(a, android.R.style.Theme_DeviceDefault_NoActionBar);
         LinearLayout page = new LinearLayout(a);
         page.setOrientation(LinearLayout.VERTICAL);
-        page.setBackgroundColor(Pal.bg);
+        GradientDrawable pageBg = new GradientDrawable();
+        pageBg.setColor(Pal.bg);
+        pageBg.setCornerRadius(28 * d);
+        page.setBackground(pageBg);
 
         // ---- header: back, title, Save pill
         LinearLayout head = new LinearLayout(a);
@@ -343,8 +346,16 @@ final class HabitEditor {
         dlg.setContentView(page);
         android.view.Window w = dlg.getWindow();
         if (w != null) {
-            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Pal.bg));
-            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+            // a rounded sheet like every other dialog (not edge to edge, so nothing sits under the status bar)
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0));
+            w.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            w.setDimAmount(0.55f);
+            android.util.DisplayMetrics dm = a.getResources().getDisplayMetrics();
+            w.setLayout(dm.widthPixels - Math.round(24 * d), Math.round(dm.heightPixels * 0.88f));
+            w.setGravity(Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            android.view.WindowManager.LayoutParams wl = w.getAttributes();
+            wl.y = Math.round(12 * d);
+            w.setAttributes(wl);
             w.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         }
         dlg.show();

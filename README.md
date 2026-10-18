@@ -142,3 +142,6 @@ Calendar: new month calendar from the header (and by tapping the month in Plan).
 v3.17 Settings: the main screen is now a search box, Appearance, Reminder notifications, Alarms and Pomodoro (all inline), then four tiles (Smart dates, Habit units, Full-screen alert, Backup) that each open their own page. The search box filters cards and tiles as you type.
 
 - Task editor: title now sits on an accent hero banner with a live subtasks progress bar; subtasks are filled rounded cards (accent ring while editing, dashed Add button).
+
+- Repeating tasks: ticking a day (Plan, Calendar, list, notification Done) records only that day; the series stays active everywhere. DB v9 adds occ_done and re-opens repeating tasks that were wrongly marked done.
+- Settings More: rows with the detail on the right; Habit editor is a rounded sheet again; bell icon before "Alarm" on task chips.

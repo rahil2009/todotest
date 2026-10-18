@@ -297,15 +297,8 @@ public class CalendarActivity extends Activity {
         check.setOn(t.done);
         check.setContentDescription(t.done ? "Mark not done" : "Mark done");
         check.setOnClickListener(v -> {
-            if (t.ghost) {
-                android.widget.Toast.makeText(this, "It repeats: you can tick it off on the day",
-                        android.widget.Toast.LENGTH_SHORT).show();
-                return;
-            }
             Hap.confirm(v);
-            db.setDone(t.id, !t.done);
-            if (t.done) Reminders.schedule(this, db.get(t.id));
-            else Reminders.cancel(this, t.id);
+            Reminders.toggleDay(this, db, t, startOfDay(t.due));
             render();
         });
         row.addView(check, new LinearLayout.LayoutParams(dp(44), dp(44)));

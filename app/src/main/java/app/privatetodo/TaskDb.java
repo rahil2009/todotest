@@ -26,7 +26,7 @@ final class TaskDb extends SQLiteOpenHelper {
     private final Context appCtx;
 
     TaskDb(Context context) {
-        super(context, "tasks.db", null, 8);
+        super(context, "tasks.db", null, 9);
         appCtx = context.getApplicationContext();
     }
 
@@ -53,6 +53,7 @@ final class TaskDb extends SQLiteOpenHelper {
                 + "emoji TEXT NOT NULL DEFAULT '')");
         createSubtasks(db);
         createNotes(db);
+        createOcc(db);
     }
 
     @Override
@@ -80,6 +81,56 @@ final class TaskDb extends SQLiteOpenHelper {
         }
         if (oldVersion < 8) { // optional emoji per task
             db.execSQL("ALTER TABLE tasks ADD COLUMN emoji TEXT NOT NULL DEFAULT ''");
+        }
+        if (oldVersion < 9) { // per-day ticks for repeating tasks; a repeating series is never "done"
+            createOcc(db);
+            db.execSQL("UPDATE tasks SET done = 0 WHERE repeat_mode > 0 AND done = 1");
+        }
+    }
+
+    private static void createOcc(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS occ_done ("
+                + "task_id INTEGER NOT NULL,"
+                + "day INTEGER NOT NULL,"
+                + "PRIMARY KEY (task_id, day))");
+    }
+
+    /** Loads the ticked days of every repeating task in the list. */
+    private void attachOcc(List<Task> tasks) {
+        java.util.Map<Long, Task> rep = new java.util.HashMap<>();
+        for (Task t : tasks) if (t.repeat > 0) rep.put(t.id, t);
+        if (rep.isEmpty()) return;
+        Cursor c = getReadableDatabase().rawQuery("SELECT task_id, day FROM occ_done", null);
+        try {
+            java.util.Map<Long, java.util.Set<Long>> m = new java.util.HashMap<>();
+            while (c.moveToNext()) {
+                java.util.Set<Long> set = m.get(c.getLong(0));
+                if (set == null) {
+                    set = new java.util.HashSet<>();
+                    m.put(c.getLong(0), set);
+                }
+                set.add(c.getLong(1));
+            }
+            for (java.util.Map.Entry<Long, Task> e : rep.entrySet()) {
+                java.util.Set<Long> set = m.get(e.getKey());
+                if (set != null) e.getValue().occDone = set;
+            }
+        } finally {
+            c.close();
+        }
+    }
+
+    /** Ticks or un-ticks one day of a repeating task. */
+    void occSet(long id, long day, boolean done) {
+        changed();
+        SQLiteDatabase w = getWritableDatabase();
+        if (done) {
+            ContentValues v = new ContentValues();
+            v.put("task_id", id);
+            v.put("day", day);
+            w.insertWithOnConflict("occ_done", null, v, SQLiteDatabase.CONFLICT_REPLACE);
+        } else {
+            w.delete("occ_done", "task_id = ? AND day = ?", new String[]{String.valueOf(id), String.valueOf(day)});
         }
     }
 
@@ -150,6 +201,7 @@ final class TaskDb extends SQLiteOpenHelper {
         } finally {
             c.close();
         }
+        attachOcc(out);
         return out;
     }
 
@@ -163,6 +215,7 @@ final class TaskDb extends SQLiteOpenHelper {
         } finally {
             c.close();
         }
+        attachOcc(out);
         return out;
     }
 
@@ -170,7 +223,14 @@ final class TaskDb extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().query("tasks", COLS, "id = ?",
                 new String[]{String.valueOf(id)}, null, null, null);
         try {
-            return c.moveToFirst() ? map(c) : null;
+            if (!c.moveToFirst()) return null;
+            Task t = map(c);
+            if (t.repeat > 0) {
+                List<Task> one = new ArrayList<>();
+                one.add(t);
+                attachOcc(one);
+            }
+            return t;
         } finally {
             c.close();
         }
@@ -283,6 +343,7 @@ final class TaskDb extends SQLiteOpenHelper {
         changed();
         SQLiteDatabase w = getWritableDatabase();
         w.delete("subtasks", "task_id = ?", new String[]{String.valueOf(id)});
+        w.delete("occ_done", "task_id = ?", new String[]{String.valueOf(id)});
         w.delete("tasks", "id = ?", new String[]{String.valueOf(id)});
     }
 

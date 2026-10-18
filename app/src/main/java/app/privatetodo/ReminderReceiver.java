@@ -35,7 +35,7 @@ public class ReminderReceiver extends BroadcastReceiver {
             boolean fired = t.fired;
             if (!fromSnooze) {
                 if (t.repeat != 0) {
-                    due = Reminders.advance(t.due, t.repeat, t.repeatUnit, System.currentTimeMillis());
+                    due = Reminders.skipDone(t, Reminders.advance(t.due, t.repeat, t.repeatUnit, System.currentTimeMillis()));
                 } else {
                     fired = true;
                 }
