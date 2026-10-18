@@ -153,3 +153,4 @@ v3.17 Settings: the main screen is now a search box, Appearance, Reminder notifi
 - Rounds that start on a later day cannot be ticked early; a message tells you when they start.
 - The Repeat tab keeps no history. Plan, Calendar and the lists read the same per-day tick record, so they always agree.
 - Database version 9 (adds the per-day tick table).
+- Fix: Plan, Calendar and the Plan widget read tasks with `TaskDb.RAW` (exactly as stored), so a repeating task ticked today keeps showing on all future days.

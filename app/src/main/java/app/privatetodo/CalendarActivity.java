@@ -193,7 +193,7 @@ public class CalendarActivity extends Activity {
     // ----------------------------------------------------------------- render
 
     private void render() {
-        all = db.list(TaskDb.ALL);
+        all = db.list(TaskDb.RAW);
         long todayStart = startOfDay(System.currentTimeMillis());
         monthLabel.setText(new SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(new Date(month + 12 * 3_600_000L)));
 

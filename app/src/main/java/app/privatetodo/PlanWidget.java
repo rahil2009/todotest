@@ -46,7 +46,7 @@ public class PlanWidget extends AppWidgetProvider {
         TaskDb db = new TaskDb(ctx);
         List<Task> all;
         try {
-            all = db.list(TaskDb.ALL);
+            all = db.list(TaskDb.RAW);
         } finally {
             db.close();
         }

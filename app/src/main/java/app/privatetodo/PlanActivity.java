@@ -154,7 +154,7 @@ public class PlanActivity extends Activity {
     // ----------------------------------------------------------------- render
 
     private void render() {
-        all = db.list(TaskDb.ALL);
+        all = db.list(TaskDb.RAW);
         long todayStart = startOfDay(System.currentTimeMillis());
 
         subtitle.setText(new SimpleDateFormat("EEEE, d MMMM", Locale.getDefault()).format(new Date(day)));

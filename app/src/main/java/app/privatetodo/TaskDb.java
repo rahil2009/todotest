@@ -18,6 +18,7 @@ final class TaskDb extends SQLiteOpenHelper {
     static final int TOMORROW = 4;
     static final int UPCOMING = 5;
     static final int PRIORITY = 6;
+    static final int RAW = 8; // everything exactly as stored (Plan, Calendar, widgets project repeats from it)
     static final int REPEAT = 7; // repeating tasks ticked for today, waiting for their next round
 
     private static final String[] COLS = {
@@ -172,7 +173,7 @@ final class TaskDb extends SQLiteOpenHelper {
             where = "done = 0 AND repeat_mode > 0";
         }
         String order = "done ASC, priority DESC, created DESC, id DESC";
-        if (filter >= TODAY && filter != REPEAT) {
+        if (filter >= TODAY && filter != REPEAT && filter != RAW) {
             java.util.Calendar cal = java.util.Calendar.getInstance();
             cal.set(java.util.Calendar.HOUR_OF_DAY, 0);
             cal.set(java.util.Calendar.MINUTE, 0);
@@ -206,6 +207,7 @@ final class TaskDb extends SQLiteOpenHelper {
         }
         attachOcc(out);
         // A repeating task that is ticked for today lives in the Repeat tab until midnight.
+        if (filter == RAW) return out;
         long today = Reminders.startOf(System.currentTimeMillis());
         List<Task> res = new ArrayList<>();
         for (Task t : out) {
