@@ -61,7 +61,7 @@ public class MainActivity extends Activity {
     private TextView subtitle;
     private View clearDone;
     private IconView bell;
-    private final TextView[] chips = new TextView[7];
+    private final TextView[] chips = new TextView[8];
     // undo pill: "Task deleted  [Undo]" with a bar that drains over 4 seconds
     private UndoPill undoPill;
     private Runnable undoAction;
@@ -121,7 +121,7 @@ public class MainActivity extends Activity {
             recreate();
             return;
         }
-        Reminders.pullBack(this); // daily/weekly series start at their first upcoming occurrence
+        Reminders.normalise(this); // every series sits on its current round
         // Picks up Done / Snooze taken from a notification or the alarm screen.
         refresh();
     }
@@ -222,9 +222,12 @@ public class MainActivity extends Activity {
         LinearLayout chipRow = new LinearLayout(this);
         chipRow.setOrientation(LinearLayout.HORIZONTAL);
         chipRow.setPadding(dp(24), dp(16), dp(24), dp(12));
-        String[] names = {"Active", "Done", "All", "Today", "Tomorrow", "Upcoming", "Priority"};
+        // shown order; chips[] is indexed by the filter constant
+        final int[] order = {TaskDb.ACTIVE, TaskDb.REPEAT, TaskDb.DONE, TaskDb.ALL, TaskDb.TODAY, TaskDb.TOMORROW,
+                TaskDb.UPCOMING, TaskDb.PRIORITY};
+        final String[] names = {"Active", "Repeat", "Done", "All", "Today", "Tomorrow", "Upcoming", "Priority"};
         for (int i = 0; i < names.length; i++) {
-            final int f = i;
+            final int f = order[i];
             TextView chip = text(names[i], 15, Pal.muted, true);
             chip.setGravity(Gravity.CENTER);
             chip.setMinHeight(dp(40));
@@ -237,7 +240,7 @@ public class MainActivity extends Activity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
             lp.rightMargin = dp(8);
             chipRow.addView(chip, lp);
-            chips[i] = chip;
+            chips[f] = chip;
         }
         HorizontalScrollView chipScroll = new HorizontalScrollView(this);
         chipScroll.setHorizontalScrollBarEnabled(false);
@@ -508,7 +511,7 @@ public class MainActivity extends Activity {
         }
         adapter.notifyDataSetChanged();
 
-        int left = db.count(false);
+        int left = db.list(TaskDb.ACTIVE).size();
         int done = db.count(true);
         subtitle.setText(left + " left · " + done + " done");
         clearDone.setVisibility(done > 0 ? View.VISIBLE : View.INVISIBLE);
@@ -526,6 +529,9 @@ public class MainActivity extends Activity {
         } else if (filter == TaskDb.ACTIVE) {
             emptyTitle.setText("All clear");
             emptyBody.setText("Nothing left to do. Type in the bar below to add a task.");
+        } else if (filter == TaskDb.REPEAT) {
+            emptyTitle.setText("Nothing waiting");
+            emptyBody.setText("Repeating tasks you tick off today wait here, and return to Active at midnight.");
         } else if (filter == TaskDb.DONE) {
             emptyTitle.setText("Nothing done yet");
             emptyBody.setText("Finished tasks show up here.");
@@ -1626,12 +1632,23 @@ public class MainActivity extends Activity {
 
     private void toggleDone(final Task t) {
         if (t.repeat > 0) { // a repeating task: tick this round only, the series carries on
+            final long today = startOfDayOf(System.currentTimeMillis());
+            if (t.done) { // Repeat-tab row: bring today's round back to Active
+                Reminders.toggleDay(this, db, t, today);
+                Hap.confirm(listView);
+                refresh();
+                return;
+            }
             final long day = startOfDayOf(t.due);
+            if (day > today) { // a future round cannot be ticked early
+                toast(Reminders.earlyMessage(this, t));
+                return;
+            }
             boolean nowDone = Reminders.toggleDay(this, db, t, day);
             Hap.confirm(listView);
             refresh();
             if (nowDone) {
-                showUndo("Done \u00B7 next round is scheduled", () -> {
+                showUndo("Done \u00B7 moved to Repeat", () -> {
                     Reminders.toggleDay(this, db, db.get(t.id), day);
                     refresh();
                 });
@@ -1976,9 +1993,13 @@ public class MainActivity extends Activity {
                     java.util.List<Sub> all = db.subs(t.id);
                     for (Sub x : all) allDone &= x.done;
                     if (allDone && !all.isEmpty() && !t.done && t.repeat > 0) { // repeating: this round is done
-                        Reminders.toggleDay(MainActivity.this, db, t, startOfDayOf(t.due));
-                        Hap.confirm(v);
-                        toast("All subtasks done \u00B7 next round is scheduled");
+                        if (startOfDayOf(t.due) > startOfDayOf(System.currentTimeMillis())) {
+                            toast(Reminders.earlyMessage(MainActivity.this, t));
+                        } else {
+                            Reminders.toggleDay(MainActivity.this, db, t, startOfDayOf(t.due));
+                            Hap.confirm(v);
+                            toast("All subtasks done \u00B7 moved to Repeat");
+                        }
                     } else if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
                         setDoneAndSchedule(t.id, true); // moves to Done, subtasks stay ticked
                         Hap.confirm(v);

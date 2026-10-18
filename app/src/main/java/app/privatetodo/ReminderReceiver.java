@@ -34,8 +34,12 @@ public class ReminderReceiver extends BroadcastReceiver {
             long due = t.due;
             boolean fired = t.fired;
             if (!fromSnooze) {
-                if (t.repeat != 0) {
-                    due = Reminders.skipDone(t, Reminders.advance(t.due, t.repeat, t.repeatUnit, System.currentTimeMillis()));
+                if (t.repeat != 0 && t.repeatUnit >= 2) {
+                    // keep the round in place until it is ticked; a second ring only rolls on to the next round
+                    if (t.fired) due = Reminders.skipDone(t, Reminders.advance(t.due, t.repeat, t.repeatUnit, t.due));
+                    fired = true;
+                } else if (t.repeat != 0) {
+                    due = Reminders.advance(t.due, t.repeat, t.repeatUnit, System.currentTimeMillis());
                 } else {
                     fired = true;
                 }

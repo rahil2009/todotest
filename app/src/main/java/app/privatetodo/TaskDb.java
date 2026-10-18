@@ -18,6 +18,7 @@ final class TaskDb extends SQLiteOpenHelper {
     static final int TOMORROW = 4;
     static final int UPCOMING = 5;
     static final int PRIORITY = 6;
+    static final int REPEAT = 7; // repeating tasks ticked for today, waiting for their next round
 
     private static final String[] COLS = {
             "id", "title", "done", "due_at", "repeat_mode", "repeat_unit", "is_alarm", "snooze_until", "fired",
@@ -167,9 +168,11 @@ final class TaskDb extends SQLiteOpenHelper {
         } else if (filter == DONE) {
             where = "done = ?";
             args = new String[]{"1"};
+        } else if (filter == REPEAT) {
+            where = "done = 0 AND repeat_mode > 0";
         }
         String order = "done ASC, priority DESC, created DESC, id DESC";
-        if (filter >= TODAY) {
+        if (filter >= TODAY && filter != REPEAT) {
             java.util.Calendar cal = java.util.Calendar.getInstance();
             cal.set(java.util.Calendar.HOUR_OF_DAY, 0);
             cal.set(java.util.Calendar.MINUTE, 0);
@@ -202,7 +205,20 @@ final class TaskDb extends SQLiteOpenHelper {
             c.close();
         }
         attachOcc(out);
-        return out;
+        // A repeating task that is ticked for today lives in the Repeat tab until midnight.
+        long today = Reminders.startOf(System.currentTimeMillis());
+        List<Task> res = new ArrayList<>();
+        for (Task t : out) {
+            boolean waiting = Reminders.inRepeatTab(t, today);
+            if (filter == REPEAT) {
+                if (waiting) res.add(t.copyAt(t.due, true));
+            } else if (!waiting || filter == DONE) {
+                res.add(t);
+            } else if (filter != ACTIVE) {
+                res.add(t.copyAt(t.due, true)); // shown as ticked in All / Today / Tomorrow / ...
+            }
+        }
+        return res;
     }
 
     /** Active tasks that carry a reminder (used to re-arm alarms after reboot). */

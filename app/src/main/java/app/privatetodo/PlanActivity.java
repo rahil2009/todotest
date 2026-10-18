@@ -58,6 +58,7 @@ public class PlanActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Pal.init(this);
+        Reminders.normalise(this);
         if (Pal.themeRes() != builtDark) {
             recreate();
             return;
@@ -589,6 +590,10 @@ public class PlanActivity extends Activity {
         check.setOn(t.done);
         check.setContentDescription(t.done ? "Mark not done" : "Mark done");
         check.setOnClickListener(v -> {
+            if (t.repeat > 0 && !t.done && startOfDay(t.due) > startOfDay(System.currentTimeMillis())) {
+                android.widget.Toast.makeText(this, Reminders.earlyMessage(this, t), android.widget.Toast.LENGTH_SHORT).show();
+                return; // a future round cannot be ticked early
+            }
             Hap.confirm(v);
             Reminders.toggleDay(this, db, t, startOfDay(t.due));
             render();

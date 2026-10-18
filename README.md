@@ -145,3 +145,11 @@ v3.17 Settings: the main screen is now a search box, Appearance, Reminder notifi
 
 - Repeating tasks: ticking a day (Plan, Calendar, list, notification Done) records only that day; the series stays active everywhere. DB v9 adds occ_done and re-opens repeating tasks that were wrongly marked done.
 - Settings More: rows with the detail on the right; Habit editor is a rounded sheet again; bell icon before "Alarm" on task chips.
+
+## Repeating tasks: the Repeat tab (v3.18)
+- A repeating task always sits on its *current round*: the earliest unticked round that is upcoming or today. An unticked round from earlier today stays red until midnight; rounds from earlier days that were never ticked are skipped.
+- Ticking (main list, Plan, Calendar or the notification's Done) ticks the current round only. The task then moves to the **Repeat** tab (struck through, with its next time) and leaves Active. At midnight it returns to Active by itself.
+- Tapping the check in the Repeat tab un-ticks today's round and brings it back to Active (red if its time has passed).
+- Rounds that start on a later day cannot be ticked early; a message tells you when they start.
+- The Repeat tab keeps no history. Plan, Calendar and the lists read the same per-day tick record, so they always agree.
+- Database version 9 (adds the per-day tick table).
