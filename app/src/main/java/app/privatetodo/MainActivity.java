@@ -121,6 +121,7 @@ public class MainActivity extends Activity {
             recreate();
             return;
         }
+        Reminders.pullBack(this); // daily/weekly series start at their first upcoming occurrence
         // Picks up Done / Snooze taken from a notification or the alarm screen.
         refresh();
     }
@@ -196,14 +197,6 @@ public class MainActivity extends Activity {
             startActivity(new Intent(this, PomodoroActivity.class));
         });
         header.addView(pomodoro, new LinearLayout.LayoutParams(dp(41), dp(48)));
-
-        IconView calendar = new IconView(this, IconView.CALENDAR);
-        calendar.setContentDescription("Calendar");
-        calendar.setOnClickListener(v -> {
-            Hap.tick(v);
-            startActivity(new Intent(this, CalendarActivity.class));
-        });
-        header.addView(calendar, new LinearLayout.LayoutParams(dp(41), dp(48)));
 
         IconView plan = new IconView(this, IconView.PLAN);
         plan.setContentDescription("Plan");
@@ -1461,6 +1454,11 @@ public class MainActivity extends Activity {
             et.setImeOptions(EditorInfo.IME_ACTION_NEXT);
             et.setText(text);
             Links.pillWatch(et, Pal.accent);
+            et.setOnClickListener(v -> { // first tap must open the keyboard, not just focus the row
+                et.requestFocus();
+                et.post(() -> MainActivity.this.getSystemService(InputMethodManager.class)
+                        .showSoftInput(et, InputMethodManager.SHOW_IMPLICIT));
+            });
             et.setBackground(null);
             et.setTextColor(Pal.ink);
             et.setHintTextColor(Pal.muted);

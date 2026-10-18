@@ -105,8 +105,23 @@ final class Dlg {
             android.view.ViewGroup.LayoutParams lp = b.getLayoutParams();
             if (lp instanceof android.view.ViewGroup.MarginLayoutParams) {
                 android.view.ViewGroup.MarginLayoutParams mp = (android.view.ViewGroup.MarginLayoutParams) lp;
-                mp.setMargins(Math.round(4 * dn), Math.round(6 * dn), Math.round(4 * dn), Math.round(6 * dn));
+                mp.setMargins(Math.round(4 * dn), 0, Math.round(4 * dn), 0);
+                mp.height = Math.round(46 * dn);
                 b.setLayoutParams(mp);
+            }
+            // the stock button bar is only as tall as a flat button: give the pills room and never clip them
+            android.view.ViewParent par = b.getParent();
+            int depth = 0;
+            while (par instanceof android.view.ViewGroup && depth < 2) {
+                android.view.ViewGroup vg = (android.view.ViewGroup) par;
+                vg.setClipChildren(false);
+                vg.setClipToPadding(false);
+                if (depth == 0) {
+                    vg.setMinimumHeight(0);
+                    vg.setPadding(Math.round(12 * dn), Math.round(10 * dn), Math.round(12 * dn), Math.round(14 * dn));
+                }
+                par = vg.getParent();
+                depth++;
             }
         }
         if (w != null) Fonts.apply(w.getDecorView());

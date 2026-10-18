@@ -101,7 +101,10 @@ final class Reminders {
         dueDay.set(Calendar.MILLISECOND, 0);
         long dueStart = dueDay.getTimeInMillis();
         if (d0 == dueStart) return t.due;
-        if (t.repeat <= 0 || d0 < dueStart || t.done) return 0;
+        if (t.repeat <= 0 || t.done) return 0;
+        // A daily/weekly series also shows on the days from today up to its next stored time.
+        boolean back = d0 < dueStart;
+        if (back && (d0 < startOf(System.currentTimeMillis()) || t.repeatUnit <= 1)) return 0;
         int days = (int) Math.round((d0 - dueStart) / 86_400_000.0);
         Calendar at = (Calendar) day.clone();
         at.set(Calendar.HOUR_OF_DAY, start.get(Calendar.HOUR_OF_DAY));
@@ -112,13 +115,13 @@ final class Reminders {
             case 5:
                 return (t.repeat & (1 << ((day.get(Calendar.DAY_OF_WEEK) + 5) % 7))) != 0 ? at.getTimeInMillis() : 0;
             case 2:
-                return days % t.repeat == 0 ? at.getTimeInMillis() : 0;
+                return Math.floorMod(days, t.repeat) == 0 ? at.getTimeInMillis() : 0;
             case 3:
-                return days % (7 * t.repeat) == 0 ? at.getTimeInMillis() : 0;
+                return Math.floorMod(days, 7 * t.repeat) == 0 ? at.getTimeInMillis() : 0;
             case 4: {
                 int months = (day.get(Calendar.YEAR) - start.get(Calendar.YEAR)) * 12
                         + day.get(Calendar.MONTH) - start.get(Calendar.MONTH);
-                if (months <= 0 || months % t.repeat != 0) return 0;
+                if (months == 0 || Math.floorMod(months, t.repeat) != 0) return 0;
                 int want = Math.min(start.get(Calendar.DAY_OF_MONTH), day.getActualMaximum(Calendar.DAY_OF_MONTH));
                 return day.get(Calendar.DAY_OF_MONTH) == want ? at.getTimeInMillis() : 0;
             }
@@ -128,6 +131,62 @@ final class Reminders {
                 long first = t.due + k * step;
                 return first >= d0 && first < d0 + 86_400_000L + 3_600_000L && startOf(first) == d0 ? first : 0;
             }
+        }
+    }
+
+
+    /**
+     * A repeating task whose stored time is days ahead of its pattern (e.g. a daily task saved as
+     * "Wed 7:00" on a Sunday) is pulled back to its first occurrence after now, so the alarm, the list
+     * and the Plan all agree that it happens every day.
+     */
+    static long earliestFuture(Task t, long now) {
+        if (t.repeat <= 0 || t.done || t.due <= now || t.fired || t.snooze > 0) return t.due;
+        if (t.repeatUnit == 2 || t.repeatUnit == 3) {
+            int stepDays = t.repeat * (t.repeatUnit == 3 ? 7 : 1);
+            Calendar c = Calendar.getInstance();
+            c.setTimeInMillis(t.due);
+            long best = t.due;
+            for (int i = 0; i < 2000; i++) {
+                c.add(Calendar.DAY_OF_YEAR, -stepDays);
+                if (c.getTimeInMillis() <= now) break;
+                best = c.getTimeInMillis();
+            }
+            return best;
+        }
+        if (t.repeatUnit == 5) {
+            Calendar base = Calendar.getInstance();
+            base.setTimeInMillis(t.due);
+            Calendar c = Calendar.getInstance();
+            c.set(Calendar.HOUR_OF_DAY, base.get(Calendar.HOUR_OF_DAY));
+            c.set(Calendar.MINUTE, base.get(Calendar.MINUTE));
+            c.set(Calendar.SECOND, 0);
+            c.set(Calendar.MILLISECOND, 0);
+            for (int k = 0; k < 8; k++) {
+                if ((t.repeat & (1 << ((c.get(Calendar.DAY_OF_WEEK) + 5) % 7))) != 0
+                        && c.getTimeInMillis() > now && c.getTimeInMillis() < t.due) {
+                    return c.getTimeInMillis();
+                }
+                c.add(Calendar.DAY_OF_YEAR, 1);
+            }
+        }
+        return t.due;
+    }
+
+    /** Applies {@link #earliestFuture} to every task and re-arms the ones that moved. */
+    static void pullBack(Context ctx) {
+        TaskDb db = new TaskDb(ctx);
+        try {
+            long now = System.currentTimeMillis();
+            for (Task t : db.withReminders()) {
+                long nd = earliestFuture(t, now);
+                if (nd != t.due) {
+                    db.setState(t.id, nd, false, 0);
+                    schedule(ctx, db.get(t.id));
+                }
+            }
+        } finally {
+            db.close();
         }
     }
 

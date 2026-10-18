@@ -98,6 +98,15 @@ public class PlanActivity extends Activity {
             render();
         });
         header.addView(today);
+        IconView cal = new IconView(this, IconView.CALENDAR);
+        cal.setContentDescription("Month calendar");
+        cal.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new android.content.Intent(this, CalendarActivity.class));
+        });
+        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(dp(48), dp(48));
+        cl.leftMargin = dp(4);
+        header.addView(cal, cl);
         root.addView(header);
 
         // month + week arrows
