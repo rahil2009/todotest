@@ -28,7 +28,7 @@ final class TaskDb extends SQLiteOpenHelper {
     private final Context appCtx;
 
     TaskDb(Context context) {
-        super(context, "tasks.db", null, 9);
+        super(context, "tasks.db", null, 11);
         appCtx = context.getApplicationContext();
     }
 
@@ -88,6 +88,12 @@ final class TaskDb extends SQLiteOpenHelper {
             createOcc(db);
             db.execSQL("UPDATE tasks SET done = 0 WHERE repeat_mode > 0 AND done = 1");
         }
+        if (oldVersion < 10) { // pinned notes: the time it was pinned, 0 = not pinned
+            db.execSQL("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+        }
+        if (oldVersion < 11) { // a pinned note's own colour, -1 = follow Settings
+            db.execSQL("ALTER TABLE notes ADD COLUMN pincolor INTEGER NOT NULL DEFAULT -1");
+        }
     }
 
     private static void createOcc(SQLiteDatabase db) {
@@ -142,7 +148,9 @@ final class TaskDb extends SQLiteOpenHelper {
                 + "title TEXT NOT NULL DEFAULT '',"
                 + "body TEXT NOT NULL DEFAULT '',"
                 + "plain TEXT NOT NULL DEFAULT '',"
-                + "updated INTEGER NOT NULL DEFAULT 0)");
+                + "updated INTEGER NOT NULL DEFAULT 0,"
+                + "pinned INTEGER NOT NULL DEFAULT 0,"
+                + "pincolor INTEGER NOT NULL DEFAULT -1)");
     }
 
     private static void createSubtasks(SQLiteDatabase db) {
@@ -497,14 +505,36 @@ final class TaskDb extends SQLiteOpenHelper {
 
     // ------------------------------------------------------------ notebook
 
-    private static final String[] NOTE_COLS = {"id", "title", "body", "plain", "updated"};
+    private static final String[] NOTE_COLS = {"id", "title", "body", "plain", "updated", "pinned", "pincolor"};
 
     private static Note mapNote(Cursor c) {
-        return new Note(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4));
+        return new Note(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getLong(5), c.getInt(6));
     }
 
     /** All notes, newest edit first; {@code query} filters title and text (empty = all). */
     List<Note> notes(String query) {
+        return notes(query, 0);
+    }
+
+    /** Pinned notes first, then by {@code sort}: 0 edited newest, 1 edited oldest, 2 created newest, 3 title A-Z, 4 title Z-A. */
+    List<Note> notes(String query, int sort) {
+        String order;
+        switch (sort) {
+            case 1:
+                order = "updated ASC, id ASC";
+                break;
+            case 2:
+                order = "id DESC";
+                break;
+            case 3:
+                order = "title COLLATE NOCASE ASC, id ASC";
+                break;
+            case 4:
+                order = "title COLLATE NOCASE DESC, id DESC";
+                break;
+            default:
+                order = "updated DESC, id DESC";
+        }
         String where = null;
         String[] args = null;
         if (query != null && !query.isEmpty()) {
@@ -514,7 +544,7 @@ final class TaskDb extends SQLiteOpenHelper {
         }
         List<Note> out = new ArrayList<>();
         Cursor c = getReadableDatabase().query("notes", NOTE_COLS, where, args, null, null,
-                "updated DESC, id DESC");
+                "(pinned > 0) DESC, pinned DESC, " + order);
         try {
             while (c.moveToNext()) out.add(mapNote(c));
         } finally {
@@ -544,6 +574,31 @@ final class TaskDb extends SQLiteOpenHelper {
         if (id <= 0) return getWritableDatabase().insert("notes", null, v);
         getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(id)});
         return id;
+    }
+
+    int pinnedCount() {
+        Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM notes WHERE pinned > 0", null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    /** Pins or unpins a note; the edit time is left alone. */
+    void setPinned(long id, boolean pin) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("pinned", pin ? System.currentTimeMillis() : 0);
+        getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    /** Sets one note's own pinned colour; -1 goes back to the Settings choice. */
+    void setPinColor(long id, int style) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("pincolor", style);
+        getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(id)});
     }
 
     void deleteNote(long id) {

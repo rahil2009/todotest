@@ -83,7 +83,7 @@ public class SettingsActivity extends Activity {
         col.setPadding(dp(16), dp(12), dp(16), dp(32));
         scroll.addView(col, new ScrollView.LayoutParams(-1, -2));
 
-        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup"};
+        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook"};
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -98,6 +98,10 @@ public class SettingsActivity extends Activity {
             col.addView(smartCard());
         } else if (page == 2) {
             col.addView(unitsCard());
+        } else if (page == 5) {
+            col.addView(layoutCard());
+        } else if (page == 6) {
+            col.addView(notebookCard());
         } else if (page == 3) {
             col.addView(alertCard());
         } else if (page == 4) {
@@ -180,7 +184,12 @@ public class SettingsActivity extends Activity {
         View moreLabel = sectionLabel("More");
         col.addView(moreLabel);
         final int units = HabitEditor.units(this).size();
+        final String[] layoutNames = {"Current", "Two sections", "Switch", "", "Routine strip", "Routine dock"};
         Object[][] tiles = {
+                {IconView.PLAN, "Main screen", layoutNames[Math.min(5, Prefs.mainLayout(this))], 5,
+                        "main screen layout test sections switch routine strip dock repeating one-off"},
+                {IconView.NOTE, "Notebook", "Pin up to " + Prefs.maxPins(this), 6,
+                        "notebook notes pin pinned limit top"},
                 {IconView.CLOCK, "Smart dates", Prefs.smartOn(this) ? "On \u00b7 " + Prefs.smartTrigger(this) : "Off", 1,
                         "smart dates natural language at symbol trigger shortcuts"},
                 {IconView.HABIT, "Habit units", units + " units", 2, "habit units ml min quick amounts"},
@@ -255,6 +264,147 @@ public class SettingsActivity extends Activity {
                 moreLabel.setVisibility(q.isEmpty() || anyTile ? View.VISIBLE : View.GONE);
             }
         });
+    }
+
+    /** Picks how repeating and one-off tasks are laid out on the main screen (for trying them out). */
+    private LinearLayout layoutCard() {
+        LinearLayout card = card();
+        TextView intro = text("Try a layout for a few days, then keep the one you like. It applies to the Active tab; "
+                + "the other tabs stay as they are.", 14, Pal.muted, false);
+        intro.setPadding(0, dp(8), 0, dp(8));
+        card.addView(intro);
+        final int[] ids = {0, 1, 2, 4, 5};
+        String[] names = {"Current", "Two sections", "Switch", "Routine strip", "Routine dock"};
+        String[] desc = {
+                "Everything in one list, as before.",
+                "One-off tasks first, repeating tasks below in tinted rows. Each section collapses.",
+                "A switch above the list: All, One-off or Repeating. A line tells you what is hidden.",
+                "Repeating tasks become tiles across the top. The list below is one-off tasks only.",
+                "Repeating tasks wait in a pull-up dock above the add bar. The list is one-off tasks only."};
+        int cur = Prefs.mainLayout(this);
+        for (int i = 0; i < ids.length; i++) {
+            final int id = ids[i];
+            boolean on = cur == id;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(12), dp(12), dp(12), dp(12));
+            GradientDrawable rg = new GradientDrawable();
+            rg.setCornerRadius(dp(16));
+            rg.setColor(on ? Pal.chip : android.graphics.Color.TRANSPARENT);
+            if (on) rg.setStroke(dp(2), Pal.accent);
+            row.setBackground(rg);
+            TextView dot = text(on ? "\u25CF" : "\u25CB", 20, on ? Pal.accent : Pal.muted, true);
+            dot.setGravity(Gravity.CENTER);
+            row.addView(dot, new LinearLayout.LayoutParams(dp(32), -2));
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            col.addView(text(names[i], 16, Pal.ink, true));
+            TextView d = text(desc[i], 13, Pal.muted, false);
+            d.setPadding(0, dp(2), 0, 0);
+            col.addView(d);
+            row.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+            row.setOnClickListener(v -> {
+                Hap.tick(v);
+                Prefs.setMainLayout(this, id);
+                recreate();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = dp(4);
+            card.addView(row, lp);
+        }
+        return card;
+    }
+
+    /** Notebook settings: how many notes may be pinned to the top (1 to 20). */
+    private LinearLayout notebookCard() {
+        LinearLayout card = card();
+        card.addView(text("Pinned notes", 16, Pal.ink, true));
+        TextView sub = text("Pinned notes stay at the top of the notebook. Choose how many you can pin at once, "
+                + "from 1 to 20. Lowering it never unpins notes you already pinned.", 13, Pal.muted, false);
+        sub.setPadding(0, dp(2), 0, dp(8));
+        card.addView(sub);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView num = text(String.valueOf(Prefs.maxPins(this)), 28, Pal.ink, true);
+        num.setGravity(Gravity.CENTER);
+        final TextView minus = pinStep("\u2212");
+        final TextView plus = pinStep("+");
+        View.OnClickListener step = v -> {
+            Hap.tick(v);
+            int n = Prefs.maxPins(this) + (v == plus ? 1 : -1);
+            n = Math.max(1, Math.min(Prefs.PINS_MAX, n));
+            Prefs.setMaxPins(this, n);
+            num.setText(String.valueOf(n));
+        };
+        minus.setOnClickListener(step);
+        plus.setOnClickListener(step);
+        row.addView(minus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        row.addView(num, new LinearLayout.LayoutParams(0, -2, 1f));
+        row.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        card.addView(row);
+
+        // ---- colour of pinned notes' previews
+        TextView ctitle = text("Pinned note colour", 16, Pal.ink, true);
+        ctitle.setPadding(0, dp(20), 0, 0);
+        card.addView(ctitle);
+        TextView csub = text("Fills the whole preview of every pinned note. Tap one to try it; open the "
+                + "notebook to see it.", 13, Pal.muted, false);
+        csub.setPadding(0, dp(2), 0, dp(10));
+        card.addView(csub);
+        final View[] swatches = new View[PinTint.COUNT];
+        final TextView[] labels = new TextView[PinTint.COUNT];
+        final Runnable paint = () -> {
+            int cur = PinTint.style(this);
+            for (int i = 0; i < PinTint.COUNT; i++) {
+                GradientDrawable g = new GradientDrawable();
+                g.setCornerRadius(dp(12));
+                PinTint.paint(g, i, 0);
+                g.setStroke(dp(i == cur ? 3 : 1), i == cur ? Pal.ink : Pal.chip);
+                swatches[i].setBackground(g);
+                labels[i].setTextColor(i == cur ? Pal.ink : Pal.muted);
+                labels[i].setTypeface(i == cur ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
+            }
+        };
+        for (int start = 0; start < PinTint.COUNT; start += 5) {
+            LinearLayout line = new LinearLayout(this);
+            line.setOrientation(LinearLayout.HORIZONTAL);
+            for (int i = start; i < start + 5 && i < PinTint.COUNT; i++) {
+                final int idx = i;
+                LinearLayout cell = new LinearLayout(this);
+                cell.setOrientation(LinearLayout.VERTICAL);
+                cell.setGravity(Gravity.CENTER_HORIZONTAL);
+                cell.setPadding(dp(3), dp(4), dp(3), dp(4));
+                View sw = new View(this);
+                swatches[i] = sw;
+                cell.addView(sw, new LinearLayout.LayoutParams(-1, dp(46)));
+                TextView lab = text(PinTint.NAMES[i], 11, Pal.muted, false);
+                lab.setGravity(Gravity.CENTER);
+                lab.setPadding(0, dp(4), 0, 0);
+                labels[i] = lab;
+                cell.addView(lab);
+                cell.setOnClickListener(v -> {
+                    Hap.tick(v);
+                    Prefs.setPinColor(this, idx);
+                    paint.run();
+                });
+                line.addView(cell, new LinearLayout.LayoutParams(0, -2, 1f));
+            }
+            card.addView(line);
+        }
+        paint.run();
+        return card;
+    }
+
+    private TextView pinStep(String label) {
+        TextView t = text(label, 26, Pal.ink, true);
+        t.setGravity(Gravity.CENTER);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(Pal.chip);
+        t.setBackground(g);
+        return t;
     }
 
     private LinearLayout alertCard() {

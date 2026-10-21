@@ -55,6 +55,31 @@ public class MainActivity extends Activity {
 
     private TaskDb db;
     private final List<Task> tasks = new ArrayList<>();
+    // what the list actually shows: tasks, plus section headers and hints for the layout under test
+    private final List<Object> items = new ArrayList<>();
+    private LinearLayout extrasBox; // switch / routine strip, above the list
+    private LinearLayout dockView;  // routine dock, above the add bar
+    private final boolean[] collapsed = new boolean[2];
+
+    private static final class Header {
+        final String text;
+        final int count;
+        final int key; // 0 one-off, 1 repeating, 2 plain label
+        Header(String text, int count, int key) {
+            this.text = text;
+            this.count = count;
+            this.key = key;
+        }
+    }
+
+    private static final class Hint {
+        final CharSequence text;
+        final Runnable click;
+        Hint(CharSequence text, Runnable click) {
+            this.text = text;
+            this.click = click;
+        }
+    }
     private int filter = TaskDb.ACTIVE;
     private float density;
 
@@ -248,6 +273,11 @@ public class MainActivity extends Activity {
         chipScroll.addView(chipRow);
         column.addView(chipScroll, new LinearLayout.LayoutParams(-1, -2));
 
+        extrasBox = new LinearLayout(this);
+        extrasBox.setOrientation(LinearLayout.VERTICAL);
+        extrasBox.setVisibility(View.GONE);
+        column.addView(extrasBox, new LinearLayout.LayoutParams(-1, -2));
+
         // List + empty state
         FrameLayout body = new FrameLayout(this);
         listView = new ListView(this);
@@ -390,6 +420,22 @@ public class MainActivity extends Activity {
         blp.gravity = Gravity.BOTTOM;
         root.addView(bar, blp);
 
+        dockView = new LinearLayout(this);
+        dockView.setOrientation(LinearLayout.HORIZONTAL);
+        dockView.setGravity(Gravity.CENTER_VERTICAL);
+        dockView.setPadding(dp(16), 0, dp(16), 0);
+        GradientDrawable dockBg = new GradientDrawable();
+        dockBg.setColor(Pal.sel);
+        dockBg.setCornerRadius(dp(22));
+        dockView.setBackground(dockBg);
+        dockView.setVisibility(View.GONE);
+        FrameLayout.LayoutParams dlp = new FrameLayout.LayoutParams(-1, dp(64));
+        dlp.gravity = Gravity.BOTTOM;
+        dlp.leftMargin = dp(16);
+        dlp.rightMargin = dp(16);
+        dlp.bottomMargin = dp(84);
+        root.addView(dockView, dlp);
+
         // Undo pill, floating just above the bar; the whole pill drains like the volume slider
         undoPill = new UndoPill(this);
         undoPill.setVisibility(View.GONE);
@@ -509,6 +555,7 @@ public class MainActivity extends Activity {
         for (Task t : db.list(filter)) {
             if (!searching || matches(t)) tasks.add(t);
         }
+        buildItems();
         adapter.notifyDataSetChanged();
 
         int left = db.list(TaskDb.ACTIVE).size();
@@ -565,6 +612,43 @@ public class MainActivity extends Activity {
     /** Low = blue, medium = amber, high = red. */
     static int priorityColor(int level) {
         return level == 1 ? 0xFF3F8FE0 : level == 2 ? 0xFFF2A93B : 0xFFE5534B;
+    }
+
+    /** Small uppercase section heading, e.g. WHEN / REPEAT / PRIORITY. */
+    private TextView sectionLabel(String s) {
+        TextView t = text(s.toUpperCase(java.util.Locale.ROOT), 12, Pal.muted, true);
+        t.setLetterSpacing(0.08f);
+        return t;
+    }
+
+    /** Rounded track holding a row of equal segments; the selected one is drawn as a pill. */
+    private LinearLayout segTrack(TextView[] segs) {
+        return segTrack(segs, Pal.chip);
+    }
+
+    private LinearLayout segTrack(TextView[] segs, int trackColor) {
+        LinearLayout track = new LinearLayout(this);
+        track.setOrientation(LinearLayout.HORIZONTAL);
+        track.setPadding(dp(4), dp(4), dp(4), dp(4));
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(26));
+        g.setColor(trackColor);
+        track.setBackground(g);
+        for (TextView sg : segs) {
+            sg.setGravity(Gravity.CENTER);
+            sg.setSingleLine(true);
+            sg.setPadding(dp(2), 0, dp(2), 0);
+            track.addView(sg, new LinearLayout.LayoutParams(0, dp(40), 1f));
+        }
+        return track;
+    }
+
+    private void segState(TextView sg, boolean on, int onBg, int onFg) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(20));
+        g.setColor(on ? onBg : Color.TRANSPARENT);
+        sg.setBackground(g);
+        sg.setTextColor(on ? onFg : Pal.muted);
     }
 
     private TextView formChip(String s, boolean on) {
@@ -796,12 +880,15 @@ public class MainActivity extends Activity {
                 && !(existing.repeat == 1 && (existing.repeatUnit == 2 || existing.repeatUnit == 3))};
         final boolean[] alarm = {existing != null && existing.alarm};
         final boolean[] always = {existing != null && existing.always};
+        final AlertDialog[] dlgRef = new AlertDialog[1];
+        final String[] selSpec = {""}; // the quick button that set the time, "" for a hand-picked one
         final Runnable[] upd = new Runnable[1];
         final Runnable[] updSnd = new Runnable[1];
         final DialView dial = new DialView(this, true);
         dial.setVisibility(View.GONE);
         // Opens the dials for ANY time: "In" 1 min .. 99 weeks, or "At" any day within a year.
         final Runnable openDial = () -> {
+            selSpec[0] = "";
             if (due[0] > 0) {
                 dial.setTime(due[0]);
             } else {
@@ -907,8 +994,8 @@ public class MainActivity extends Activity {
         form.addView(hero, new LinearLayout.LayoutParams(-1, -2));
 
         // Subtasks: press Enter on the keyboard to start the next one automatically.
-        TextView subLabel = text("Subtasks", 13, Pal.muted, true);
-        subLabel.setPadding(0, dp(16), 0, dp(2));
+        TextView subLabel = sectionLabel("Subtasks");
+        subLabel.setPadding(0, dp(18), 0, dp(2));
         form.addView(subLabel);
         final LinearLayout subBox = new LinearLayout(this);
         subBox.setOrientation(LinearLayout.VERTICAL);
@@ -948,59 +1035,61 @@ public class MainActivity extends Activity {
         asl.topMargin = dp(10);
         form.addView(addSub, asl);
 
-        TextView prioLabel = text("Priority", 13, Pal.muted, true);
-        prioLabel.setPadding(0, dp(12), 0, dp(6));
-        form.addView(prioLabel);
-        final int[] prio = {existing == null ? 0 : existing.priority};
-        final TextView[] prioChips = new TextView[4];
-        LinearLayout prioRow = new LinearLayout(this);
-        prioRow.setOrientation(LinearLayout.HORIZONTAL);
-        String[] prioNames = {"None", "Low", "Medium", "High"};
-        final Runnable[] updPrio = new Runnable[1];
-        updPrio[0] = () -> {
-            for (int k = 0; k < 4; k++) {
-                boolean on = prio[0] == k;
-                styleChip(prioChips[k], on, Pal.chip);
-                if (on && k > 0) {
-                    GradientDrawable g = new GradientDrawable();
-                    g.setCornerRadius(dp(20));
-                    g.setColor(priorityColor(k));
-                    prioChips[k].setBackground(g);
-                    prioChips[k].setTextColor(k == 2 ? 0xFF111513 : Color.WHITE);
-                }
+        // WHEN: heading with Clear, then a row of quick buttons (the chosen one is a black pill with a tick)
+        LinearLayout whenHead = new LinearLayout(this);
+        whenHead.setOrientation(LinearLayout.HORIZONTAL);
+        whenHead.setGravity(Gravity.CENTER_VERTICAL);
+        whenHead.setPadding(0, dp(18), 0, dp(4));
+        whenHead.addView(sectionLabel("When"), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView clear = text("Clear", 14, Pal.accent, true);
+        clear.setGravity(Gravity.CENTER);
+        clear.setMinHeight(dp(36));
+        clear.setPadding(dp(12), 0, 0, 0);
+        clear.setOnClickListener(v -> {
+            due[0] = 0;
+            selSpec[0] = "";
+            dial.setVisibility(View.GONE);
+            upd[0].run();
+        });
+        whenHead.addView(clear);
+        form.addView(whenHead, new LinearLayout.LayoutParams(-1, -2));
+        final TextView pick = text("", 17, Pal.accent, true); // label only; the buttons below do the picking
+        final Runnable togglePick = () -> {
+            if (dial.getVisibility() == View.VISIBLE) {
+                dial.setVisibility(View.GONE);
+            } else {
+                openDial.run();
             }
         };
-        for (int k = 0; k < 4; k++) {
-            final int level = k;
-            prioChips[k] = formChip(prioNames[k], false);
-            prioChips[k].setPadding(dp(4), 0, dp(4), 0);
-            prioChips[k].setOnClickListener(v -> {
-                prio[0] = level;
-                updPrio[0].run();
-            });
-            LinearLayout.LayoutParams plp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            if (k < 3) plp.rightMargin = dp(8);
-            prioRow.addView(prioChips[k], plp);
-        }
-        updPrio[0].run();
-        form.addView(prioRow, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView remindLabel = text("Remind me", 13, Pal.muted, true);
-        remindLabel.setPadding(0, dp(16), 0, dp(6));
-        form.addView(remindLabel);
 
         // Quick presets: yours to add (+ Add) and remove (long-press a button)
-        final FlowLayout quick = new FlowLayout(this, dp(8), dp(8));
+        final HorizontalScrollView quickScroll = new HorizontalScrollView(this);
+        quickScroll.setHorizontalScrollBarEnabled(false);
+        quickScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        final LinearLayout quick = new LinearLayout(this);
+        quick.setOrientation(LinearLayout.HORIZONTAL);
+        quickScroll.addView(quick);
         final Runnable[] buildQuick = new Runnable[1];
         buildQuick[0] = () -> {
             quick.removeAllViews();
+            if (due[0] > 0 && selSpec[0].isEmpty()) { // a time picked by hand
+                TextView mine = formChip("✓ " + Reminders.when(this, due[0]), true);
+                mine.setMinHeight(dp(44));
+                mine.setOnClickListener(v -> {
+                    Hap.tick(v);
+                    togglePick.run();
+                });
+                LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-2, -2);
+                ml.rightMargin = dp(8);
+                quick.addView(mine, ml);
+            }
             for (final String spec : Presets.load(this)) {
-                TextView q = formChip(Presets.label(spec), false);
-                q.setTextSize(13);
+                boolean on = due[0] > 0 && spec.equals(selSpec[0]);
+                TextView q = formChip((on ? "✓ " : "") + Presets.label(spec), on);
                 q.setMinHeight(dp(44));
-                q.setPadding(dp(14), 0, dp(14), 0);
                 q.setOnClickListener(v -> {
                     Hap.tick(v);
+                    selSpec[0] = spec;
                     due[0] = Presets.time(spec);
                     dial.setTime(due[0]);
                     upd[0].run();
@@ -1008,7 +1097,7 @@ public class MainActivity extends Activity {
                 q.setOnLongClickListener(v -> {
                     Hap.confirm(v);
                     new Dlg.Builder(this)
-                            .setTitle("Remove \u201C" + Presets.label(spec) + "\u201D?")
+                            .setTitle("Remove “" + Presets.label(spec) + "”?")
                             .setMessage("It disappears from your quick buttons. You can add it again any time.")
                             .setPositiveButton("Remove", (d2, w2) -> {
                                 Presets.remove(this, spec);
@@ -1018,66 +1107,50 @@ public class MainActivity extends Activity {
                             .show();
                     return true;
                 });
-                quick.addView(q);
+                LinearLayout.LayoutParams ql = new LinearLayout.LayoutParams(-2, -2);
+                ql.rightMargin = dp(8);
+                quick.addView(q, ql);
             }
+            TextView pk = formChip("Pick time…", false);
+            pk.setMinHeight(dp(44));
+            pk.setTextColor(Pal.accent);
+            pk.setOnClickListener(v -> {
+                Hap.tick(v);
+                togglePick.run();
+            });
+            LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(-2, -2);
+            pl.rightMargin = dp(8);
+            quick.addView(pk, pl);
             TextView add = formChip("+ Add", false);
-            add.setTextSize(13);
             add.setMinHeight(dp(44));
-            add.setPadding(dp(14), 0, dp(14), 0);
             add.setTextColor(Pal.accent);
             add.setOnClickListener(v -> {
                 Hap.tick(v);
                 newPreset(buildQuick[0]);
             });
-            quick.addView(add);
+            quick.addView(add, new LinearLayout.LayoutParams(-2, -2));
         };
         buildQuick[0].run();
-        form.addView(quick, new LinearLayout.LayoutParams(-1, -2));
-
-        // Picked time + clear
-        LinearLayout pickRow = new LinearLayout(this);
-        pickRow.setOrientation(LinearLayout.HORIZONTAL);
-        pickRow.setGravity(Gravity.CENTER_VERTICAL);
-        final TextView pick = text("", 17, Pal.accent, true);
-        pick.setGravity(Gravity.CENTER_VERTICAL);
-        pick.setMinHeight(dp(52));
-        pickRow.addView(pick, new LinearLayout.LayoutParams(0, -2, 1f));
-        final TextView clear = text("Clear", 15, Pal.muted, true);
-        clear.setGravity(Gravity.CENTER);
-        clear.setMinHeight(dp(48));
-        clear.setPadding(dp(12), 0, dp(4), 0);
-        clear.setOnClickListener(v -> {
-            due[0] = 0;
-            dial.setVisibility(View.GONE);
-            upd[0].run();
-        });
-        pickRow.addView(clear, new LinearLayout.LayoutParams(-2, -2));
-        form.addView(pickRow, new LinearLayout.LayoutParams(-1, -2));
+        form.addView(quickScroll, new LinearLayout.LayoutParams(-1, -2));
 
         // Same swipe dials as the lock-screen snooze: "In" (amount + unit) or "At" (day, hour, minute).
         form.addView(dial, new LinearLayout.LayoutParams(-1, -2));
         dial.setOnChange(() -> {
+            selSpec[0] = "";
             due[0] = dial.selectedTime();
             upd[0].run();
         });
-        pick.setOnClickListener(v -> {
-            if (dial.getVisibility() == View.VISIBLE) {
-                dial.setVisibility(View.GONE);
-                return;
-            }
-            openDial.run();
-        });
 
         // Repeat + alarm (only when a time is set)
-        final LinearLayout extras = new LinearLayout(this);
+        final LinearLayout repBox = new LinearLayout(this); // REPEAT: only when a time is set
+        repBox.setOrientation(LinearLayout.VERTICAL);
+        final LinearLayout extras = new LinearLayout(this); // alarm + sound: only when a time is set
         extras.setOrientation(LinearLayout.VERTICAL);
-        TextView repLabel = text("Repeat", 13, Pal.muted, true);
-        repLabel.setPadding(0, dp(8), 0, dp(6));
-        extras.addView(repLabel);
-        LinearLayout repRow = new LinearLayout(this);
-        repRow.setOrientation(LinearLayout.HORIZONTAL);
+        TextView repLabel = sectionLabel("Repeat");
+        repLabel.setPadding(0, dp(18), 0, dp(8));
+        repBox.addView(repLabel);
         final TextView[] repChips = new TextView[5];
-        String[] repNames = {"Once", "Daily", "Weekly", "Choose days\u2026", "Custom\u2026"};
+        String[] repNames = {"Once", "Daily", "Weekly", "Days", "Custom"};
         // "Every N min / hr / day / week / month": same swipe dials as the time pickers.
         final DialView everyDial = new DialView(this, false, true);
         everyDial.setRelative(Math.max(1, rep[1] == 5 ? 1 : rep[0]), rep[1] == 5 ? 2 : rep[1]);
@@ -1088,9 +1161,7 @@ public class MainActivity extends Activity {
         });
         for (int i = 0; i < 5; i++) {
             final int r = i;
-            repChips[i] = formChip(repNames[i], false);
-            repChips[i].setPadding(dp(8), 0, dp(8), 0);
-            repChips[i].setSingleLine(true);
+            repChips[i] = text(repNames[i], 14, Pal.muted, true);
             repChips[i].setOnClickListener(v -> {
                 if (r == 0) {
                     rep[0] = 0;
@@ -1120,19 +1191,7 @@ public class MainActivity extends Activity {
                 upd[0].run();
             });
         }
-        LinearLayout repRow1 = new LinearLayout(this);
-        repRow1.setOrientation(LinearLayout.HORIZONTAL);
-        LinearLayout repRow2 = new LinearLayout(this);
-        repRow2.setOrientation(LinearLayout.HORIZONTAL);
-        for (int i = 0; i < 5; i++) {
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(40), 1f);
-            lp.rightMargin = (i == 2 || i == 4) ? 0 : dp(8);
-            (i < 3 ? repRow1 : repRow2).addView(repChips[i], lp);
-        }
-        extras.addView(repRow1);
-        LinearLayout.LayoutParams r2lp = new LinearLayout.LayoutParams(-1, -2);
-        r2lp.topMargin = dp(8);
-        extras.addView(repRow2, r2lp);
+        repBox.addView(segTrack(repChips), new LinearLayout.LayoutParams(-1, -2));
 
         // Mon..Sun round toggles, shown for "Choose days"
         final TextView[] dayViews = new TextView[7];
@@ -1159,20 +1218,54 @@ public class MainActivity extends Activity {
         }
         LinearLayout.LayoutParams dayslp = new LinearLayout.LayoutParams(-1, -2);
         dayslp.topMargin = dp(10);
-        extras.addView(daysRow, dayslp);
+        repBox.addView(daysRow, dayslp);
         LinearLayout.LayoutParams edlp = new LinearLayout.LayoutParams(-1, -2);
         edlp.topMargin = dp(8);
-        extras.addView(everyDial, edlp);
+        repBox.addView(everyDial, edlp);
+        form.addView(repBox, new LinearLayout.LayoutParams(-1, -2));
+
+        // PRIORITY: one segmented bar, the chosen level is a pill and the dot shows its colour
+        TextView prioLabel = sectionLabel("Priority");
+        prioLabel.setPadding(0, dp(18), 0, dp(8));
+        form.addView(prioLabel);
+        final int[] prio = {existing == null ? 0 : existing.priority};
+        final TextView[] prioChips = new TextView[4];
+        final String[] prioNames = {"None", "Low", "Medium", "High"};
+        final int prioPill = Pal.dark ? 0xFF3A4643 : Color.WHITE;
+        final Runnable[] updPrio = new Runnable[1];
+        updPrio[0] = () -> {
+            for (int k = 0; k < 4; k++) segState(prioChips[k], prio[0] == k, prioPill, Pal.ink);
+        };
+        for (int k = 0; k < 4; k++) {
+            final int level = k;
+            prioChips[k] = text("", 14, Pal.muted, true);
+            if (k == 0) {
+                prioChips[k].setText(prioNames[k]);
+            } else {
+                android.text.SpannableString sp = new android.text.SpannableString("● " + prioNames[k]);
+                sp.setSpan(new android.text.style.ForegroundColorSpan(priorityColor(k)), 0, 1,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                prioChips[k].setText(sp);
+            }
+            prioChips[k].setOnClickListener(v -> {
+                Hap.tick(v);
+                prio[0] = level;
+                updPrio[0].run();
+            });
+        }
+        form.addView(segTrack(prioChips), new LinearLayout.LayoutParams(-1, -2));
+        updPrio[0].run();
+
 
         LinearLayout alarmRow = new LinearLayout(this);
         alarmRow.setOrientation(LinearLayout.HORIZONTAL);
         alarmRow.setGravity(Gravity.CENTER_VERTICAL);
         alarmRow.setMinimumHeight(dp(64));
-        alarmRow.setPadding(0, dp(12), 0, 0);
+        alarmRow.setPadding(0, dp(16), 0, 0);
         LinearLayout alarmText = new LinearLayout(this);
         alarmText.setOrientation(LinearLayout.VERTICAL);
-        alarmText.addView(text("Alarm style", 16, Pal.ink, true));
-        TextView alarmDesc = text("Full screen on the lock screen. Rings until you dismiss it.", 13, Pal.muted, false);
+        alarmText.addView(text("Ring like an alarm", 16, Pal.ink, true));
+        TextView alarmDesc = text("Full screen on the lock screen until dismissed", 13, Pal.muted, false);
         alarmDesc.setPadding(0, dp(2), 0, 0);
         alarmText.addView(alarmDesc);
         alarmRow.addView(alarmText, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -1219,8 +1312,8 @@ public class MainActivity extends Activity {
         // Per-task sound and volume. Off by default: the task simply follows Settings.
         final String[] tSound = {existing == null ? "" : existing.sound};
         final int[] tVol = {existing == null ? -1 : existing.volume};
-        TextView sndLabel = text("Sound & volume", 13, Pal.muted, true);
-        sndLabel.setPadding(0, dp(12), 0, dp(6));
+        TextView sndLabel = sectionLabel("Sound & volume");
+        sndLabel.setPadding(0, dp(16), 0, dp(8));
         extras.addView(sndLabel);
         LinearLayout sndChips = new LinearLayout(this);
         sndChips.setOrientation(LinearLayout.HORIZONTAL);
@@ -1323,32 +1416,51 @@ public class MainActivity extends Activity {
         });
         updSnd[0].run();
         form.addView(extras, new LinearLayout.LayoutParams(-1, -2));
+        if (existing != null) { // quiet link at the end of the form
+            TextView dup = text("Duplicate task", 15, Pal.accent, true);
+            dup.setGravity(Gravity.CENTER);
+            dup.setMinHeight(dp(48));
+            dup.setOnClickListener(v -> {
+                long copy = db.duplicate(existing.id);
+                if (copy > 0) {
+                    Reminders.schedule(this, db.get(copy));
+                    Hap.confirm(listView);
+                    toast("Task duplicated");
+                    refresh();
+                }
+                dlgRef[0].dismiss();
+            });
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-1, -2);
+            dl.topMargin = dp(8);
+            form.addView(dup, dl);
+        }
 
         upd[0] = () -> {
+            buildQuick[0].run();
             boolean has = due[0] > 0;
             pick.setText(has ? Reminders.when(this, due[0]) : "Pick any date & time\u2026");
             pick.setTextColor(has ? Pal.accent : Pal.muted);
             clear.setVisibility(has ? View.VISIBLE : View.GONE);
             extras.setVisibility(has ? View.VISIBLE : View.GONE);
+            repBox.setVisibility(has ? View.VISIBLE : View.GONE);
             boolean daysMode = rep[1] == 5 && rep[0] > 0;
             boolean daily = rep[0] == 1 && rep[1] == 2;
             boolean weekly = rep[0] == 1 && rep[1] == 3;
             boolean isCustom = custom[0] && rep[0] > 0 && !daysMode;
-            styleChip(repChips[0], rep[0] == 0, Pal.chip);
-            styleChip(repChips[1], !custom[0] && !daysMode && daily, Pal.chip);
-            styleChip(repChips[2], !custom[0] && !daysMode && weekly, Pal.chip);
-            styleChip(repChips[3], daysMode, Pal.chip);
-            styleChip(repChips[4], isCustom, Pal.chip);
-            repChips[4].setText(isCustom ? Reminders.repeatLabel(rep[0], rep[1]) : "Custom\u2026");
+            segState(repChips[0], rep[0] == 0, Pal.sel, Pal.onSel);
+            segState(repChips[1], !custom[0] && !daysMode && daily, Pal.sel, Pal.onSel);
+            segState(repChips[2], !custom[0] && !daysMode && weekly, Pal.sel, Pal.onSel);
+            segState(repChips[3], daysMode, Pal.sel, Pal.onSel);
+            segState(repChips[4], isCustom, Pal.sel, Pal.onSel);
             everyDial.setVisibility(isCustom ? View.VISIBLE : View.GONE);
             daysRow.setVisibility(daysMode ? View.VISIBLE : View.GONE);
             for (int i = 0; i < 7; i++) {
                 boolean on = daysMode && (rep[0] & (1 << i)) != 0;
                 GradientDrawable dg = new GradientDrawable();
                 dg.setShape(GradientDrawable.OVAL);
-                dg.setColor(on ? Pal.sel : Pal.chip);
+                dg.setColor(on ? Pal.accent : Pal.chip);
                 dayViews[i].setBackground(dg);
-                dayViews[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                dayViews[i].setTextColor(on ? Color.WHITE : Pal.muted);
             }
         };
         upd[0].run();
@@ -1359,20 +1471,10 @@ public class MainActivity extends Activity {
         final AlertDialog dialog = new Dlg.Builder(this)
                 .setTitle(existing == null ? "New task" : "Edit task")
                 .setView(scroll)
-                .setPositiveButton(existing == null ? "Add" : "Save", null)
+                .setPositiveButton(existing == null ? "Add task" : "Save task", null)
                 .setNegativeButton("Cancel", null)
                 .create();
-        if (existing != null) {
-            dialog.setButton(AlertDialog.BUTTON_NEUTRAL, "Duplicate", (dd, w) -> {
-                long copy = db.duplicate(existing.id);
-                if (copy > 0) {
-                    Reminders.schedule(this, db.get(copy));
-                    Hap.confirm(listView);
-                    toast("Task duplicated");
-                    refresh();
-                }
-            });
-        }
+        dlgRef[0] = dialog;
         dialog.setOnDismissListener(dd -> {
             Sound.stopPreview();
             soundCb = null;
@@ -1380,6 +1482,21 @@ public class MainActivity extends Activity {
         dialog.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
         dialog.show();
         Dlg.style(dialog);
+        // Cancel + Save task fill the width (1 : 2), lined up with the form's edges
+        android.widget.Button negB = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
+        android.widget.Button posB = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+        if (posB.getParent() instanceof LinearLayout) {
+            LinearLayout bar = (LinearLayout) posB.getParent();
+            for (int i = 0; i < bar.getChildCount(); i++) {
+                View c = bar.getChildAt(i);
+                if (c != negB && c != posB) c.setVisibility(View.GONE); // the stock spacer
+            }
+            LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(0, dp(48), 1f);
+            nl.rightMargin = dp(10);
+            negB.setLayoutParams(nl);
+            posB.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 2f));
+            bar.setPadding(dp(24), dp(10), dp(24), dp(16));
+        }
         input.requestFocus();
 
         // Overridden so a validation error keeps the dialog (and the typed text) open.
@@ -1687,28 +1804,350 @@ public class MainActivity extends Activity {
 
     // ----------------------------------------------------------- adapter
 
+    // ----------------------------------------------- main screen layouts
+
+    /** 0 current, 1 two sections, 2 switch, 4 routine strip, 5 routine dock. Only the Active tab uses them. */
+    private int layoutMode() {
+        return filter == TaskDb.ACTIVE && !searching ? Prefs.mainLayout(this) : 0;
+    }
+
+    /** All repeating tasks: the open ones, then the ones ticked for today (waiting in the Repeat tab). */
+    private List<Task> routinesNow() {
+        List<Task> r = new ArrayList<>();
+        for (Task t : db.list(TaskDb.ACTIVE)) if (t.repeat > 0) r.add(t);
+        r.addAll(db.list(TaskDb.REPEAT));
+        return r;
+    }
+
+    private void buildItems() {
+        items.clear();
+        extrasBox.removeAllViews();
+        extrasBox.setVisibility(View.GONE);
+        dockView.removeAllViews();
+        dockView.setVisibility(View.GONE);
+        int mode = layoutMode();
+        listView.setPadding(0, 0, 0, dp(96));
+        if (mode == 0) {
+            items.addAll(tasks);
+            return;
+        }
+        List<Task> one = new ArrayList<>();
+        List<Task> rep = new ArrayList<>();
+        for (Task t : tasks) (t.repeat > 0 ? rep : one).add(t);
+
+        if (mode == 1) { // two sections
+            if (!one.isEmpty()) {
+                items.add(new Header("One-off", one.size(), 0));
+                if (!collapsed[0]) items.addAll(one);
+            }
+            if (!rep.isEmpty()) {
+                items.add(new Header("Repeating", rep.size(), 1));
+                if (!collapsed[1]) items.addAll(rep);
+            }
+        } else if (mode == 2) { // switch
+            int kind = Prefs.mainKind(this);
+            if (tasks.isEmpty()) return;
+            final TextView[] segs = new TextView[3];
+            String[] names = {"All " + tasks.size(), "One-off " + one.size(), "Repeating " + rep.size()};
+            final int pillOn = Pal.dark ? 0xFF3A4643 : Color.WHITE;
+            for (int i = 0; i < 3; i++) {
+                final int k = i;
+                segs[i] = text(names[i], 14, Pal.muted, true);
+                segState(segs[i], kind == i, pillOn, Pal.ink);
+                segs[i].setOnClickListener(v -> {
+                    Hap.tick(v);
+                    Prefs.setMainKind(this, k);
+                    refresh();
+                });
+            }
+            LinearLayout tr = segTrack(segs, HabitUi.blend(Pal.ink, Pal.bg, 0.08f));
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, -2);
+            tlp.setMargins(dp(24), 0, dp(24), dp(8));
+            extrasBox.addView(tr, tlp);
+            extrasBox.setVisibility(View.VISIBLE);
+            if (kind == 0) {
+                items.addAll(tasks);
+            } else if (kind == 1) {
+                items.addAll(one);
+                if (!rep.isEmpty()) {
+                    android.text.SpannableString hs = new android.text.SpannableString(
+                            rep.size() + " repeating task" + (rep.size() == 1 ? "" : "s") + " hidden · show");
+                    int at = hs.length() - 4;
+                    hs.setSpan(new android.text.style.StyleSpan(Typeface.BOLD), at, hs.length(), 0);
+                    hs.setSpan(new android.text.style.ForegroundColorSpan(Pal.accent), at, hs.length(), 0);
+                    items.add(new Hint(hs, () -> {
+                        Prefs.setMainKind(this, 0);
+                        refresh();
+                    }));
+                }
+            } else {
+                items.addAll(rep);
+            }
+        } else {
+            final List<Task> routines = routinesNow();
+            if (mode == 4) { // routine strip
+                if (!routines.isEmpty()) {
+                    extrasBox.addView(routineStrip(routines));
+                    extrasBox.setVisibility(View.VISIBLE);
+                }
+                if (!one.isEmpty() || !routines.isEmpty()) items.add(new Header("One-off tasks", one.size(), 2));
+            } else { // 5: routine dock
+                if (!routines.isEmpty()) {
+                    fillDock(routines);
+                    dockView.setVisibility(View.VISIBLE);
+                    listView.setPadding(0, 0, 0, dp(96 + 72));
+                }
+            }
+            items.addAll(one);
+            if (one.isEmpty() && !routines.isEmpty()) {
+                items.add(new Hint("No one-off tasks · type below to add one", null));
+            }
+        }
+    }
+
+    private View routineStrip(List<Task> routines) {
+        int doneCount = 0;
+        for (Task t : routines) if (t.done) doneCount++;
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        TextView head = sectionLabel("Routines · " + doneCount + " of " + routines.size() + " done");
+        head.setTextColor(Pal.accent);
+        head.setPadding(dp(26), dp(4), dp(20), dp(8));
+        box.addView(head);
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(dp(20), 0, dp(12), dp(4));
+        for (final Task t : routines) {
+            int bg = t.done ? Pal.chip : Pal.accent;
+            int fg = t.done ? Pal.muted : Pal.onAccent;
+            LinearLayout tile = new LinearLayout(this);
+            tile.setOrientation(LinearLayout.VERTICAL);
+            tile.setPadding(dp(12), dp(10), dp(12), dp(10));
+            GradientDrawable tg = new GradientDrawable();
+            tg.setCornerRadius(dp(20));
+            tg.setColor(bg);
+            tile.setBackground(tg);
+            LinearLayout top = new LinearLayout(this);
+            top.setGravity(Gravity.CENTER_VERTICAL);
+            TextView em = text(t.emoji.isEmpty() ? "↻" : t.emoji, 22, fg, false);
+            top.addView(em, new LinearLayout.LayoutParams(0, -2, 1f));
+            TextView ck = text(t.done ? "✓" : "", 14, t.done ? Pal.onAccent : fg, true);
+            ck.setGravity(Gravity.CENTER);
+            GradientDrawable cg = new GradientDrawable();
+            cg.setCornerRadius(dp(7));
+            if (t.done) cg.setColor(Pal.accent); else cg.setStroke(dp(2), fg);
+            ck.setBackground(cg);
+            top.addView(ck, new LinearLayout.LayoutParams(dp(24), dp(24)));
+            tile.addView(top);
+            TextView nm = text(t.title, 14, fg, true);
+            nm.setMaxLines(2);
+            nm.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            nm.setPadding(0, dp(8), 0, 0);
+            if (t.done) nm.setPaintFlags(nm.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
+            tile.addView(nm);
+            TextView tm = text(t.due > 0 ? Reminders.when(this, t.due) : "", 11, fg, false);
+            tm.setSingleLine(true);
+            tm.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            tm.setAlpha(0.8f);
+            tile.addView(tm);
+            tile.setOnClickListener(v -> toggleDone(t));
+            tile.setOnLongClickListener(v -> {
+                Hap.confirm(v);
+                Task full = db.get(t.id);
+                if (full != null) editDialog(full, null);
+                return true;
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(116), -2);
+            lp.rightMargin = dp(8);
+            row.addView(tile, lp);
+        }
+        hs.addView(row);
+        box.addView(hs);
+        return box;
+    }
+
+    private void fillDock(final List<Task> routines) {
+        int n = routines.size();
+        Task next = null;
+        for (Task t : routines) {
+            if (!t.done && (next == null || t.due < next.due)) next = t;
+        }
+        FrameLayout badge = new FrameLayout(this);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(HabitUi.alpha(Pal.onSel, 36));
+        badge.setBackground(bg);
+        View glyph = new View(this);
+        glyph.setBackground(new RepeatDrawable(Pal.onSel, dp(20)));
+        badge.addView(glyph, new FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER));
+        dockView.addView(badge, new LinearLayout.LayoutParams(dp(38), dp(38)));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.setPadding(dp(12), 0, dp(8), 0);
+        col.addView(text(n + " routine" + (n == 1 ? "" : "s"), 16, Pal.onSel, true));
+        TextView nx = text(next == null ? "All done for today"
+                : "Next: " + next.title + " · " + Reminders.when(this, next.due), 12, Pal.onSel, false);
+        nx.setSingleLine(true);
+        nx.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        nx.setAlpha(0.75f);
+        col.addView(nx);
+        dockView.addView(col, new LinearLayout.LayoutParams(0, -2, 1f));
+        LinearLayout dots = new LinearLayout(this);
+        for (int i = 0; i < Math.min(n, 6); i++) {
+            View d = new View(this);
+            GradientDrawable dg = new GradientDrawable();
+            dg.setShape(GradientDrawable.OVAL);
+            dg.setColor(routines.get(i).done ? Pal.onSel : HabitUi.alpha(Pal.onSel, 80));
+            d.setBackground(dg);
+            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(dp(9), dp(9));
+            dl.leftMargin = dp(4);
+            dots.addView(d, dl);
+        }
+        dockView.addView(dots);
+        TextView chev = text("⌃", 22, Pal.onSel, true);
+        chev.setPadding(dp(12), 0, 0, 0);
+        dockView.addView(chev);
+        dockView.setOnClickListener(v -> {
+            Hap.tick(v);
+            routinesDialog();
+        });
+    }
+
+    /** The routines in one list: tick one to move it to the Repeat tab, tick again to bring it back. */
+    private void routinesDialog() {
+        final LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(4), dp(16), 0);
+        final Runnable[] fill = new Runnable[1];
+        fill[0] = () -> {
+            box.removeAllViews();
+            List<Task> list = routinesNow();
+            if (list.isEmpty()) {
+                TextView none = text("No repeating tasks yet.", 15, Pal.muted, false);
+                none.setPadding(dp(8), dp(12), 0, dp(12));
+                box.addView(none);
+            }
+            for (final Task t : list) {
+                LinearLayout r = new LinearLayout(this);
+                r.setGravity(Gravity.CENTER_VERTICAL);
+                IconView ck = new IconView(this, IconView.CHECK);
+                ck.setOn(t.done);
+                ck.setContentDescription(t.done ? "Mark as not done" : "Mark as done");
+                ck.setOnClickListener(v -> {
+                    toggleDone(t);
+                    fill[0].run();
+                });
+                r.addView(ck, new LinearLayout.LayoutParams(dp(48), dp(48)));
+                LinearLayout c2 = new LinearLayout(this);
+                c2.setOrientation(LinearLayout.VERTICAL);
+                TextView nm = text((t.emoji.isEmpty() ? "" : t.emoji + "  ") + t.title, 16,
+                        t.done ? Pal.muted : Pal.ink, false);
+                if (t.done) nm.setPaintFlags(nm.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG);
+                c2.addView(nm);
+                if (t.due > 0) {
+                    c2.addView(text((t.done ? "Next: " : "") + Reminders.when(this, t.due), 12, Pal.muted, false));
+                }
+                r.addView(c2, new LinearLayout.LayoutParams(0, -2, 1f));
+                box.addView(r, new LinearLayout.LayoutParams(-1, dp(56)));
+            }
+        };
+        fill[0].run();
+        ScrollView sv = new ScrollView(this);
+        sv.addView(box);
+        AlertDialog d = new Dlg.Builder(this)
+                .setTitle("Routines")
+                .setView(sv)
+                .setPositiveButton("Close", null)
+                .create();
+        d.show();
+        Dlg.style(d);
+    }
+
+    // ----------------------------------------------------------- adapter
+
     private final class TaskAdapter extends BaseAdapter {
         @Override
         public int getCount() {
-            return tasks.size();
+            return items.size();
         }
 
         @Override
-        public Task getItem(int position) {
-            return tasks.get(position);
+        public Object getItem(int position) {
+            return items.get(position);
         }
 
         @Override
         public long getItemId(int position) {
-            return tasks.get(position).id;
+            Object o = items.get(position);
+            return o instanceof Task ? ((Task) o).id : -1 - position;
+        }
+
+        @Override
+        public int getViewTypeCount() {
+            return 3;
+        }
+
+        @Override
+        public int getItemViewType(int position) {
+            Object o = items.get(position);
+            return o instanceof Task ? 0 : o instanceof Header ? 1 : 2;
         }
 
         @Override
         public View getView(int position, View convertView, ViewGroup parent) {
+            Object o = getItem(position);
+            if (o instanceof Header) return headerView((Header) o);
+            if (o instanceof Hint) return hintView((Hint) o);
             Row row = convertView instanceof Row ? (Row) convertView : new Row(MainActivity.this);
-            row.bind(getItem(position));
+            row.bind((Task) o);
             return row;
         }
+    }
+
+    private View headerView(final Header h) {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.HORIZONTAL);
+        v.setGravity(Gravity.CENTER_VERTICAL);
+        v.setPadding(dp(26), dp(12), dp(20), dp(6));
+        boolean collapsible = h.key < 2;
+        if (collapsible) {
+            TextView chev = text(collapsed[h.key] ? "▸" : "▾", 16, h.key == 1 ? Pal.accent : Pal.ink, true);
+            chev.setPadding(0, 0, dp(8), 0);
+            v.addView(chev);
+        }
+        TextView label = sectionLabel(h.text);
+        label.setTextColor(h.key == 1 ? Pal.accent : h.key == 0 ? Pal.ink : Pal.muted);
+        v.addView(label);
+        if (collapsible) {
+            TextView n = text(String.valueOf(h.count), 12, Pal.ink, true);
+            n.setGravity(Gravity.CENTER);
+            n.setPadding(dp(8), dp(1), dp(8), dp(1));
+            GradientDrawable ng = new GradientDrawable();
+            ng.setCornerRadius(dp(9));
+            ng.setColor(Pal.chip);
+            n.setBackground(ng);
+            LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(-2, -2);
+            nl.leftMargin = dp(8);
+            v.addView(n, nl);
+            v.setOnClickListener(x -> {
+                Hap.tick(x);
+                collapsed[h.key] = !collapsed[h.key];
+                refresh();
+            });
+        }
+        return v;
+    }
+
+    private View hintView(final Hint h) {
+        TextView t = text("", 13, Pal.muted, false);
+        t.setText(h.text);
+        t.setGravity(Gravity.CENTER);
+        t.setPadding(dp(24), dp(16), dp(24), dp(8));
+        if (h.click != null) t.setOnClickListener(v -> h.click.run());
+        return t;
     }
 
     private final class Row extends FrameLayout {
@@ -1727,6 +2166,7 @@ public class MainActivity extends Activity {
         private final View prioBar;
         private final int slop;
         private Task bound;
+        private GradientDrawable cardBg;
         private float downX;
         private float downY;
         private boolean swiping;
@@ -1757,10 +2197,10 @@ public class MainActivity extends Activity {
             card.setGravity(Gravity.CENTER_VERTICAL);
             card.setMinimumHeight(dp(64));
             card.setPadding(dp(4), 0, dp(4), 0);
-            GradientDrawable bg = new GradientDrawable();
-            bg.setColor(Pal.card);
-            bg.setCornerRadius(dp(16));
-            card.setBackground(bg);
+            cardBg = new GradientDrawable();
+            cardBg.setColor(Pal.card);
+            cardBg.setCornerRadius(dp(16));
+            card.setBackground(cardBg);
 
             prioBar = new View(c);
             prioBar.setVisibility(View.GONE);
@@ -1884,6 +2324,9 @@ public class MainActivity extends Activity {
 
         void bind(final Task t) {
             bound = t;
+            boolean tinted = layoutMode() == 1 && t.repeat > 0; // "Two sections": repeating rows are tinted
+            cardBg.setColor(tinted ? HabitUi.blend(Pal.accent, Pal.card, 0.14f) : Pal.card);
+            card.setMinimumHeight(dp(tinted ? 56 : 64));
             swiping = false;
             armed = false;
             card.animate().cancel();

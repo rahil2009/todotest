@@ -27,6 +27,11 @@ final class IconView extends View {
     static final int POMODORO = 16;
     static final int HABIT = 17;
     static final int CALENDAR = 18;
+    static final int UNDO = 19;
+    static final int REDO = 20;
+    static final int PIN = 21;
+    static final int LOOKS = 22;
+    static final int SORT = 23;
 
     private final int kind;
     private boolean on;
@@ -143,6 +148,57 @@ final class IconView extends View {
                 canvas.drawLine(cx + 3 * d, cy - 7 * d, cx - 4 * d, cy, paint);
                 canvas.drawLine(cx - 4 * d, cy, cx + 3 * d, cy + 7 * d, paint);
                 break;
+            case LOOKS: // a block and two lines: change how notes are previewed
+                stroke(2.1f, Pal.ink);
+                rect.set(cx - 8 * d, cy - 8 * d, cx + 8 * d, cy - 2 * d);
+                canvas.drawRoundRect(rect, 2 * d, 2 * d, paint);
+                canvas.drawLine(cx - 8 * d, cy + 3 * d, cx + 8 * d, cy + 3 * d, paint);
+                canvas.drawLine(cx - 8 * d, cy + 7 * d, cx + 2 * d, cy + 7 * d, paint);
+                break;
+            case SORT: // two arrows, down and up
+                stroke(2.1f, Pal.ink);
+                canvas.drawLine(cx - 5 * d, cy - 7 * d, cx - 5 * d, cy + 7 * d, paint);
+                canvas.drawLine(cx - 8.5f * d, cy + 3.5f * d, cx - 5 * d, cy + 7 * d, paint);
+                canvas.drawLine(cx - 5 * d, cy + 7 * d, cx - 1.5f * d, cy + 3.5f * d, paint);
+                canvas.drawLine(cx + 5 * d, cy + 7 * d, cx + 5 * d, cy - 7 * d, paint);
+                canvas.drawLine(cx + 1.5f * d, cy - 3.5f * d, cx + 5 * d, cy - 7 * d, paint);
+                canvas.drawLine(cx + 5 * d, cy - 7 * d, cx + 8.5f * d, cy - 3.5f * d, paint);
+                break;
+            case PIN: { // thumbtack; filled when the note is pinned
+                path.reset();
+                path.moveTo(cx - 3 * d, cy - 8 * d);
+                path.lineTo(cx - 3 * d, cy - 1 * d);
+                path.lineTo(cx - 6 * d, cy + 2 * d);
+                path.lineTo(cx + 6 * d, cy + 2 * d);
+                path.lineTo(cx + 3 * d, cy - 1 * d);
+                path.lineTo(cx + 3 * d, cy - 8 * d);
+                path.close();
+                int pc = tint != 0 ? tint : (on ? Pal.accent : Pal.muted);
+                if (on) {
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(pc);
+                    canvas.drawPath(path, paint);
+                }
+                stroke(1.9f, pc);
+                canvas.drawPath(path, paint);
+                canvas.drawLine(cx - 5 * d, cy - 8 * d, cx + 5 * d, cy - 8 * d, paint);
+                canvas.drawLine(cx, cy + 2 * d, cx, cy + 9 * d, paint);
+                break;
+            }
+            case UNDO:
+            case REDO: { // curved arrow, pointing back (undo) or forward (redo)
+                stroke(2.1f, Pal.ink);
+                float sg = kind == UNDO ? 1f : -1f;
+                path.reset();
+                path.moveTo(cx - sg * 6 * d, cy - 4 * d);
+                path.lineTo(cx + sg * 5 * d, cy - 4 * d);
+                path.cubicTo(cx + sg * 10 * d, cy - 4 * d, cx + sg * 10 * d, cy + 6 * d, cx + sg * 5 * d, cy + 6 * d);
+                path.lineTo(cx - sg * 1 * d, cy + 6 * d);
+                canvas.drawPath(path, paint);
+                canvas.drawLine(cx - sg * 6 * d, cy - 4 * d, cx - sg * 2 * d, cy - 8 * d, paint);
+                canvas.drawLine(cx - sg * 6 * d, cy - 4 * d, cx - sg * 2 * d, cy, paint);
+                break;
+            }
             case NOTE: // notebook with a spine and ruled lines
                 stroke(1.8f, Pal.ink);
                 rect.set(cx - 7 * d, cy - 9 * d, cx + 7 * d, cy + 9 * d);

@@ -154,3 +154,58 @@ v3.17 Settings: the main screen is now a search box, Appearance, Reminder notifi
 - The Repeat tab keeps no history. Plan, Calendar and the lists read the same per-day tick record, so they always agree.
 - Database version 9 (adds the per-day tick table).
 - Fix: Plan, Calendar and the Plan widget read tasks with `TaskDb.RAW` (exactly as stored), so a repeating task ticked today keeps showing on all future days.
+
+## Edit / New task dialog (v3.19)
+- New layout: title banner, subtasks, then WHEN (quick buttons, the chosen one is a black pill with a tick; Clear on the right), REPEAT (Once / Daily / Weekly / Days / Custom as one segmented bar, teal weekday circles), PRIORITY (segmented bar with coloured dots), "Ring like an alarm" and "Show even when unlocked" switches, Sound & volume, a quiet "Duplicate task" link, and a full-width Cancel / Save task (or Add task) pair.
+- Quick buttons scroll sideways; "Pick time…" opens the dials; a hand-picked time shows as the first (ticked) button.
+
+## Main screen layout selector (v3.20)
+- Settings > More > **Main screen** lets you try five layouts of the Active tab and switch whenever you like. Nothing in your tasks changes; only how the list is drawn. The other tabs, Plan and Calendar are unaffected.
+- **Current**: one list, as before.
+- **Two sections**: "One-off" first, then "Repeating" in tinted rows. Tap a section header to collapse it.
+- **Switch**: All / One-off / Repeating bar above the list (starts on One-off). A line at the bottom says how many repeating tasks are hidden; tap it to show all.
+- **Routine strip**: repeating tasks become tiles across the top (tap to tick, long-press to edit); the list is one-off tasks only.
+- **Routine dock**: a bar above the add bar summarises routines; tap it to open a list where you can tick them. The list is one-off tasks only.
+- Ticking a routine from the strip, dock or Switch follows the usual rules (moves to the Repeat tab; future rounds can't be ticked early).
+- Stored in settings as `main_layout` (0, 1, 2, 4, 5) and `main_kind`. No database change.
+
+## Notes: undo / redo (v3.21)
+- The note editor header has Undo and Redo arrows (before the bin). They undo typing, formatting, bullet/to-do changes, ticks and table edits, up to 100 steps per visit to a note.
+- Steps are taken after a short pause in typing (about 0.7 s) and right before a toolbar action, so one undo reverses a burst of typing or one formatting change. A new edit after undoing clears the redo steps.
+- History lives only while the note is open; the cursor returns to where it was at that step. The title field keeps the keyboard's own undo.
+- Pinch-zoom and the Aa size picker now change only the note text. The title stays at a fixed size so it can no longer grow and get clipped.
+
+## Notes: custom text size (v3.22)
+- The **Aa** button now sets the size of just the selected text (or of what you type next if nothing is selected). Type any size from 8 to 72, use the + / − steppers, or tap a quick size (12, 14, 17, 20, 25, 32, 40, 56). "Normal" removes the custom size.
+- Sizes are saved with the note (a new range type, SIZE) and follow pinch-zoom, so zooming keeps proportions. Pinch still zooms the whole note's body text; the title never zooms.
+- Undo/redo covers size changes too.
+
+## Notes: pinning (v3.23)
+- Every note card has a thumbtack in its top-right corner. Tap it to pin; tap again to unpin. Pinned notes sit at the top under "PINNED n of N" on a lightly tinted card, newest pin first; the rest follow under "NOTES". The home-screen notes widget lists pinned notes first too.
+- Limit: 5 pinned notes by default. Settings > More > **Notebook** sets it anywhere from 1 to 20. Lowering it never unpins existing pins; it only stops new ones. At the limit, tapping an unpinned note's thumbtack shows a message pointing to the setting.
+- Database version 10: adds a `pinned` column to notes (0 = not pinned, otherwise the pin time). Editing a note never changes its pin or its place among the pinned.
+- Fix in the design: the Smart dates row on the Settings board had lost its card background; it is repaired.
+
+## Notebook: preview styles (v3.24)
+- The Notebook screen has a button at the top right (four small tiles) that opens "Note previews". Pick a style, try it for a while, and tell me which to keep; the styles are numbered as on the design board.
+- 1 Current style, 2 Expanded (up to six lines), 3 Grid (two notes per row), 4 Big title cards (coloured cards, large title), 5 Compact rows (title and time on one line), 6 Titles only, 7 Grouped by date (Today / Yesterday / This week / Earlier), 8 Checklist previews (shows up to three to-do lines), 10 Pinned strip + list (pinned notes as tiles across the top, a compact list below). Style 9 (colour bar + tag) was dropped.
+- Pinning works in every style: thumbtack on the card, or long-press a note for Pin / Delete. Compact rows show a small filled thumbtack on pinned notes; use long-press to pin there.
+- Stored as `note_look` in settings; no database change.
+
+### Sort button (with v3.24)
+The Notebook header has a sort button (next to the preview-style button). Menu: Date edited (newest / oldest), Date created, Title A–Z / Z–A. Pinned notes always stay on top. The "grouped by date" look only groups when sorted by edit date.
+
+### Table editor fix (v3.25)
+With many rows the table grid used to fill the whole dialog and push + Row / + Column / − Row / − Column off screen. The grid is now capped at half the screen height and scrolls, so the buttons always stay visible.
+
+### Pinned note colour (v3.26)
+Settings > Notebook > "Pinned note colour": fills the whole preview of pinned notes. Ten styles: Soft (default faint tint), Green, Amber, Rose, Sky, Violet, Sticky, Ink, Mixed (each note gets its own colour), None. Works in every preview style (cards, grid, big titles, compact rows, pinned strip). Text and pin icon switch to a readable colour on solid fills.
+
+### Gradient pinned colours (v3.27)
+Five more "Pinned note colour" styles with a diagonal gradient fill: Sunset, Ocean, Aurora, Berry, Dusk (15 styles in all; the earlier ten are unchanged).
+
+### Colour per note (v3.28)
+Hold the pin on a note (or long-press a note and choose "Pinned colour…") to pick that note's own colour from the 15 styles, or "Follow Settings". Holding the pin on an unpinned note pins it first. Stored in the database (`notes.pincolor`, DB v11, -1 = follow Settings) and included in backups.
+
+### 10 more gradients (v3.29)
+Ten more gradient pinned colours (25 styles in all): Peach, Mint, Lagoon, Candy, Citrus, Forest, Midnight, Ember, Lilac, Slate. Same places as before: Settings > Notebook, and hold a pin for a single note.

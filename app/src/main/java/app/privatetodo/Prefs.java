@@ -151,6 +151,64 @@ final class Prefs {
         sp(c).edit().putInt("alert_fx", v).apply();
     }
 
+    /** Main screen layout under test: 0 current, 1 two sections, 2 switch, 4 routine strip, 5 routine dock. */
+    static int mainLayout(Context c) {
+        return sp(c).getInt("main_layout", 0);
+    }
+
+    static void setMainLayout(Context c, int v) {
+        sp(c).edit().putInt("main_layout", v).apply();
+    }
+
+    /** The "Switch" layout: 0 all, 1 one-off, 2 repeating. */
+    static int mainKind(Context c) {
+        return sp(c).getInt("main_kind", 1);
+    }
+
+    static void setMainKind(Context c, int v) {
+        sp(c).edit().putInt("main_kind", v).apply();
+    }
+
+    /** Notebook list style, numbered as in the design board: 1 current, 2 expanded, 3 grid, 4 big titles,
+     *  5 compact rows, 6 titles only, 7 grouped by date, 8 checklist previews, 10 pinned strip + list. */
+    static int noteLook(Context c) {
+        return sp(c).getInt("note_look", 1);
+    }
+
+    static void setNoteLook(Context c, int v) {
+        sp(c).edit().putInt("note_look", v).apply();
+    }
+
+    /** Notebook sort: 0 edited newest, 1 edited oldest, 2 created (newest first), 3 title A-Z, 4 title Z-A. */
+    static int noteSort(Context c) {
+        return sp(c).getInt("note_sort", 0);
+    }
+
+    static void setNoteSort(Context c, int v) {
+        sp(c).edit().putInt("note_sort", v).apply();
+    }
+
+    /** How many notes can be pinned to the top of the notebook (1 to 20, default 5). */
+    static final int PINS_DEFAULT = 5;
+    static final int PINS_MAX = 20;
+
+    static int maxPins(Context c) {
+        return Math.max(1, Math.min(PINS_MAX, sp(c).getInt("max_pins", PINS_DEFAULT)));
+    }
+
+    static void setMaxPins(Context c, int v) {
+        sp(c).edit().putInt("max_pins", Math.max(1, Math.min(PINS_MAX, v))).apply();
+    }
+
+    /** Fill style of pinned notes' previews, see PinTint (0 = faint tint, the default). */
+    static int pinColor(Context c) {
+        return sp(c).getInt("pin_color", 0);
+    }
+
+    static void setPinColor(Context c, int v) {
+        sp(c).edit().putInt("pin_color", v).apply();
+    }
+
     static void setGlow(Context c, boolean v) {
         sp(c).edit().putBoolean("glow", v).apply();
     }

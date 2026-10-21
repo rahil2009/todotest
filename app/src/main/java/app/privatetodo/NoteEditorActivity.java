@@ -59,6 +59,15 @@ public class NoteEditorActivity extends Activity {
     private int insBefore;
     private int expectCursor = -1;
 
+    // Undo / redo: snapshots of the whole body (text, styles, lists, tables), taken after a short pause in editing.
+    private final java.util.ArrayList<String> hist = new java.util.ArrayList<>();
+    private final java.util.ArrayList<int[]> histSel = new java.util.ArrayList<>();
+    private int histPos = -1;
+    private boolean restoring;
+    private IconView undoBtn;
+    private IconView redoBtn;
+    private final Runnable commitTask = this::commitNow;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
@@ -92,6 +101,10 @@ public class NoteEditorActivity extends Activity {
         }
         dirty = false;
         refreshToolbar();
+        hist.clear();
+        histSel.clear();
+        histPos = -1;
+        commitNow(); // the opening state is the first step of the history
     }
 
     @Override
@@ -151,6 +164,15 @@ public class NoteEditorActivity extends Activity {
         });
         header.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1f));
 
+        undoBtn = new IconView(this, IconView.UNDO);
+        undoBtn.setContentDescription("Undo");
+        undoBtn.setOnClickListener(v -> { Hap.tick(v); undo(); });
+        header.addView(undoBtn, new LinearLayout.LayoutParams(dp(40), dp(48)));
+        redoBtn = new IconView(this, IconView.REDO);
+        redoBtn.setContentDescription("Redo");
+        redoBtn.setOnClickListener(v -> { Hap.tick(v); redo(); });
+        header.addView(redoBtn, new LinearLayout.LayoutParams(dp(40), dp(48)));
+
         IconView trash = new IconView(this, IconView.TRASH);
         trash.setContentDescription("Delete note");
         trash.setOnClickListener(v -> confirmDelete());
@@ -168,9 +190,10 @@ public class NoteEditorActivity extends Activity {
         body.setHintTextColor(Pal.muted);
         body.setTextColor(Pal.ink);
         scale = Prefs.noteScale(this);
+        RichText.zoom = scale;
         body.setTextSize(17 * scale);
         body.setTableTapListener(tb -> editTable(tb));
-        body.setTableChangedListener(() -> dirty = true);
+        body.setTableChangedListener(() -> changed());
         body.setZoomListener((f, done) -> {
             if (done) {
                 Prefs.setNoteScale(this, scale);
@@ -204,10 +227,11 @@ public class NoteEditorActivity extends Activity {
             }
         });
         body.setCheckTapListener(ls -> {
+            commitNow();
             busy = true;
             RichText.flipCheck(body.getText(), ls);
             busy = false;
-            dirty = true;
+            changed();
         });
         body.setSelectionListener((s, e) -> {
             if (!typing && !busy && !(s == e && s == expectCursor)) pending.clear();
@@ -276,8 +300,8 @@ public class NoteEditorActivity extends Activity {
 
     private void setScale(float v) {
         scale = Math.max(0.7f, Math.min(2.6f, v));
-        body.setTextSize(17 * scale);
-        title.setTextSize(22 * scale);
+        RichText.zoom = scale;
+        body.setTextSize(17 * scale); // the title keeps its own fixed size
     }
 
     private void tableMenu() {
@@ -309,7 +333,7 @@ public class NoteEditorActivity extends Activity {
                 .setPositiveButton("Insert", (d, w) -> {
                     int at = RichText.insertTable(body.getText(), selStart(), cols.getValue(), rows.getValue());
                     body.setSelection(Math.min(body.getText().length(), at + 2));
-                    dirty = true;
+                    changed();
                     RichText.Tbl t = RichText.tableOnLine(body.getText(), at);
                     if (t != null) editTable(t);
                 })
@@ -335,7 +359,15 @@ public class NoteEditorActivity extends Activity {
         HorizontalScrollView hs = new HorizontalScrollView(this);
         hs.setHorizontalScrollBarEnabled(false);
         hs.addView(tmpGrid);
-        android.widget.ScrollView vs = new android.widget.ScrollView(this);
+        // Cap the grid's height so the + Row / + Column / - Row / - Column chips below
+        // always stay on screen, however many rows the table has (it scrolls instead).
+        final int maxGridH = (int) (getResources().getDisplayMetrics().heightPixels * 0.5f);
+        android.widget.ScrollView vs = new android.widget.ScrollView(this) {
+            @Override
+            protected void onMeasure(int wSpec, int hSpec) {
+                super.onMeasure(wSpec, View.MeasureSpec.makeMeasureSpec(maxGridH, View.MeasureSpec.AT_MOST));
+            }
+        };
         vs.addView(hs);
         root.addView(vs, new LinearLayout.LayoutParams(-1, -2));
 
@@ -437,7 +469,7 @@ public class NoteEditorActivity extends Activity {
                 .setPositiveButton("Done", (d, w) -> {
                     t.cells = tmpCells;
                     RichText.refresh(body.getText(), t);
-                    dirty = true;
+                    changed();
                     body.invalidate();
                 })
                 .setNeutralButton("Remove table", (d, w) -> {
@@ -446,7 +478,7 @@ public class NoteEditorActivity extends Activity {
                     if (a >= 0) {
                         e.removeSpan(t);
                         e.delete(a, Math.min(e.length(), a + 1));
-                        dirty = true;
+                        changed();
                     }
                 })
                 .setNegativeButton("Cancel", null)
@@ -579,16 +611,134 @@ public class NoteEditorActivity extends Activity {
         return l;
     }
 
+    /** Aa: pick any size (8 to 72) for the selected text, or for what you type next when nothing is selected. */
     private void pickSize() {
-        final String[] names = {"Small", "Normal", "Large", "Huge"};
-        final float[] vals = {0.8f, 1f, 1.35f, 1.8f};
+        final int s = selStart();
+        final int en = selEnd();
+        int cur = RichText.sizeAt(body.getText(), s, en);
+        if (s == en && pending.containsKey(RichText.SIZE)) cur = pending.get(RichText.SIZE);
+        final int[] val = {cur > 0 ? cur : RichText.BASE_SIZE};
+
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+
+        TextView hint = new TextView(this);
+        hint.setText(s == en ? "For the text you type next" : "For the selected text");
+        hint.setTextColor(Pal.muted);
+        hint.setTextSize(13);
+        box.addView(hint);
+
+        LinearLayout stepper = new LinearLayout(this);
+        stepper.setOrientation(LinearLayout.HORIZONTAL);
+        stepper.setGravity(Gravity.CENTER_VERTICAL);
+        final EditText num = new EditText(this);
+        num.setInputType(InputType.TYPE_CLASS_NUMBER);
+        num.setGravity(Gravity.CENTER);
+        num.setTextSize(28);
+        num.setTypeface(Typeface.DEFAULT_BOLD);
+        num.setTextColor(Pal.ink);
+        num.setSelectAllOnFocus(true);
+        num.setMinWidth(dp(96));
+        num.setText(String.valueOf(val[0]));
+        final TextView minus = sizeStep("\u2212");
+        final TextView plus = sizeStep("+");
+        View.OnClickListener step = v -> {
+            Hap.tick(v);
+            int n = parseSize(num, val[0]) + (v == plus ? 1 : -1);
+            n = Math.max(RichText.MIN_SIZE, Math.min(RichText.MAX_SIZE, n));
+            val[0] = n;
+            num.setText(String.valueOf(n));
+            num.setSelection(num.getText().length());
+        };
+        minus.setOnClickListener(step);
+        plus.setOnClickListener(step);
+        stepper.addView(minus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        stepper.addView(num, new LinearLayout.LayoutParams(0, -2, 1f));
+        stepper.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, -2);
+        slp.topMargin = dp(8);
+        box.addView(stepper, slp);
+
+        HorizontalScrollView quick = new HorizontalScrollView(this);
+        quick.setHorizontalScrollBarEnabled(false);
+        LinearLayout qrow = new LinearLayout(this);
+        for (final int q : new int[]{12, 14, 17, 20, 25, 32, 40, 56}) {
+            TextView c = new TextView(this);
+            c.setText(String.valueOf(q));
+            c.setTextSize(15);
+            c.setTypeface(Typeface.DEFAULT_BOLD);
+            c.setTextColor(Pal.ink);
+            c.setGravity(Gravity.CENTER);
+            GradientDrawable cg = new GradientDrawable();
+            cg.setCornerRadius(dp(22));
+            cg.setColor(Pal.chip);
+            c.setBackground(cg);
+            c.setOnClickListener(v -> {
+                Hap.tick(v);
+                val[0] = q;
+                num.setText(String.valueOf(q));
+                num.setSelection(num.getText().length());
+            });
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(dp(52), dp(44));
+            cl.rightMargin = dp(8);
+            qrow.addView(c, cl);
+        }
+        quick.addView(qrow);
+        LinearLayout.LayoutParams qlp = new LinearLayout.LayoutParams(-1, -2);
+        qlp.topMargin = dp(14);
+        box.addView(quick, qlp);
+
+        TextView note = new TextView(this);
+        note.setText("Any size from 8 to 72. Pinch still zooms the whole note.");
+        note.setTextColor(Pal.muted);
+        note.setTextSize(12);
+        note.setPadding(0, dp(6), 0, 0);
+        box.addView(note);
+
         new Dlg.Builder(this)
                 .setTitle("Text size")
-                .setItems(names, (d, i) -> {
-                    setScale(vals[i]);
-                    Prefs.setNoteScale(this, scale);
-                })
+                .setView(box)
+                .setPositiveButton("Apply", (d, w) -> setTextSize(parseSize(num, val[0]), s, en))
+                .setNeutralButton("Normal", (d, w) -> setTextSize(0, s, en))
+                .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private TextView sizeStep(String label) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTextSize(26);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTextColor(Pal.ink);
+        t.setGravity(Gravity.CENTER);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(Pal.chip);
+        t.setBackground(g);
+        return t;
+    }
+
+    private int parseSize(EditText num, int fallback) {
+        try {
+            int n = Integer.parseInt(num.getText().toString().trim());
+            return Math.max(RichText.MIN_SIZE, Math.min(RichText.MAX_SIZE, n));
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    /** size 0 = back to normal. */
+    private void setTextSize(int size, int s, int en) {
+        commitNow();
+        Editable e = body.getText();
+        if (s == en) {
+            pending.put(RichText.SIZE, size);
+        } else {
+            RichText.apply(e, RichText.SIZE, s, en, size, size > 0);
+            changed();
+        }
+        refreshToolbar();
     }
 
     private View buildToolbar() {
@@ -651,6 +801,7 @@ public class NoteEditorActivity extends Activity {
     }
 
     private void onTool(int key) {
+        commitNow();
         if (key == RichText.HILITE) {
             colorRow.setVisibility(colorRow.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
             return;
@@ -663,7 +814,7 @@ public class NoteEditorActivity extends Activity {
             int c = RichText.toggleList(e, s, en, key == CHECK_KEY);
             busy = false;
             body.setSelection(Math.min(c, e.length()));
-            dirty = true;
+            changed();
             refreshToolbar();
             return;
         }
@@ -687,11 +838,12 @@ public class NoteEditorActivity extends Activity {
             }
             RichText.apply(e, key, s, en, 0, !RichText.active(e, key, s, en));
         }
-        dirty = true;
+        changed();
         refreshToolbar();
     }
 
     private void highlight(int color) {
+        commitNow();
         Editable e = body.getText();
         int s = selStart();
         int en = selEnd();
@@ -699,7 +851,7 @@ public class NoteEditorActivity extends Activity {
             pending.put(RichText.HILITE, color);
         } else {
             RichText.apply(e, RichText.HILITE, s, en, color, color != 0);
-            dirty = true;
+            changed();
         }
         refreshToolbar();
     }
@@ -727,7 +879,7 @@ public class NoteEditorActivity extends Activity {
             } else {
                 on = isOn(key, s, en);
             }
-            if (key == SIZE_KEY) on = false;
+            if (key == SIZE_KEY) on = RichText.sizeAt(body.getText(), s, en) != 0;
             style(b.getValue(), on);
         }
     }
@@ -749,7 +901,7 @@ public class NoteEditorActivity extends Activity {
         }
         busy = true;
         try {
-            dirty = true;
+            changed();
             if (insCount > 0) {
                 for (Map.Entry<Integer, Integer> p : pending.entrySet()) {
                     int v = p.getValue();
@@ -823,7 +975,80 @@ public class NoteEditorActivity extends Activity {
 
     // ------------------------------------------------------------ saving
 
+    /** A body change happened: mark it for saving and take an undo step once typing pauses. */
+    private void changed() {
+        dirty = true;
+        if (restoring || body == null) return;
+        body.removeCallbacks(commitTask);
+        body.postDelayed(commitTask, 700);
+    }
+
+    private void commitNow() {
+        if (body == null || restoring) return;
+        body.removeCallbacks(commitTask);
+        String snap = RichText.toJson(body.getText());
+        if (histPos >= 0 && snap.equals(hist.get(histPos))) {
+            histSel.set(histPos, new int[]{selStart(), selEnd()});
+            updateUndoButtons();
+            return;
+        }
+        while (hist.size() > histPos + 1) { // a new edit drops the redo steps
+            hist.remove(hist.size() - 1);
+            histSel.remove(histSel.size() - 1);
+        }
+        hist.add(snap);
+        histSel.add(new int[]{selStart(), selEnd()});
+        if (hist.size() > 100) {
+            hist.remove(0);
+            histSel.remove(0);
+        }
+        histPos = hist.size() - 1;
+        updateUndoButtons();
+    }
+
+    private void undo() {
+        commitNow();
+        if (histPos > 0) restore(histPos - 1);
+    }
+
+    private void redo() {
+        commitNow();
+        if (histPos < hist.size() - 1) restore(histPos + 1);
+    }
+
+    private void restore(int pos) {
+        restoring = true;
+        busy = true;
+        try {
+            Editable e = body.getText();
+            e.clear();
+            RichText.fromJson(hist.get(pos), e);
+            int[] sel = histSel.get(pos);
+            body.setSelection(Math.min(sel[0], e.length()), Math.min(sel[1], e.length()));
+        } finally {
+            busy = false;
+            restoring = false;
+        }
+        histPos = pos;
+        pending.clear();
+        dirty = true;
+        body.invalidate();
+        refreshToolbar();
+        updateUndoButtons();
+    }
+
+    private void updateUndoButtons() {
+        if (undoBtn == null || redoBtn == null) return;
+        boolean canUndo = histPos > 0;
+        boolean canRedo = histPos >= 0 && histPos < hist.size() - 1;
+        undoBtn.setAlpha(canUndo ? 1f : 0.3f);
+        redoBtn.setAlpha(canRedo ? 1f : 0.3f);
+        undoBtn.setEnabled(canUndo);
+        redoBtn.setEnabled(canRedo);
+    }
+
     private void saveNow() {
+        if (body != null) body.removeCallbacks(commitTask);
         if (deleted || !dirty) return;
         String t = title.getText().toString().trim();
         Editable b = body.getText();

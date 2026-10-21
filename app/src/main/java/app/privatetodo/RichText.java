@@ -35,6 +35,11 @@ final class RichText {
     static final int HEAD = 6;
     static final int BLOCK = 7;
     static final int TABLE = 8;
+    /** A chosen text size in sp (at normal zoom); the arg of the range is the size. */
+    static final int SIZE = 9;
+    static final int MIN_SIZE = 8;
+    static final int MAX_SIZE = 72;
+    static final int BASE_SIZE = 17;
 
     static final String BULLET = "• ";
     /** Highlight colours (same in light and dark; highlighted text is always drawn dark). */
@@ -43,12 +48,16 @@ final class RichText {
     /** Typing continues a span that ends right where the cursor is, like any text editor. */
     private static final int FLAGS = Spanned.SPAN_EXCLUSIVE_INCLUSIVE;
     private static float density = 2f;
+    private static android.util.DisplayMetrics metrics;
+    /** The note-wide pinch-zoom factor; sized text follows it so zooming keeps proportions. */
+    static float zoom = 1f;
 
     private RichText() {
     }
 
     static void init(Context c) {
         density = c.getResources().getDisplayMetrics().density;
+        metrics = c.getResources().getDisplayMetrics();
     }
 
     private static int codeBg() {
@@ -68,6 +77,28 @@ final class RichText {
         public void updateDrawState(TextPaint tp) {
             tp.bgColor = color;
             tp.setColor(0xFF1A1A1A);
+        }
+    }
+
+    /** Text at a size picked by the user (sp at normal zoom). */
+    static final class Sz extends MetricAffectingSpan {
+        final int sp;
+
+        Sz(int sp) {
+            this.sp = Math.max(MIN_SIZE, Math.min(MAX_SIZE, sp));
+        }
+
+        @Override
+        public void updateMeasureState(TextPaint p) {
+            float px = metrics != null
+                    ? android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, sp * zoom, metrics)
+                    : sp * zoom * density;
+            p.setTextSize(px);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+            updateMeasureState(p);
         }
     }
 
@@ -437,6 +468,8 @@ final class RichText {
                 return new Code();
             case HEAD:
                 return new Head();
+            case SIZE:
+                return new Sz(arg);
             default:
                 return new Block();
         }
@@ -453,11 +486,13 @@ final class RichText {
         if (o instanceof Head) return HEAD;
         if (o instanceof Block) return BLOCK;
         if (o instanceof Tbl) return TABLE;
+        if (o instanceof Sz) return SIZE;
         return -1;
     }
 
     private static int argOf(Object o) {
         if (o instanceof Tbl) return ((Tbl) o).cols();
+        if (o instanceof Sz) return ((Sz) o).sp;
         return o instanceof Hl ? ((Hl) o).color : 0;
     }
 
@@ -484,6 +519,23 @@ final class RichText {
             if (on) e.setSpan(make(type, arg), s, en, FLAGS);
         }
         if (type == BLOCK && !on) apply(e, CODE, s, en, 0, false); // notes saved earlier had inline code inside blocks
+    }
+
+    /** The custom size (sp) of the text in [s, en), or the character before the cursor if s == en; 0 = none, -1 = mixed. */
+    static int sizeAt(Spanned e, int s, int en) {
+        if (s == en) {
+            if (s == 0) return 0;
+            s = s - 1;
+            en = s + 1;
+        }
+        int found = 0;
+        for (int i = s; i < en; i++) {
+            int here = 0;
+            for (Sz z : e.getSpans(i, i + 1, Sz.class)) here = z.sp;
+            if (i == s) found = here;
+            else if (here != found) return -1;
+        }
+        return found;
     }
 
     /** True when every character in [s, en) has the style (or the one before the cursor if s == en). */

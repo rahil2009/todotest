@@ -7,12 +7,18 @@ final class Note {
     final String body;
     final String plain;
     final long updated;
+    /** When it was pinned (0 = not pinned). */
+    final long pinned;
+    /** This note's own pinned colour (a PinTint style), or -1 to follow Settings. */
+    final int pinColor;
 
-    Note(long id, String title, String body, String plain, long updated) {
+    Note(long id, String title, String body, String plain, long updated, long pinned, int pinColor) {
         this.id = id;
         this.title = title;
         this.body = body;
         this.plain = plain;
         this.updated = updated;
+        this.pinned = pinned;
+        this.pinColor = pinColor;
     }
 }
