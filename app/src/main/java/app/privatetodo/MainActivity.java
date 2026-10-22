@@ -1398,10 +1398,10 @@ public class MainActivity extends Activity {
                         new android.graphics.Rect(0, 0, dial.getWidth(), dial.getHeight())));
             }
         });
-        LinearLayout.LayoutParams pbl = new LinearLayout.LayoutParams(-1, -2);
-        pbl.topMargin = dp(12);
+        LinearLayout.LayoutParams pickLp = new LinearLayout.LayoutParams(-1, -2);
+        pickLp.topMargin = dp(12);
         form.addView(extras, new LinearLayout.LayoutParams(-1, -2));
-        form.addView(pickBtn, pbl);
+        form.addView(pickBtn, pickLp);
         form.addView(sndExtras, new LinearLayout.LayoutParams(-1, -2));
         if (existing != null) { // quiet link at the end of the form
             TextView dup = text("Duplicate task", 15, Pal.accent, true);
