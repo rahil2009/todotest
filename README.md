@@ -224,7 +224,15 @@ Everything the in-page design edits had changed, now in the app:
 
 ## v3.32 fixes
 - Theme: Light / Dark / AMOLED now ignore the phone's automatic force-dark (`forceDarkAllowed=false` in all three themes), so picking Light on a dark phone really is light.
-- Subtasks: one tap opens the keyboard (it is requested explicitly on touch and focus).
-- Duplicate task: pinned bottom-left, just above Cancel / Save task, outside the scrolling form.
+- Subtasks: one tap opens the keyboard, and "+ Add subtask" now raises it too.
+- Duplicate: bottom-left of the Edit task button row, on one line with Cancel and Save task.
 - Pick time: more air between the WHEN buttons and the In / At tabs.
-- Notes: New folder colours are two rows of four full round dots with a COLOUR label; the search button has an accent ring and a soft shadow; tapping a to-do circle ticks it without focusing the note or raising the keyboard.
+- Notes: New folder colours are one line: seven ready colours plus a rainbow button that opens a hue + shade picker for your own colour (stored in the folder, included in backups); the search button has an accent ring only (no shadow); tapping a to-do circle ticks it without focusing the note or raising the keyboard.
+
+## v3.33 notes
+- Text colour: new coloured "A" in the note toolbar (9 colours + back to default). Works on a selection, or on what you type next.
+- Numbered lists: the "1." button, or just type "1. " yourself. Enter starts the next number; later items renumber; Enter on an empty item ends the list.
+- Nested lists: the ← / → buttons move a bullet, number or to-do item one level in or out (up to 5 levels; an item nests one level under the line above). Enter keeps the level; Enter on an empty nested item steps back out. Stored with the note, so it survives backup / restore.
+- "Tx" button: back to standard text (clears bold, italic, underline, strike, colour, highlight, code, size on the selection).
+- Finger mode: the pointing-hand button floats at the bottom right of a note. Turn it on, pick a style in the toolbar (bold, italic, underline, strike, code, highlight, text colour, or Tx for standard), then swipe sideways over the text and it applies at once. Swiping over text that already has the style removes it. A tap paints one word; swiping up / down still scrolls. Tap the hand again to switch it off.
+- Settings: "Main screen" now has a phone icon instead of the calendar.

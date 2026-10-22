@@ -37,6 +37,11 @@ final class RichText {
     static final int TABLE = 8;
     /** A chosen text size in sp (at normal zoom); the arg of the range is the size. */
     static final int SIZE = 9;
+    /** Text colour; the arg of the range is the ARGB colour. */
+    static final int FG = 10;
+    /** Nesting level of a list line (paragraph indent); the arg is the level. */
+    static final int INDENT = 11;
+    static final int MAX_INDENT = 5;
     static final int MIN_SIZE = 8;
     static final int MAX_SIZE = 72;
     static final int BASE_SIZE = 17;
@@ -44,6 +49,9 @@ final class RichText {
     static final String BULLET = "• ";
     /** Highlight colours (same in light and dark; highlighted text is always drawn dark). */
     static final int[] HL_COLORS = {0xFFFFE066, 0xFFA8E6A1, 0xFF9FD3FF, 0xFFFFB3C7, 0xFFFFC48A};
+    /** Text colours that read on both the light and the dark page. */
+    static final int[] FG_COLORS = {0xFFE5484D, 0xFFF76B15, 0xFFD9A400, 0xFF30A46C, 0xFF12A5A0,
+            0xFF3E8BFF, 0xFF8E4EC6, 0xFFE93D82, 0xFF8B8D98};
 
     /** Typing continues a span that ends right where the cursor is, like any text editor. */
     private static final int FLAGS = Spanned.SPAN_EXCLUSIVE_INCLUSIVE;
@@ -77,6 +85,40 @@ final class RichText {
         public void updateDrawState(TextPaint tp) {
             tp.bgColor = color;
             tp.setColor(0xFF1A1A1A);
+        }
+    }
+
+    /** Coloured text. Highlighted and code text keep their own look. */
+    static final class Fg extends CharacterStyle implements UpdateAppearance {
+        final int color;
+
+        Fg(int color) {
+            this.color = color;
+        }
+
+        @Override
+        public void updateDrawState(TextPaint tp) {
+            if (tp.bgColor == 0) tp.setColor(color);
+        }
+    }
+
+    /** A list line nested {@code level} steps in; wrapped lines keep the same margin. */
+    static final class Indent implements android.text.style.LeadingMarginSpan {
+        final int level;
+
+        Indent(int level) {
+            this.level = Math.max(0, Math.min(MAX_INDENT, level));
+        }
+
+        @Override
+        public int getLeadingMargin(boolean first) {
+            return Math.round(level * 24 * density);
+        }
+
+        @Override
+        public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
+                                      int bottom, CharSequence text, int start, int end, boolean first,
+                                      android.text.Layout layout) {
         }
     }
 
@@ -470,6 +512,10 @@ final class RichText {
                 return new Head();
             case SIZE:
                 return new Sz(arg);
+            case FG:
+                return new Fg(arg);
+            case INDENT:
+                return new Indent(arg);
             default:
                 return new Block();
         }
@@ -487,12 +533,16 @@ final class RichText {
         if (o instanceof Block) return BLOCK;
         if (o instanceof Tbl) return TABLE;
         if (o instanceof Sz) return SIZE;
+        if (o instanceof Fg) return FG;
+        if (o instanceof Indent) return INDENT;
         return -1;
     }
 
     private static int argOf(Object o) {
         if (o instanceof Tbl) return ((Tbl) o).cols();
         if (o instanceof Sz) return ((Sz) o).sp;
+        if (o instanceof Fg) return ((Fg) o).color;
+        if (o instanceof Indent) return ((Indent) o).level;
         return o instanceof Hl ? ((Hl) o).color : 0;
     }
 
@@ -643,6 +693,160 @@ final class RichText {
             if (t.charAt(pos + i) != prefix.charAt(i)) return false;
         }
         return true;
+    }
+
+
+    // ------------------------------------------------- colours, clearing, nesting, numbers
+
+    /** The colour arg of a HILITE / FG range covering the character at {@code pos}, or 0. */
+    static int colorAt(Spanned e, int type, int pos) {
+        if (pos < 0 || pos >= e.length()) return 0;
+        int found = 0;
+        for (Object o : e.getSpans(pos, pos + 1, Object.class)) {
+            if (typeOf(o) == type) found = argOf(o);
+        }
+        return found;
+    }
+
+    /** Removes every character style (bold .. size, colours, highlight, code) from [s, en). */
+    static void clearStyles(Editable e, int s, int en) {
+        int[] types = {BOLD, ITALIC, UNDER, HILITE, CODE, SIZE, FG};
+        for (int t : types) apply(e, t, s, en, 0, false);
+        // ticked to-do lines stay struck through; everything else loses it
+        int p = lineStart(e, s);
+        while (p < en && p <= e.length()) {
+            int le = lineEnd(e, p);
+            int a = Math.max(s, p);
+            int b = Math.min(en, le);
+            if (a < b && prefixAt(e, p) != P_CHECK_ON) apply(e, STRIKE, a, b, 0, false);
+            else if (a < b) apply(e, STRIKE, Math.max(a, p + 2), b, 0, true);
+            if (le >= e.length()) break;
+            p = le + 1;
+        }
+    }
+
+    /** Length of the list marker ("•, ", "[ ] ", "[x] ") at a line start, or 0. */
+    static int markerLen(CharSequence t, int ls) {
+        return prefixAt(t, ls) != P_NONE ? 2 : numLen(t, ls);
+    }
+
+    // ---- nesting
+
+    static int indentOf(Spanned e, int ls) {
+        int lvl = 0;
+        int end = Math.min(e.length(), ls + 1);
+        for (Indent o : e.getSpans(ls, Math.max(end, ls), Indent.class)) {
+            if (e.getSpanStart(o) <= ls) lvl = Math.max(lvl, o.level);
+        }
+        return lvl;
+    }
+
+    /** Sets the nesting level of the line starting at {@code ls}. */
+    static void setIndent(Editable e, int ls, int level) {
+        int le = lineEnd(e, ls);
+        int stop = Math.min(e.length(), le + 1);
+        for (Indent o : e.getSpans(ls, Math.max(stop, ls), Indent.class)) {
+            int a = e.getSpanStart(o);
+            int b = e.getSpanEnd(o);
+            e.removeSpan(o);
+            // keep the parts of a multi-line span that lie on other lines
+            if (a < ls) e.setSpan(new Indent(o.level), a, ls, FLAGS);
+            if (b > stop) e.setSpan(new Indent(o.level), stop, b, FLAGS);
+        }
+        level = Math.max(0, Math.min(MAX_INDENT, level));
+        if (level > 0 && stop > ls) e.setSpan(new Indent(level), ls, stop, FLAGS);
+    }
+
+    // ---- numbered lists ("1. ", "2. " ...)
+
+    /** Length of a "12. " marker at the start of a line, or 0. */
+    static int numLen(CharSequence t, int ls) {
+        int i = ls;
+        while (i < t.length() && i - ls < 3 && Character.isDigit(t.charAt(i))) i++;
+        if (i == ls || i + 1 >= t.length()) return 0;
+        return t.charAt(i) == '.' && t.charAt(i + 1) == ' ' ? i + 2 - ls : 0;
+    }
+
+    static int numValue(CharSequence t, int ls) {
+        int n = numLen(t, ls);
+        if (n == 0) return 0;
+        try {
+            return Integer.parseInt(t.subSequence(ls, ls + n - 2).toString());
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    /**
+     * Re-counts the run of numbered lines around {@code pos}: each nesting level counts on its own and
+     * restarts under a shallower item. The line at {@code skip} (the cursor line) is left alone.
+     */
+    static void renumber(Editable e, int pos, int skip) {
+        int p = lineStart(e, pos);
+        while (p > 0) { // walk up to the first numbered line of the run
+            int prev = lineStart(e, p - 1);
+            if (numLen(e, prev) == 0) break;
+            p = prev;
+        }
+        int[] count = new int[MAX_INDENT + 2];
+        boolean first = true;
+        while (p <= e.length() && numLen(e, p) > 0) {
+            int lvl = indentOf(e, p);
+            if (first) {
+                count[lvl] = Math.max(0, numValue(e, p) - 1);
+                first = false;
+            }
+            count[lvl]++;
+            for (int k = lvl + 1; k < count.length; k++) count[k] = 0;
+            if (p != skip) {
+                int len = numLen(e, p);
+                String want = count[lvl] + ". ";
+                if (!e.subSequence(p, p + len).toString().equals(want)) e.replace(p, p + len, want);
+            } else {
+                count[lvl] = numValue(e, p);
+            }
+            int le = lineEnd(e, p);
+            if (le >= e.length()) break;
+            p = le + 1;
+        }
+    }
+
+    /** Numbers every touched line (1. 2. 3.), or removes the numbers when all of them already have one. */
+    static int toggleNumbered(Editable e, int s, int en) {
+        java.util.ArrayList<Integer> starts = new java.util.ArrayList<>();
+        int p = lineStart(e, s);
+        int stop = lineStart(e, Math.max(s, en));
+        while (true) {
+            starts.add(p);
+            int nl = lineEnd(e, p);
+            if (p >= stop || nl >= e.length()) break;
+            p = nl + 1;
+        }
+        boolean all = true;
+        for (int st : starts) if (numLen(e, st) == 0) all = false;
+        int delta = 0;
+        for (int i = starts.size() - 1; i >= 0; i--) {
+            int st = starts.get(i);
+            int n = numLen(e, st);
+            if (all) {
+                e.delete(st, st + n);
+                delta -= n;
+                continue;
+            }
+            if (n > 0) continue;
+            int k = prefixAt(e, st);
+            if (k == P_CHECK_ON) apply(e, STRIKE, st + 2, lineEnd(e, st), 0, false);
+            if (k != P_NONE) { // swap a bullet / to-do box for the number
+                e.replace(st, st + 2, "1. ");
+                delta += 1;
+            } else {
+                e.insert(st, "1. ");
+                delta += 3;
+            }
+        }
+        if (!all) renumber(e, lineStart(e, s), -1);
+        else renumber(e, lineStart(e, Math.min(s, e.length())), -1);
+        return Math.max(0, Math.min(e.length(), en + delta));
     }
 
     // ------------------------------------------------------- persistence

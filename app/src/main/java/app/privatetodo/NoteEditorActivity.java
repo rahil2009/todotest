@@ -15,6 +15,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -39,6 +40,11 @@ public class NoteEditorActivity extends Activity {
     private static final int TABLE_KEY = 8;
     private static final int NEXT_KEY = -10;
     private static final int CHECK_KEY = -2;
+    private static final int CLEAR_KEY = -3;
+    private static final int NUM_KEY = -4;
+    private static final int IN_KEY = -5;
+    private static final int OUT_KEY = -6;
+    private static final int NO_BRUSH = -100;
 
     private TaskDb db;
     private float density;
@@ -50,6 +56,17 @@ public class NoteEditorActivity extends Activity {
     private RichEditText body;
     private TextView dateLabel;
     private LinearLayout colorRow;
+    private LinearLayout fgRow;
+
+    // Finger mode: pick a style, then swipe over the text to apply it.
+    private boolean paintMode;
+    private int brush = NO_BRUSH;
+    private int brushHl = RichText.HL_COLORS[0];
+    private int brushFg = RichText.FG_COLORS[0];
+    private boolean strokeErase;
+    private FrameLayout fab;
+    private IconView fabIcon;
+    private TextView paintHint;
     private final Map<Integer, TextView> buttons = new HashMap<>();
 
     // Styles chosen with only a cursor (apply to the next typed text). 0 = off, 1 = on, colour for highlight.
@@ -242,32 +259,92 @@ public class NoteEditorActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+        FrameLayout area = new FrameLayout(this);
+        area.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        paintHint = new TextView(this);
+        paintHint.setTextSize(13);
+        paintHint.setTypeface(Typeface.DEFAULT_BOLD);
+        paintHint.setTextColor(Pal.onAccent);
+        paintHint.setPadding(dp(14), dp(8), dp(14), dp(8));
+        GradientDrawable hg = new GradientDrawable();
+        hg.setCornerRadius(dp(18));
+        hg.setColor(Pal.accent);
+        paintHint.setBackground(hg);
+        paintHint.setVisibility(View.GONE);
+        FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(-2, -2);
+        hlp.gravity = Gravity.BOTTOM | Gravity.START;
+        hlp.leftMargin = dp(16);
+        hlp.rightMargin = dp(88);
+        hlp.bottomMargin = dp(22);
+        area.addView(paintHint, hlp);
+        fab = new FrameLayout(this);
+        fab.setContentDescription("Finger mode: pick a style, then swipe over text to apply it");
+        fabIcon = new IconView(this, IconView.FINGER);
+        fabIcon.setClickable(false);
+        fab.addView(fabIcon, new FrameLayout.LayoutParams(dp(56), dp(56)));
+        fab.setClickable(true);
+        fab.setOnClickListener(v -> {
+            Hap.tick(v);
+            setPaintMode(!paintMode);
+        });
+        FrameLayout.LayoutParams flp = new FrameLayout.LayoutParams(dp(56), dp(56));
+        flp.gravity = Gravity.BOTTOM | Gravity.END;
+        flp.rightMargin = dp(16);
+        flp.bottomMargin = dp(16);
+        area.addView(fab, flp);
+        styleFab();
+        root.addView(area, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         root.addView(buildColorRow());
+        root.addView(buildFgRow());
         root.addView(buildToolbar());
         return root;
     }
 
+    private void styleFab() {
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(paintMode ? Pal.accent : Pal.raised);
+        g.setStroke(dp(2), Pal.accent);
+        fab.setBackground(g);
+        fabIcon.setTint(paintMode ? Pal.onAccent : Pal.accent);
+        fabIcon.setOn(paintMode);
+    }
+
     private View buildColorRow() {
-        colorRow = new LinearLayout(this);
-        colorRow.setOrientation(LinearLayout.HORIZONTAL);
-        colorRow.setGravity(Gravity.CENTER_VERTICAL);
-        colorRow.setPadding(dp(16), dp(8), dp(16), dp(8));
-        colorRow.setBackgroundColor(Pal.raised);
-        colorRow.setVisibility(View.GONE);
+        colorRow = palette("Highlight", RichText.HL_COLORS, false);
+        return colorRow;
+    }
+
+    private View buildFgRow() {
+        fgRow = palette("Text colour", RichText.FG_COLORS, true);
+        return fgRow;
+    }
+
+    private LinearLayout palette(String name, int[] colors, boolean text) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(16), dp(8), dp(16), dp(8));
+        row.setBackgroundColor(Pal.raised);
+        row.setVisibility(View.GONE);
         TextView label = new TextView(this);
-        label.setText("Highlight");
+        label.setText(name);
         label.setTextColor(Pal.muted);
         label.setTextSize(13);
         label.setTypeface(Typeface.DEFAULT_BOLD);
         label.setPadding(0, 0, dp(12), 0);
-        colorRow.addView(label);
-        for (final int color : RichText.HL_COLORS) {
-            colorRow.addView(swatch(color, null), swatchLp());
-        }
-        colorRow.addView(swatch(Pal.chip, "✕"), swatchLp()); // no highlight
-        return colorRow;
+        row.addView(label);
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER_VERTICAL);
+        for (final int color : colors) dots.addView(swatch(color, null, text), swatchLp());
+        dots.addView(swatch(Pal.chip, "\u2715", text), swatchLp()); // none / default
+        hs.addView(dots);
+        row.addView(hs, new LinearLayout.LayoutParams(0, -2, 1f));
+        return row;
     }
 
     private LinearLayout.LayoutParams swatchLp() {
@@ -276,24 +353,25 @@ public class NoteEditorActivity extends Activity {
         return lp;
     }
 
-    private TextView swatch(final int color, String mark) {
+    private TextView swatch(final int color, String mark, final boolean text) {
         TextView t = new TextView(this);
         t.setGravity(Gravity.CENTER);
         t.setTextColor(Pal.muted);
         t.setTextSize(14);
         if (mark != null) {
             t.setText(mark);
-            t.setContentDescription("No highlight");
+            t.setContentDescription(text ? "Default text colour" : "No highlight");
         } else {
-            t.setContentDescription("Highlight colour");
+            t.setContentDescription(text ? "Text colour" : "Highlight colour");
         }
         GradientDrawable g = new GradientDrawable();
         g.setShape(GradientDrawable.OVAL);
         g.setColor(color);
         t.setBackground(g);
         t.setOnClickListener(v -> {
-            highlight(mark == null ? color : 0);
-            colorRow.setVisibility(View.GONE);
+            int c = mark == null ? color : 0;
+            if (text) textColor(c); else highlight(c);
+            (text ? fgRow : colorRow).setVisibility(View.GONE);
         });
         return t;
     }
@@ -759,9 +837,18 @@ public class NoteEditorActivity extends Activity {
         SpannableString marked = new SpannableString("A");
         marked.setSpan(new RichText.Hl(RichText.HL_COLORS[0]), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         hl.setText(marked);
+        TextView fg = addButton(bar, RichText.FG, "A", Typeface.BOLD, "Text colour");
+        SpannableString fgMark = new SpannableString("A");
+        fgMark.setSpan(new android.text.style.ForegroundColorSpan(RichText.FG_COLORS[0]), 0, 1,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        fg.setText(fgMark);
+        addButton(bar, CLEAR_KEY, "Tx", Typeface.BOLD, "Back to standard text (clear styles)");
         addButton(bar, RichText.HEAD, "H", Typeface.BOLD, "Heading");
         addButton(bar, BULLET_KEY, "\u2022", Typeface.BOLD, "Bullet list");
+        addButton(bar, NUM_KEY, "1.", Typeface.BOLD, "Numbered list");
         addButton(bar, CHECK_KEY, "(\u2713)", Typeface.BOLD, "To-do list");
+        addButton(bar, OUT_KEY, "\u2190", Typeface.BOLD, "Move item out one level");
+        addButton(bar, IN_KEY, "\u2192", Typeface.BOLD, "Nest item one level in");
         addButton(bar, TABLE_KEY, "\u25A6", Typeface.BOLD, "Table");
         addButton(bar, RichText.CODE, "`", Typeface.NORMAL, "Inline code").setTypeface(Typeface.MONOSPACE);
         addButton(bar, RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block").setTypeface(Typeface.MONOSPACE);
@@ -802,15 +889,62 @@ public class NoteEditorActivity extends Activity {
         return Math.max(0, Math.max(body.getSelectionStart(), body.getSelectionEnd()));
     }
 
+    private static boolean isBrush(int key) {
+        return key == RichText.BOLD || key == RichText.ITALIC || key == RichText.UNDER
+                || key == RichText.STRIKE || key == RichText.CODE || key == RichText.HILITE
+                || key == RichText.FG || key == CLEAR_KEY;
+    }
+
     private void onTool(int key) {
         commitNow();
+        if (paintMode && isBrush(key)) { // finger mode: the button picks the brush instead of applying
+            selectBrush(key == brush && key != RichText.HILITE && key != RichText.FG ? NO_BRUSH : key);
+            if (key == RichText.HILITE || key == RichText.FG) {
+                colorRow.setVisibility(key == RichText.HILITE ? View.VISIBLE : View.GONE);
+                fgRow.setVisibility(key == RichText.FG ? View.VISIBLE : View.GONE);
+            } else {
+                colorRow.setVisibility(View.GONE);
+                fgRow.setVisibility(View.GONE);
+            }
+            return;
+        }
         if (key == RichText.HILITE) {
+            fgRow.setVisibility(View.GONE);
             colorRow.setVisibility(colorRow.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+            return;
+        }
+        if (key == RichText.FG) {
+            colorRow.setVisibility(View.GONE);
+            fgRow.setVisibility(fgRow.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
             return;
         }
         Editable e = body.getText();
         int s = selStart();
         int en = selEnd();
+        if (key == CLEAR_KEY) {
+            if (s == en) { // just a cursor: the next typed text is plain
+                for (int t : new int[]{RichText.BOLD, RichText.ITALIC, RichText.UNDER, RichText.STRIKE,
+                        RichText.HILITE, RichText.CODE, RichText.FG}) pending.put(t, 0);
+            } else {
+                RichText.clearStyles(e, s, en);
+                changed();
+            }
+            refreshToolbar();
+            return;
+        }
+        if (key == NUM_KEY) {
+            busy = true;
+            int c = RichText.toggleNumbered(e, s, en);
+            busy = false;
+            body.setSelection(Math.min(c, e.length()));
+            changed();
+            refreshToolbar();
+            return;
+        }
+        if (key == IN_KEY || key == OUT_KEY) {
+            nest(key == IN_KEY ? 1 : -1);
+            return;
+        }
         if (key == BULLET_KEY || key == CHECK_KEY) {
             busy = true;
             int c = RichText.toggleList(e, s, en, key == CHECK_KEY);
@@ -844,8 +978,191 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
+    /** Moves the touched list lines one nesting level in (+1) or out (-1). */
+    private void nest(int delta) {
+        Editable e = body.getText();
+        int s = selStart();
+        int en = selEnd();
+        int cursor = body.getSelectionEnd();
+        int firstLs = RichText.lineStart(e, s);
+        int lastLs = RichText.lineStart(e, en);
+        int distFromEnd = RichText.lineEnd(e, lastLs) - cursor;
+        busy = true;
+        int p = firstLs;
+        while (true) {
+            int lvl = RichText.indentOf(e, p);
+            int want = Math.max(0, Math.min(RichText.MAX_INDENT, lvl + delta));
+            if (delta > 0) { // an item nests at most one level under the line above it
+                int above = p == 0 ? -1 : RichText.indentOf(e, RichText.lineStart(e, p - 1));
+                want = Math.min(want, above + 1);
+            }
+            if (want != lvl) RichText.setIndent(e, p, want);
+            if (p >= lastLs) break;
+            int le = RichText.lineEnd(e, p);
+            if (le >= e.length()) break;
+            p = le + 1;
+        }
+        RichText.renumber(e, firstLs, -1);
+        busy = false;
+        int newEnd = RichText.lineEnd(e, lastLs);
+        if (s == en) {
+            body.setSelection(Math.max(firstLs, Math.min(newEnd, newEnd - distFromEnd)));
+        } else {
+            body.setSelection(firstLs, newEnd);
+        }
+        changed();
+        refreshToolbar();
+    }
+
+    private void textColor(int color) {
+        commitNow();
+        if (paintMode) {
+            brushFg = color;
+            selectBrush(RichText.FG);
+            return;
+        }
+        Editable e = body.getText();
+        int s = selStart();
+        int en = selEnd();
+        if (s == en) {
+            pending.put(RichText.FG, color);
+        } else {
+            RichText.apply(e, RichText.FG, s, en, color, color != 0);
+            changed();
+        }
+        refreshToolbar();
+    }
+
+    // ------------------------------------------------------- finger mode
+
+    private void setPaintMode(boolean on) {
+        paintMode = on;
+        brush = NO_BRUSH;
+        styleFab();
+        colorRow.setVisibility(View.GONE);
+        fgRow.setVisibility(View.GONE);
+        if (on) {
+            android.view.inputmethod.InputMethodManager imm =
+                    getSystemService(android.view.inputmethod.InputMethodManager.class);
+            imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
+            body.setPaintListener(new RichEditText.PaintListener() {
+                @Override public void onStart(int offset) {
+                    strokeErase = brush != NO_BRUSH && brushActiveAt(offset);
+                }
+                @Override public void onStroke(int lo, int hi) {
+                    if (brush != NO_BRUSH) paintRange(lo, hi, strokeErase);
+                }
+                @Override public void onEnd() {
+                    if (brush != NO_BRUSH) commitNow();
+                }
+                @Override public void onTap(int offset) {
+                    paintWordAt(offset);
+                }
+            });
+        } else {
+            body.setPaintListener(null);
+        }
+        updatePaintHint();
+        refreshToolbar();
+    }
+
+    private void selectBrush(int key) {
+        brush = key;
+        updatePaintHint();
+        refreshToolbar();
+    }
+
+    private String brushName() {
+        if (brush == RichText.BOLD) return "Bold";
+        if (brush == RichText.ITALIC) return "Italic";
+        if (brush == RichText.UNDER) return "Underline";
+        if (brush == RichText.STRIKE) return "Strikethrough";
+        if (brush == RichText.CODE) return "Code";
+        if (brush == RichText.HILITE) return brushHl == 0 ? "No highlight" : "Highlight";
+        if (brush == RichText.FG) return brushFg == 0 ? "Default colour" : "Text colour";
+        if (brush == CLEAR_KEY) return "Standard";
+        return "";
+    }
+
+    private void updatePaintHint() {
+        if (!paintMode) {
+            paintHint.setVisibility(View.GONE);
+            return;
+        }
+        paintHint.setText(brush == NO_BRUSH ? "Finger mode \u00b7 pick a style below, then swipe over text"
+                : brushName() + " \u00b7 swipe over text (swipe styled text again to undo)");
+        paintHint.setVisibility(View.VISIBLE);
+    }
+
+    /** Does the character at this offset already carry the active brush (so the stroke erases)? */
+    private boolean brushActiveAt(int off) {
+        Editable e = body.getText();
+        if (e.length() == 0) return false;
+        int pos = Math.max(0, Math.min(off, e.length() - 1));
+        if (off >= e.length() || e.charAt(pos) == '\n') pos = Math.max(0, pos - 1);
+        if (brush == CLEAR_KEY) return false;
+        if (brush == RichText.HILITE) return brushHl == 0 || RichText.colorAt(e, RichText.HILITE, pos) == brushHl;
+        if (brush == RichText.FG) return brushFg == 0 || RichText.colorAt(e, RichText.FG, pos) == brushFg;
+        return RichText.active(e, brush, pos, pos + 1);
+    }
+
+    /** Applies the brush to [lo, hi), line by line, leaving list markers alone. */
+    private void paintRange(int lo, int hi, boolean erase) {
+        Editable e = body.getText();
+        lo = Math.max(0, lo);
+        hi = Math.min(e.length(), hi);
+        int p = RichText.lineStart(e, lo);
+        while (p <= hi && p <= e.length()) {
+            int le = RichText.lineEnd(e, p);
+            int a = Math.max(lo, p + RichText.markerLen(e, p));
+            int b = Math.min(hi, le);
+            if (a < b) {
+                if (brush == CLEAR_KEY) {
+                    RichText.clearStyles(e, a, b);
+                } else if (brush == RichText.HILITE) {
+                    RichText.apply(e, RichText.HILITE, a, b, brushHl, !erase && brushHl != 0);
+                } else if (brush == RichText.FG) {
+                    RichText.apply(e, RichText.FG, a, b, brushFg, !erase && brushFg != 0);
+                } else {
+                    RichText.apply(e, brush, a, b, 0, !erase);
+                }
+            }
+            if (le >= e.length()) break;
+            p = le + 1;
+        }
+        changed();
+        body.invalidate();
+    }
+
+    /** A tap in finger mode paints the word under the finger. */
+    private void paintWordAt(int off) {
+        if (brush == NO_BRUSH) {
+            Toast.makeText(this, "Pick a style first, then swipe over text", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Editable e = body.getText();
+        int n = e.length();
+        int at = Math.max(0, Math.min(off, n));
+        if (!(at < n && Character.isLetterOrDigit(e.charAt(at)))) {
+            if (at > 0 && Character.isLetterOrDigit(e.charAt(at - 1))) at--;
+            else return;
+        }
+        int a = at;
+        int b = at;
+        while (a > 0 && Character.isLetterOrDigit(e.charAt(a - 1))) a--;
+        while (b < n && Character.isLetterOrDigit(e.charAt(b))) b++;
+        boolean erase = brushActiveAt(at);
+        paintRange(a, b, erase);
+        commitNow();
+    }
+
     private void highlight(int color) {
         commitNow();
+        if (paintMode) {
+            brushHl = color;
+            selectBrush(RichText.HILITE);
+            return;
+        }
         Editable e = body.getText();
         int s = selStart();
         int en = selEnd();
@@ -882,17 +1199,24 @@ public class NoteEditorActivity extends Activity {
                 on = isOn(key, s, en);
             }
             if (key == SIZE_KEY) on = RichText.sizeAt(body.getText(), s, en) != 0;
-            style(b.getValue(), on);
+            if (key == NUM_KEY) {
+                on = RichText.numLen(body.getText(), RichText.lineStart(body.getText(), s)) > 0;
+            }
+            if (key == CLEAR_KEY || key == IN_KEY || key == OUT_KEY) on = false;
+            style(b.getValue(), on, paintMode && key == brush);
         }
     }
 
-    private void style(TextView t, boolean on) {
+    private void style(TextView t, boolean on, boolean brushed) {
         GradientDrawable g = new GradientDrawable();
         g.setCornerRadius(dp(12));
-        g.setColor(on ? Pal.sel : 0);
+        g.setColor(brushed ? Pal.accent : on ? Pal.sel : 0);
+        if (paintMode && !brushed) g.setStroke(dp(1), Pal.chip);
         t.setBackground(g);
-        // The highlight button keeps its own dark-on-yellow look.
-        if (!(t.getText() instanceof Spanned)) t.setTextColor(on ? Pal.onSel : Pal.ink);
+        // The highlight / text-colour buttons keep their own colour.
+        if (!(t.getText() instanceof Spanned)) {
+            t.setTextColor(brushed ? Pal.onAccent : on ? Pal.onSel : Pal.ink);
+        }
     }
 
     /** Runs after every text change: applies "next typed text" styles and continues bullet lists. */
@@ -919,7 +1243,19 @@ public class NoteEditorActivity extends Activity {
                 int ps = RichText.lineStart(e, nl); // the line that Enter just ended
                 boolean restEmpty = nl + 1 >= e.length() || e.charAt(nl + 1) == '\n';
                 int kind = RichText.prefixAt(e, ps);
-                if (kind != RichText.P_NONE && nl - ps == 2 && restEmpty) { // Enter on an empty item ends the list
+                int numLen = kind == RichText.P_NONE ? RichText.numLen(e, ps) : 0;
+                int lvl = RichText.indentOf(e, ps);
+                boolean emptyItem = (kind != RichText.P_NONE && nl - ps == 2)
+                        || (numLen > 0 && nl - ps == numLen);
+                if (emptyItem && restEmpty && lvl > 0) {
+                    // Enter on an empty nested item steps it back out one level
+                    e.delete(nl, nl + 1);
+                    RichText.setIndent(e, ps, lvl - 1);
+                    if (numLen > 0) RichText.renumber(e, ps, -1);
+                    expectCursor = Math.min(e.length(), RichText.lineEnd(e, ps));
+                    body.setSelection(expectCursor);
+                    moved = true;
+                } else if (emptyItem && restEmpty) { // Enter on an empty item ends the list
                     e.delete(ps, nl + 1);
                     expectCursor = ps;
                     body.setSelection(Math.min(expectCursor, e.length()));
@@ -929,9 +1265,25 @@ public class NoteEditorActivity extends Activity {
                     String next = kind == RichText.P_BULLET ? RichText.BULLET : RichText.CHECK_OFF;
                     e.insert(nl + 1, next);
                     RichText.apply(e, RichText.STRIKE, nl + 1, nl + 1 + next.length(), 0, false);
+                    RichText.setIndent(e, ps, lvl);
+                    RichText.setIndent(e, nl + 1, lvl);
                     expectCursor = nl + 1 + next.length();
                     body.setSelection(Math.min(expectCursor, e.length()));
                     moved = true;
+                } else if (numLen > 0) {
+                    // 1. 2. 3. : the next line gets the next number (and later items follow)
+                    String next = (RichText.numValue(e, ps) + 1) + ". ";
+                    e.insert(nl + 1, next);
+                    RichText.apply(e, RichText.STRIKE, nl + 1, nl + 1 + next.length(), 0, false);
+                    RichText.setIndent(e, ps, lvl);
+                    RichText.setIndent(e, nl + 1, lvl);
+                    RichText.renumber(e, ps, nl + 1);
+                    expectCursor = nl + 1 + next.length();
+                    body.setSelection(Math.min(expectCursor, e.length()));
+                    moved = true;
+                } else if (lvl > 0 || RichText.indentOf(e, nl + 1 <= e.length() ? nl + 1 : nl) > 0) {
+                    RichText.setIndent(e, ps, lvl);
+                    RichText.setIndent(e, nl + 1, lvl);
                 }
                 if (restEmpty) endLineStyles(e, ps, nl);
             }

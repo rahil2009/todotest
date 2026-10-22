@@ -1407,11 +1407,16 @@ public class MainActivity extends Activity {
         form.addView(pickBtn, pickLp);
         form.addView(sndExtras, new LinearLayout.LayoutParams(-1, -2));
         final TextView[] dupRef = new TextView[1];
-        if (existing != null) { // quiet link, pinned bottom-left above Cancel / Save (see below)
-            TextView dup = text("Duplicate task", 15, Pal.accent, true);
-            dup.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
-            dup.setMinHeight(dp(44));
-            dup.setPadding(dp(24), 0, dp(24), 0);
+        if (existing != null) { // sits bottom-left in the Cancel / Save row (see below)
+            TextView dup = text("Duplicate", 14, Pal.accent, true);
+            dup.setGravity(Gravity.CENTER);
+            dup.setSingleLine(true);
+            dup.setPadding(dp(6), 0, dp(6), 0);
+            GradientDrawable dg = new GradientDrawable();
+            dg.setCornerRadius(dp(24));
+            dg.setColor(Pal.chip);
+            dup.setBackground(dg);
+            dup.setContentDescription("Duplicate task");
             dupRef[0] = dup;
             dup.setOnClickListener(v -> {
                 long copy = db.duplicate(existing.id);
@@ -1476,24 +1481,32 @@ public class MainActivity extends Activity {
         // Cancel + Save task fill the width (1 : 2), lined up with the form's edges
         android.widget.Button negB = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
         android.widget.Button posB = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-        if (posB.getParent() instanceof LinearLayout) {
+        if (posB.getParent() instanceof LinearLayout && ((LinearLayout) posB.getParent()).getParent() instanceof LinearLayout) {
+            // Our own button row (Duplicate | Cancel | Save task) replaces the stock bar, so the
+            // three always sit on one line and never stack.
             LinearLayout bar = (LinearLayout) posB.getParent();
-            for (int i = 0; i < bar.getChildCount(); i++) {
-                View c = bar.getChildAt(i);
-                if (c != negB && c != posB) c.setVisibility(View.GONE); // the stock spacer
+            LinearLayout panel = (LinearLayout) bar.getParent();
+            bar.removeView(negB);
+            bar.removeView(posB);
+            bar.setVisibility(View.GONE);
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setPadding(dp(24), dp(10), dp(24), dp(16));
+            boolean hasDup = dupRef[0] != null;
+            if (hasDup) {
+                LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(0, dp(48), 1.3f);
+                dl.rightMargin = dp(8);
+                row.addView(dupRef[0], dl);
             }
             LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(0, dp(48), 1f);
-            nl.rightMargin = dp(10);
-            negB.setLayoutParams(nl);
-            posB.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 2f));
-            bar.setPadding(dp(24), dp(10), dp(24), dp(16));
-            if (dupRef[0] != null && bar.getParent() instanceof LinearLayout) {
-                LinearLayout panel = (LinearLayout) bar.getParent();
-                panel.addView(dupRef[0], panel.indexOfChild(bar), new LinearLayout.LayoutParams(-2, -2));
-            }
+            nl.rightMargin = dp(hasDup ? 8 : 10);
+            row.addView(negB, nl);
+            row.addView(posB, new LinearLayout.LayoutParams(0, dp(48), hasDup ? 1.5f : 2f));
+            panel.addView(row, panel.indexOfChild(bar) + 1);
+            Fonts.apply(row);
         }
         if (dupRef[0] != null && dupRef[0].getParent() == null) { // fallback: end of the form
-            form.addView(dupRef[0], new LinearLayout.LayoutParams(-2, -2));
+            form.addView(dupRef[0], new LinearLayout.LayoutParams(-1, dp(48)));
         }
         input.requestFocus();
 
@@ -1645,7 +1658,11 @@ public class MainActivity extends Activity {
             }
             return false;
         });
-        if (focus) r.et.requestFocus();
+        if (focus) { // "+ Add subtask" / Enter: focus the new line AND raise the keyboard
+            r.et.requestFocus();
+            r.et.postDelayed(() -> getSystemService(InputMethodManager.class)
+                    .showSoftInput(r.et, 0), 80);
+        }
         if (subChanged != null) subChanged.run();
         return r;
     }

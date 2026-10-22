@@ -189,6 +189,90 @@ final class RichEditText extends EditText {
         checkListener = l;
     }
 
+    // ---- finger (paint) mode: swipe over text to apply the chosen style
+
+    interface PaintListener {
+        /** A swipe began at this text offset. */
+        void onStart(int offset);
+
+        /** The swipe has covered [lo, hi) so far (it only ever grows). */
+        void onStroke(int lo, int hi);
+
+        void onEnd();
+
+        /** A plain tap (no swipe) at this offset. */
+        void onTap(int offset);
+    }
+
+    private PaintListener paintL;
+    private int pState; // 0 idle, 1 finger down, 2 painting, 3 scrolling the page
+    private int pStart;
+    private int pLo;
+    private int pHi;
+
+    /** Non-null turns the field into a paint surface: touches paint instead of placing the cursor. */
+    void setPaintListener(PaintListener l) {
+        paintL = l;
+        pState = 0;
+        setCursorVisible(l == null);
+    }
+
+    private int offsetAt(float x, float y) {
+        if (getLayout() == null) return 0;
+        return Math.max(0, Math.min(length(), getOffsetForPosition(x, y)));
+    }
+
+    private boolean paintTouch(MotionEvent e) {
+        int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+        switch (e.getActionMasked()) {
+            case MotionEvent.ACTION_DOWN:
+                pState = 1;
+                downX = e.getX();
+                downY = e.getY();
+                pStart = offsetAt(e.getX(), e.getY());
+                pLo = pStart;
+                pHi = pStart;
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                return true;
+            case MotionEvent.ACTION_MOVE:
+                if (pState == 1) {
+                    float dx = Math.abs(e.getX() - downX);
+                    float dy = Math.abs(e.getY() - downY);
+                    if (dx < slop && dy < slop) return true;
+                    if (dx >= dy) { // sideways: paint
+                        pState = 2;
+                        paintL.onStart(pStart);
+                    } else { // up / down: let the page scroll
+                        pState = 3;
+                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(false);
+                        return true;
+                    }
+                }
+                if (pState == 2) {
+                    int off = offsetAt(e.getX(), e.getY());
+                    int lo = Math.min(pLo, off);
+                    int hi = Math.max(pHi, off);
+                    if (lo != pLo || hi != pHi) {
+                        pLo = lo;
+                        pHi = hi;
+                        paintL.onStroke(pLo, pHi);
+                    }
+                }
+                return true;
+            case MotionEvent.ACTION_UP:
+                if (pState == 1) paintL.onTap(pStart);
+                if (pState == 2) paintL.onEnd();
+                pState = 0;
+                return true;
+            case MotionEvent.ACTION_CANCEL:
+                if (pState == 2) paintL.onEnd();
+                pState = 0;
+                return true;
+            default:
+                return true;
+        }
+    }
+
     private int checkTouch = -1; // line start of the to-do circle the finger went down on, else -1
 
     /** Line start of the to-do circle under (x, y), or -1. Only the circle plus a thumb's margin counts. */
@@ -200,7 +284,8 @@ final class RichEditText extends EditText {
         if (off > ls + 1 || RichText.prefixAt(t, ls) < RichText.P_CHECK_OFF) return -1;
         float edge = getTotalPaddingLeft() + getLayout().getPrimaryHorizontal(ls + 1)
                 + 10 * getResources().getDisplayMetrics().density;
-        return x <= edge ? ls : -1;
+        float from = getTotalPaddingLeft() + getLayout().getPrimaryHorizontal(ls) - 12 * getResources().getDisplayMetrics().density;
+        return x <= edge && x >= from ? ls : -1;
     }
 
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
@@ -217,6 +302,7 @@ final class RichEditText extends EditText {
                     || e.getActionMasked() == MotionEvent.ACTION_CANCEL) zooming = false;
             return true;
         }
+        if (paintL != null) return paintTouch(e);
         // A touch that starts on a to-do circle is ours alone: it ticks the box without focusing the
         // field, moving the cursor or raising the keyboard.
         if (checkListener != null) {

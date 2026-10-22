@@ -186,7 +186,7 @@ public class SettingsActivity extends Activity {
         final int units = HabitEditor.units(this).size();
         final String[] layoutNames = {"Current", "Two sections", "Switch", "", "Routine strip", "Routine dock"};
         Object[][] tiles = {
-                {IconView.PLAN, "Main screen", layoutNames[Math.min(5, Prefs.mainLayout(this))], 5,
+                {IconView.SCREEN, "Main screen", layoutNames[Math.min(5, Prefs.mainLayout(this))], 5,
                         "main screen layout test sections switch routine strip dock repeating one-off"},
                 {IconView.NOTE, "Notebook", "Pin up to " + Prefs.maxPins(this), 6,
                         "notebook notes pin pinned limit top"},

@@ -34,6 +34,8 @@ final class IconView extends View {
     static final int SORT = 23;
     static final int FOLDER = 24;
     static final int MORE = 25;
+    static final int SCREEN = 26;
+    static final int FINGER = 27;
 
     private final int kind;
     private boolean on;
@@ -316,6 +318,34 @@ final class IconView extends View {
                 path.lineTo(cx + 3.2f * d, cy - 1 * d);
                 canvas.drawPath(path, paint);
                 break;
+            case SCREEN: // a phone: rounded body, a list of rows on the screen, a home bar
+                stroke(1.8f, Pal.ink);
+                rect.set(cx - 6.5f * d, cy - 10 * d, cx + 6.5f * d, cy + 10 * d);
+                canvas.drawRoundRect(rect, 3.2f * d, 3.2f * d, paint);
+                canvas.drawLine(cx - 3.2f * d, cy - 5.5f * d, cx + 3.2f * d, cy - 5.5f * d, paint);
+                canvas.drawLine(cx - 3.2f * d, cy - 1.5f * d, cx + 3.2f * d, cy - 1.5f * d, paint);
+                canvas.drawLine(cx - 3.2f * d, cy + 2.5f * d, cx + 0.6f * d, cy + 2.5f * d, paint);
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Pal.accent);
+                canvas.drawCircle(cx, cy + 7 * d, 1.1f * d, paint);
+                break;
+            case FINGER: { // a pointing hand, filled (tint) so it reads on a round button
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(tint != 0 ? tint : Pal.ink);
+                rect.set(cx - 3.2f * d, cy - 10.5f * d, cx + 1.2f * d, cy + 1.5f * d);   // raised finger
+                canvas.drawRoundRect(rect, 2.2f * d, 2.2f * d, paint);
+                rect.set(cx - 6.2f * d, cy - 1.2f * d, cx + 7.8f * d, cy + 9.6f * d);    // palm
+                canvas.drawRoundRect(rect, 3.6f * d, 3.6f * d, paint);
+                rect.set(cx - 9f * d, cy + 1.2f * d, cx - 4.4f * d, cy + 6.4f * d);      // thumb
+                canvas.drawRoundRect(rect, 2.3f * d, 2.3f * d, paint);
+                // knuckle gaps cut in the background colour so the curled fingers read
+                paint.setColor(on ? Pal.accent : Pal.raised);
+                paint.setStrokeWidth(1.1f * d);
+                paint.setStyle(Paint.Style.STROKE);
+                canvas.drawLine(cx + 1.8f * d, cy - 0.8f * d, cx + 1.8f * d, cy + 3.4f * d, paint);
+                canvas.drawLine(cx + 4.8f * d, cy - 0.8f * d, cx + 4.8f * d, cy + 3.4f * d, paint);
+                break;
+            }
             case SWIPE_DONE: // plain white tick, shown behind a row while swiping it right
                 drawTick(canvas, cx, cy, 1.6f, tint != 0 ? tint : Color.WHITE, 2.2f);
                 break;
