@@ -1124,7 +1124,10 @@ public class MainActivity extends Activity {
         form.addView(quickScroll, new LinearLayout.LayoutParams(-1, -2));
 
         // Same swipe dials as the lock-screen snooze: "In" (amount + unit) or "At" (day, hour, minute).
-        form.addView(dial, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams dialLp = new LinearLayout.LayoutParams(-1, -2);
+        dialLp.topMargin = dp(14);   // air between the WHEN buttons and the In / At tabs
+        dialLp.bottomMargin = dp(6);
+        form.addView(dial, dialLp);
         dial.setOnChange(() -> {
             selSpec[0] = "";
             due[0] = dial.selectedTime();
@@ -1403,10 +1406,13 @@ public class MainActivity extends Activity {
         form.addView(extras, new LinearLayout.LayoutParams(-1, -2));
         form.addView(pickBtn, pickLp);
         form.addView(sndExtras, new LinearLayout.LayoutParams(-1, -2));
-        if (existing != null) { // quiet link at the end of the form
+        final TextView[] dupRef = new TextView[1];
+        if (existing != null) { // quiet link, pinned bottom-left above Cancel / Save (see below)
             TextView dup = text("Duplicate task", 15, Pal.accent, true);
-            dup.setGravity(Gravity.CENTER);
-            dup.setMinHeight(dp(48));
+            dup.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+            dup.setMinHeight(dp(44));
+            dup.setPadding(dp(24), 0, dp(24), 0);
+            dupRef[0] = dup;
             dup.setOnClickListener(v -> {
                 long copy = db.duplicate(existing.id);
                 if (copy > 0) {
@@ -1417,9 +1423,6 @@ public class MainActivity extends Activity {
                 }
                 dlgRef[0].dismiss();
             });
-            LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-1, -2);
-            dl.topMargin = dp(8);
-            form.addView(dup, dl);
         }
 
         upd[0] = () -> {
@@ -1484,6 +1487,13 @@ public class MainActivity extends Activity {
             negB.setLayoutParams(nl);
             posB.setLayoutParams(new LinearLayout.LayoutParams(0, dp(48), 2f));
             bar.setPadding(dp(24), dp(10), dp(24), dp(16));
+            if (dupRef[0] != null && bar.getParent() instanceof LinearLayout) {
+                LinearLayout panel = (LinearLayout) bar.getParent();
+                panel.addView(dupRef[0], panel.indexOfChild(bar), new LinearLayout.LayoutParams(-2, -2));
+            }
+        }
+        if (dupRef[0] != null && dupRef[0].getParent() == null) { // fallback: end of the form
+            form.addView(dupRef[0], new LinearLayout.LayoutParams(-2, -2));
         }
         input.requestFocus();
 
@@ -1565,17 +1575,31 @@ public class MainActivity extends Activity {
             et.setImeOptions(EditorInfo.IME_ACTION_NEXT);
             et.setText(text);
             Links.pillWatch(et, Pal.accent);
-            et.setOnClickListener(v -> { // first tap must open the keyboard, not just focus the row
+            // One tap must open the keyboard: the first touch only moves focus, and the IME can ignore
+            // an implicit show, so ask for it explicitly on focus, on touch-up and on click.
+            final Runnable showKb = () -> {
                 et.requestFocus();
-                et.post(() -> MainActivity.this.getSystemService(InputMethodManager.class)
-                        .showSoftInput(et, InputMethodManager.SHOW_IMPLICIT));
+                MainActivity.this.getSystemService(InputMethodManager.class).showSoftInput(et, 0);
+            };
+            et.setOnClickListener(v -> et.post(showKb));
+            final boolean[] touched = {false}; // only a finger opens the keyboard, never auto-focus
+            et.setOnTouchListener((v, ev) -> {
+                if (ev.getAction() == android.view.MotionEvent.ACTION_DOWN) touched[0] = true;
+                if (ev.getAction() == android.view.MotionEvent.ACTION_UP) v.postDelayed(showKb, 60);
+                return false;
             });
             et.setBackground(null);
             et.setTextColor(Pal.ink);
             et.setHintTextColor(Pal.muted);
             et.setPadding(0, dp(10), 0, dp(10));
             et.setOnFocusChangeListener((v, has) -> {
-                if (has) card.setStroke(dp(2), Pal.accent); else card.setStroke(0, 0);
+                if (has) {
+                    card.setStroke(dp(2), Pal.accent);
+                    if (touched[0]) v.postDelayed(showKb, 60);
+                } else {
+                    card.setStroke(0, 0);
+                    touched[0] = false;
+                }
             });
             view.addView(et, new LinearLayout.LayoutParams(0, -2, 1f));
 

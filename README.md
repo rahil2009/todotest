@@ -221,3 +221,10 @@ Everything the in-page design edits had changed, now in the app:
 - **Checklist previews** use round ticks (ring, or filled circle with a tick and struck-through text); the other previews show ○ / ● instead of square ☐ / ☑.
 - **Hold-the-pin colour picker** is a sheet at the bottom; "Follow Settings" and "Cancel" share one line.
 - **New task / reminder dialog:** Alert type is one control (Full alert = rings like an alarm and shows over the lock screen and while unlocked, Normal alert, Silence) instead of two toggles; "Pick time…" is its own button just above Sound & volume (the time row stays one scrollable line); the chosen priority fills its whole pill with the priority colour, no dots.
+
+## v3.32 fixes
+- Theme: Light / Dark / AMOLED now ignore the phone's automatic force-dark (`forceDarkAllowed=false` in all three themes), so picking Light on a dark phone really is light.
+- Subtasks: one tap opens the keyboard (it is requested explicitly on touch and focus).
+- Duplicate task: pinned bottom-left, just above Cancel / Save task, outside the scrolling form.
+- Pick time: more air between the WHEN buttons and the In / At tabs.
+- Notes: New folder colours are two rows of four full round dots with a COLOUR label; the search button has an accent ring and a soft shadow; tapping a to-do circle ticks it without focusing the note or raising the keyboard.

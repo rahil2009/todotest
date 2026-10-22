@@ -8,6 +8,7 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:colorAccent">#0B6B5D</item>
         <item name="android:fontFamily">@font/figtree</item>
+        <item name="android:forceDarkAllowed">false</item>
     </style>
     <!-- Dark mode: used when the phone is in dark mode or Settings > Appearance > Dark is chosen. -->
     <style name="AppThemeDark" parent="android:Theme.Material.NoActionBar">
@@ -17,6 +18,7 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:colorAccent">#6FCDBD</item>
         <item name="android:fontFamily">@font/figtree</item>
+        <item name="android:forceDarkAllowed">false</item>
         <item name="android:colorBackgroundFloating">#252C2A</item>
     </style>
     <!-- AMOLED: pure black backgrounds. -->
@@ -27,6 +29,7 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:colorAccent">#6FCDBD</item>
         <item name="android:fontFamily">@font/figtree</item>
+        <item name="android:forceDarkAllowed">false</item>
         <item name="android:colorBackgroundFloating">#1A1E1C</item>
     </style>
 </resources>

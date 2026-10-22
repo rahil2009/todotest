@@ -241,7 +241,10 @@ public class NotesActivity extends Activity {
         GradientDrawable sg = new GradientDrawable();
         sg.setShape(GradientDrawable.OVAL);
         sg.setColor(Pal.card);
+        sg.setStroke(dp(2), Pal.accent); // a clear ring so it never blends into the notes behind it
         searchBtn.setBackground(sg);
+        searchBtn.setTint(Pal.accent);
+        searchBtn.setElevation(dp(6));
         searchBtn.setOnClickListener(v -> {
             Hap.tick(v);
             toggleSearch();
@@ -380,23 +383,38 @@ public class NotesActivity extends Activity {
                 dots[i].setBackground(g);
             }
         };
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(14), 0, dp(4));
-        for (int i = 0; i < dots.length; i++) {
-            final int idx = i;
-            dots[i] = new View(this);
-            dots[i].setContentDescription(Folder.COLOR_NAMES[i]);
-            dots[i].setOnClickListener(v -> {
-                Hap.tick(v);
-                sel[0] = idx;
-                paint.run();
-            });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(34), 1f);
-            lp.setMargins(dp(3), 0, dp(3), 0);
-            row.addView(dots[i], lp);
+        // Two rows of four round dots, each a full 44dp circle, so none gets squeezed.
+        TextView colLabel = new TextView(this);
+        colLabel.setText("COLOUR");
+        colLabel.setTextSize(12);
+        colLabel.setTypeface(Typeface.DEFAULT_BOLD);
+        colLabel.setLetterSpacing(0.08f);
+        colLabel.setTextColor(Pal.muted);
+        colLabel.setPadding(0, dp(16), 0, dp(4));
+        box.addView(colLabel);
+        LinearLayout grid = new LinearLayout(this);
+        grid.setOrientation(LinearLayout.VERTICAL);
+        int per = 4;
+        for (int r = 0; r * per < dots.length; r++) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER);
+            for (int i = r * per; i < Math.min(dots.length, (r + 1) * per); i++) {
+                final int idx = i;
+                dots[i] = new View(this);
+                dots[i].setContentDescription(Folder.COLOR_NAMES[i]);
+                dots[i].setOnClickListener(v -> {
+                    Hap.tick(v);
+                    sel[0] = idx;
+                    paint.run();
+                });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(44), dp(44));
+                lp.setMargins(dp(10), dp(6), dp(10), dp(6));
+                row.addView(dots[i], lp);
+            }
+            grid.addView(row, new LinearLayout.LayoutParams(-1, -2));
         }
-        box.addView(row);
+        box.addView(grid, new LinearLayout.LayoutParams(-1, -2));
         paint.run();
         new Dlg.Builder(this)
                 .setTitle(existing == null ? "New folder" : "Edit folder")

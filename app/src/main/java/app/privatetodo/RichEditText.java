@@ -189,6 +189,20 @@ final class RichEditText extends EditText {
         checkListener = l;
     }
 
+    private int checkTouch = -1; // line start of the to-do circle the finger went down on, else -1
+
+    /** Line start of the to-do circle under (x, y), or -1. Only the circle plus a thumb's margin counts. */
+    private int checkLineAt(float x, float y) {
+        if (getLayout() == null) return -1;
+        int off = getOffsetForPosition(x, y);
+        CharSequence t = getText();
+        int ls = RichText.lineStart(t, off);
+        if (off > ls + 1 || RichText.prefixAt(t, ls) < RichText.P_CHECK_OFF) return -1;
+        float edge = getTotalPaddingLeft() + getLayout().getPrimaryHorizontal(ls + 1)
+                + 10 * getResources().getDisplayMetrics().density;
+        return x <= edge ? ls : -1;
+    }
+
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
@@ -202,6 +216,30 @@ final class RichEditText extends EditText {
             if (e.getActionMasked() == MotionEvent.ACTION_UP
                     || e.getActionMasked() == MotionEvent.ACTION_CANCEL) zooming = false;
             return true;
+        }
+        // A touch that starts on a to-do circle is ours alone: it ticks the box without focusing the
+        // field, moving the cursor or raising the keyboard.
+        if (checkListener != null) {
+            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                downX = e.getX();
+                downY = e.getY();
+                checkTouch = checkLineAt(e.getX(), e.getY());
+                if (checkTouch >= 0) return true;
+            } else if (checkTouch != -1) { // -2 = the finger moved off: a scroll, not a tap
+                int act = e.getActionMasked();
+                int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(e.getX() - downX) >= slop || Math.abs(e.getY() - downY) >= slop) {
+                    checkTouch = -2;
+                }
+                if (act == MotionEvent.ACTION_UP) {
+                    int ls = checkTouch;
+                    checkTouch = -1;
+                    if (ls >= 0) checkListener.onCheckTap(ls);
+                } else if (act == MotionEvent.ACTION_CANCEL) {
+                    checkTouch = -1;
+                }
+                return true;
+            }
         }
         boolean handled = super.onTouchEvent(e);
         if (e.getActionMasked() == MotionEvent.ACTION_UP && getLayout() != null
