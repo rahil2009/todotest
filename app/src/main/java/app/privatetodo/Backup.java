@@ -11,7 +11,7 @@ import org.json.JSONObject;
 
 /** Export / import of everything: tasks, subtasks, repeat ticks, notes, habits, Pomodoro stats and every setting, as one JSON file you choose where to keep. */
 final class Backup {
-    private static final String[] TABLES = {"tasks", "subtasks", "notes", "occ_done", "folders"};
+    private static final String[] TABLES = {"tasks", "subtasks", "notes", "occ_done", "folders", "shared"};
 
     private Backup() {
     }

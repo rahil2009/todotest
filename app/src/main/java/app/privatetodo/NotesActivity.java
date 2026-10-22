@@ -23,6 +23,7 @@ import android.widget.ScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -296,6 +297,22 @@ public class NotesActivity extends Activity {
     /** The folder chips under the title: one per folder, then "+ Folder". */
     private void buildChips(List<Folder> folders) {
         chips.removeAllViews();
+        // Shared notes: links sent here from other apps, always the first chip
+        LinearLayout shared = chip();
+        TextView link = text("\uD83D\uDD17", 15, Pal.ink, false);
+        link.setPadding(0, 0, dp(2), 0);
+        shared.addView(link);
+        TextView sname = text("Shared notes", 14, Pal.ink, true);
+        sname.setPadding(dp(4), 0, 0, 0);
+        shared.addView(sname);
+        TextView scnt = text(String.valueOf(db.sharedCount()), 12, Pal.muted, false);
+        scnt.setPadding(dp(10), 0, 0, 0);
+        shared.addView(scnt);
+        shared.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, SharedActivity.class));
+        });
+        chips.addView(shared, chipLp());
         for (final Folder f : folders) {
             LinearLayout chip = chip();
             IconView ic = new IconView(this, IconView.FOLDER);
@@ -336,6 +353,25 @@ public class NotesActivity extends Activity {
             folderDialog(null, null);
         });
         chips.addView(add, chipLp());
+        // The Bin: deleted notes wait here for 30 days
+        LinearLayout bin = chip();
+        IconView bi = new IconView(this, IconView.TRASH);
+        bi.setClickable(false);
+        bin.addView(bi, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        TextView bname = text("Bin", 14, Pal.ink, true);
+        bname.setPadding(dp(4), 0, 0, 0);
+        bin.addView(bname);
+        int bc = db.binCount();
+        if (bc > 0) {
+            TextView bcnt = text(String.valueOf(bc), 12, Pal.muted, false);
+            bcnt.setPadding(dp(10), 0, 0, 0);
+            bin.addView(bcnt);
+        }
+        bin.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, BinActivity.class));
+        });
+        chips.addView(bin, chipLp());
     }
 
     private LinearLayout chip() {
@@ -646,10 +682,12 @@ public class NotesActivity extends Activity {
 
     private void confirmDelete(final Note n) {
         new Dlg.Builder(this)
-                .setTitle("Delete note?")
-                .setMessage(n.title.isEmpty() ? "Untitled" : n.title)
-                .setPositiveButton("Delete", (d, w) -> {
-                    db.deleteNote(n.id);
+                .setTitle("Move note to the Bin?")
+                .setMessage((n.title.isEmpty() ? "Untitled" : n.title)
+                        + "\n\nIt stays in the Bin for " + TaskDb.BIN_DAYS + " days, so you can bring it back.")
+                .setPositiveButton("Move to Bin", (d, w) -> {
+                    db.trashNote(n.id);
+                    Toast.makeText(this, "Moved to Bin", Toast.LENGTH_SHORT).show();
                     refresh();
                 })
                 .setNegativeButton("Cancel", null)
@@ -961,7 +999,7 @@ public class NotesActivity extends Activity {
         }
         names.add("Move to folder…");
         acts.add(() -> moveDialog(n));
-        names.add("Delete");
+        names.add("Move to Bin");
         acts.add(() -> confirmDelete(n));
         new Dlg.Builder(this)
                 .setTitle(n.title.isEmpty() ? "Untitled" : n.title)

@@ -245,18 +245,19 @@ public class NoteEditorActivity extends Activity {
                 afterEdit(e);
             }
         });
-        body.setCheckTapListener(ls -> {
+        body.setCheckTapListener(ls -> keepScroll(() -> {
             commitNow();
             busy = true;
             RichText.flipCheck(body.getText(), ls);
             busy = false;
             changed();
-        });
+        }));
         body.setSelectionListener((s, e) -> {
             if (!typing && !busy && !(s == e && s == expectCursor)) pending.clear();
             refreshToolbar();
         });
         ScrollView scroll = new ScrollView(this);
+        noteScroll = scroll;
         scroll.setFillViewport(true);
         scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
         FrameLayout area = new FrameLayout(this);
@@ -895,7 +896,28 @@ public class NoteEditorActivity extends Activity {
                 || key == RichText.FG || key == CLEAR_KEY;
     }
 
-    private void onTool(int key) {
+    private ScrollView noteScroll;
+
+    /** Runs a note edit and puts the page back where it was: the editor otherwise jumps to the cursor after every tick or toolbar change. */
+    private void keepScroll(Runnable edit) {
+        final ScrollView sv = noteScroll;
+        if (sv == null) {
+            edit.run();
+            return;
+        }
+        final int y = sv.getScrollY();
+        edit.run();
+        sv.scrollTo(0, y);
+        sv.post(() -> sv.scrollTo(0, y));
+        sv.postDelayed(() -> sv.scrollTo(0, y), 90);
+        sv.postDelayed(() -> sv.scrollTo(0, y), 220);
+    }
+
+    private void onTool(final int key) {
+        keepScroll(() -> onToolImpl(key));
+    }
+
+    private void onToolImpl(int key) {
         commitNow();
         if (paintMode && isBrush(key)) { // finger mode: the button picks the brush instead of applying
             selectBrush(key == brush && key != RichText.HILITE && key != RichText.FG ? NO_BRUSH : key);
@@ -979,7 +1001,11 @@ public class NoteEditorActivity extends Activity {
     }
 
     /** Moves the touched list lines one nesting level in (+1) or out (-1). */
-    private void nest(int delta) {
+    private void nest(final int delta) {
+        keepScroll(() -> nestImpl(delta));
+    }
+
+    private void nestImpl(int delta) {
         Editable e = body.getText();
         int s = selStart();
         int en = selEnd();
@@ -1014,7 +1040,11 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
-    private void textColor(int color) {
+    private void textColor(final int color) {
+        keepScroll(() -> textColorImpl(color));
+    }
+
+    private void textColorImpl(int color) {
         commitNow();
         if (paintMode) {
             brushFg = color;
@@ -1156,7 +1186,11 @@ public class NoteEditorActivity extends Activity {
         commitNow();
     }
 
-    private void highlight(int color) {
+    private void highlight(final int color) {
+        keepScroll(() -> highlightImpl(color));
+    }
+
+    private void highlightImpl(int color) {
         commitNow();
         if (paintMode) {
             brushHl = color;
@@ -1427,10 +1461,10 @@ public class NoteEditorActivity extends Activity {
 
     private void confirmDelete() {
         new Dlg.Builder(this)
-                .setTitle("Delete this note?")
-                .setMessage("This permanently deletes it from this device.")
-                .setPositiveButton("Delete", (d, w) -> {
-                    if (noteId > 0) db.deleteNote(noteId);
+                .setTitle("Move this note to the Bin?")
+                .setMessage("It stays in the Bin for " + TaskDb.BIN_DAYS + " days, so you can bring it back.")
+                .setPositiveButton("Move to Bin", (d, w) -> {
+                    if (noteId > 0) db.trashNote(noteId);
                     deleted = true;
                     finish();
                 })

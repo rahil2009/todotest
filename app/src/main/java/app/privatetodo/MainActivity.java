@@ -129,7 +129,15 @@ public class MainActivity extends Activity {
     }
 
     /** The widgets' "+" opens the app with the keyboard up, ready to type a task. */
+    static final String EXTRA_PREFILL = "prefill";
+
     private void handleWidgetIntent(Intent intent) {
+        if (intent != null && intent.hasExtra(EXTRA_PREFILL)) { // "Remind me" on a shared link
+            final String pre = intent.getStringExtra(EXTRA_PREFILL);
+            intent.removeExtra(EXTRA_PREFILL);
+            pillInput.post(() -> editDialog(null, pre));
+            return;
+        }
         if (intent == null || !intent.getBooleanExtra(TaskWidget.EXTRA_ADD, false)) return;
         intent.removeExtra(TaskWidget.EXTRA_ADD);
         pillInput.postDelayed(() -> {
@@ -1481,14 +1489,15 @@ public class MainActivity extends Activity {
         // Cancel + Save task fill the width (1 : 2), lined up with the form's edges
         android.widget.Button negB = dialog.getButton(AlertDialog.BUTTON_NEGATIVE);
         android.widget.Button posB = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
-        if (posB.getParent() instanceof LinearLayout && ((LinearLayout) posB.getParent()).getParent() instanceof LinearLayout) {
-            // Our own button row (Duplicate | Cancel | Save task) replaces the stock bar, so the
-            // three always sit on one line and never stack.
-            LinearLayout bar = (LinearLayout) posB.getParent();
-            LinearLayout panel = (LinearLayout) bar.getParent();
+        if (posB.getParent() instanceof android.view.ViewGroup
+                && ((android.view.ViewGroup) posB.getParent()).getParent() instanceof android.view.ViewGroup) {
+            // Our own button row (Duplicate | Cancel | Save task) takes the place of the stock bar, so the
+            // three always sit on one line. The bar's holder may be a LinearLayout or a ScrollView
+            // depending on the Android version, so the swap works for any ViewGroup.
+            android.view.ViewGroup bar = (android.view.ViewGroup) posB.getParent();
+            android.view.ViewGroup host = (android.view.ViewGroup) bar.getParent();
             bar.removeView(negB);
             bar.removeView(posB);
-            bar.setVisibility(View.GONE);
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setPadding(dp(24), dp(10), dp(24), dp(16));
@@ -1502,7 +1511,10 @@ public class MainActivity extends Activity {
             nl.rightMargin = dp(hasDup ? 8 : 10);
             row.addView(negB, nl);
             row.addView(posB, new LinearLayout.LayoutParams(0, dp(48), hasDup ? 1.5f : 2f));
-            panel.addView(row, panel.indexOfChild(bar) + 1);
+            int at = host.indexOfChild(bar);
+            android.view.ViewGroup.LayoutParams blp = bar.getLayoutParams();
+            host.removeViewAt(at);
+            host.addView(row, at, new android.view.ViewGroup.LayoutParams(-1, -2));
             Fonts.apply(row);
         }
         if (dupRef[0] != null && dupRef[0].getParent() == null) { // fallback: end of the form
@@ -1791,7 +1803,7 @@ public class MainActivity extends Activity {
                 return;
             }
             boolean nowDone = Reminders.toggleDay(this, db, t, day);
-            Hap.confirm(listView);
+            if (nowDone) Hap.complete(listView); else Hap.confirm(listView);
             refresh();
             if (nowDone) {
                 showUndo("Done \u00B7 moved to Repeat", () -> {
@@ -1802,7 +1814,7 @@ public class MainActivity extends Activity {
             return;
         }
         setDoneAndSchedule(t.id, !t.done);
-        Hap.confirm(listView);
+        if (!t.done) Hap.complete(listView); else Hap.confirm(listView);
         refresh();
         if (!t.done) {
             showUndo("Task completed", () -> {
@@ -2188,6 +2200,8 @@ public class MainActivity extends Activity {
         private final LinearLayout subsBox;
         private final IconView delete;
         private final LinearLayout card;
+        private int fxStyle = -1;
+        private int fxColor;
         private final FrameLayout reveal;
         private final GradientDrawable revealBg = new GradientDrawable();
         private final IconView revealTick;
@@ -2387,6 +2401,15 @@ public class MainActivity extends Activity {
                 prioBar.setVisibility(View.GONE);
             }
 
+            int fxSlot = Fx.slotFor(t.done ? 0 : t.priority);
+            int fxSt = t.done ? 0 : Fx.style(card.getContext(), fxSlot);
+            int fxCol = Fx.colorFor(fxSlot);
+            if (fxSt != fxStyle || fxCol != fxColor) { // task animation chosen in Settings > Animations
+                fxStyle = fxSt;
+                fxColor = fxCol;
+                card.setForeground(Fx.make(card.getContext(), fxSt, fxCol));
+            }
+
             String line = subLine(t);
             if (line == null) {
                 sub.setVisibility(View.GONE);
@@ -2469,12 +2492,12 @@ public class MainActivity extends Activity {
                             toast(Reminders.earlyMessage(MainActivity.this, t));
                         } else {
                             Reminders.toggleDay(MainActivity.this, db, t, startOfDayOf(t.due));
-                            Hap.confirm(v);
+                            Hap.complete(v);
                             toast("All subtasks done \u00B7 moved to Repeat");
                         }
                     } else if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
                         setDoneAndSchedule(t.id, true); // moves to Done, subtasks stay ticked
-                        Hap.confirm(v);
+                        Hap.complete(v);
                         toast("All subtasks done \u00B7 task completed");
                     } else if (!nowDone && t.done) { // un-ticking one re-opens the task
                         setDoneAndSchedule(t.id, false);

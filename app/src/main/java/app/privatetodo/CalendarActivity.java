@@ -302,7 +302,7 @@ public class CalendarActivity extends Activity {
                 android.widget.Toast.makeText(this, Reminders.earlyMessage(this, t), android.widget.Toast.LENGTH_SHORT).show();
                 return; // a future round cannot be ticked early
             }
-            Hap.confirm(v);
+            if (t.done) Hap.confirm(v); else Hap.complete(v);
             Reminders.toggleDay(this, db, t, startOfDay(t.due));
             render();
         });

@@ -236,3 +236,14 @@ Everything the in-page design edits had changed, now in the app:
 - "Tx" button: back to standard text (clears bold, italic, underline, strike, colour, highlight, code, size on the selection).
 - Finger mode: the pointing-hand button floats at the bottom right of a note. Turn it on, pick a style in the toolbar (bold, italic, underline, strike, code, highlight, text colour, or Tx for standard), then swipe sideways over the text and it applies at once. Swiping over text that already has the style removes it. A tap paints one word; swiping up / down still scrolls. Tap the hand again to switch it off.
 - Settings: "Main screen" now has a phone icon instead of the calendar.
+
+## v3.33b
+- Edit task: Duplicate, Cancel and Save task now share one row on every Android version (the stock button bar sits in a scroll holder on some phones; the swap now handles that, so Duplicate no longer falls back to the bottom of the form).
+
+## v3.34
+
+- **Task animations** (Settings > Task animations): 20 styles plus None, set separately for Normal, Low, Medium and High tasks. Every sample on the page plays live; tap one to use it. Drawn as a card foreground (`Fx.java`), only while on screen, never on finished tasks.
+- **Done haptics** (Settings > Done haptics): Off, Standard and 15 Pixel-style patterns built from the phone's vibration primitives (`Hap.java`), with a simpler timed fallback on phones without them. Tap a pattern to feel it and use it. Plays when a task, a repeating round, or the last subtask completes.
+- **Notes Bin**: deleting a note moves it to the Bin (last chip in Notes). Restore or Delete forever, Empty Bin; notes leave the Bin by themselves after 30 days. DB v13 adds `notes.deleted`.
+- **Scroll jump fixed**: ticking a to-do, and the toolbar buttons (style, highlight, text colour, indent), keep the page where it was.
+- **Share to the app**: Private Todo appears in Android's Share menu for text/links. A share is saved at once to Notes > Shared notes (date and time, link, editable title and description, Remind me, Open, Copy, Delete). Remind me opens the Add task popup with the title and link filled in. No network access is used: nothing is fetched from the link.

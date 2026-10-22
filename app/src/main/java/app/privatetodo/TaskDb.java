@@ -28,7 +28,7 @@ final class TaskDb extends SQLiteOpenHelper {
     private final Context appCtx;
 
     TaskDb(Context context) {
-        super(context, "tasks.db", null, 12);
+        super(context, "tasks.db", null, 13);
         appCtx = context.getApplicationContext();
     }
 
@@ -56,6 +56,7 @@ final class TaskDb extends SQLiteOpenHelper {
         createSubtasks(db);
         createNotes(db);
         createFolders(db);
+        createShared(db);
         createOcc(db);
     }
 
@@ -98,6 +99,10 @@ final class TaskDb extends SQLiteOpenHelper {
         if (oldVersion < 12) { // notebook folders
             createFolders(db);
             addColumn(db, "ALTER TABLE notes ADD COLUMN folder INTEGER NOT NULL DEFAULT 0");
+        }
+        if (oldVersion < 13) { // notes Bin (time deleted, 0 = live) and links shared into the app
+            addColumn(db, "ALTER TABLE notes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
+            createShared(db);
         }
     }
 
@@ -165,7 +170,17 @@ final class TaskDb extends SQLiteOpenHelper {
                 + "updated INTEGER NOT NULL DEFAULT 0,"
                 + "pinned INTEGER NOT NULL DEFAULT 0,"
                 + "pincolor INTEGER NOT NULL DEFAULT -1,"
-                + "folder INTEGER NOT NULL DEFAULT 0)");
+                + "folder INTEGER NOT NULL DEFAULT 0,"
+                + "deleted INTEGER NOT NULL DEFAULT 0)");
+    }
+
+    private static void createShared(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS shared ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "created INTEGER NOT NULL DEFAULT 0,"
+                + "url TEXT NOT NULL DEFAULT '',"
+                + "title TEXT NOT NULL DEFAULT '',"
+                + "description TEXT NOT NULL DEFAULT '')");
     }
 
     private static void createFolders(SQLiteDatabase db) {
@@ -562,20 +577,19 @@ final class TaskDb extends SQLiteOpenHelper {
             default:
                 order = "updated DESC, id DESC";
         }
-        StringBuilder wh = new StringBuilder();
+        StringBuilder wh = new StringBuilder("deleted = 0");
         java.util.ArrayList<String> al = new java.util.ArrayList<>();
         if (query != null && !query.isEmpty()) {
-            wh.append("(title LIKE ? OR plain LIKE ?)");
+            wh.append(" AND (title LIKE ? OR plain LIKE ?)");
             String like = "%" + query + "%";
             al.add(like);
             al.add(like);
         }
         if (folder >= 0) {
-            if (wh.length() > 0) wh.append(" AND ");
-            wh.append("folder = ?");
+            wh.append(" AND folder = ?");
             al.add(String.valueOf(folder));
         }
-        String where = wh.length() == 0 ? null : wh.toString();
+        String where = wh.toString();
         String[] args = al.isEmpty() ? null : al.toArray(new String[0]);
         List<Note> out = new ArrayList<>();
         Cursor c = getReadableDatabase().query("notes", NOTE_COLS, where, args, null, null,
@@ -612,7 +626,7 @@ final class TaskDb extends SQLiteOpenHelper {
     }
 
     int pinnedCount() {
-        Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM notes WHERE pinned > 0", null);
+        Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM notes WHERE pinned > 0 AND deleted = 0", null);
         try {
             return c.moveToFirst() ? c.getInt(0) : 0;
         } finally {
@@ -642,7 +656,7 @@ final class TaskDb extends SQLiteOpenHelper {
     List<Folder> folders() {
         List<Folder> out = new ArrayList<>();
         Cursor c = getReadableDatabase().rawQuery(
-                "SELECT f.id, f.name, f.color, (SELECT COUNT(*) FROM notes n WHERE n.folder = f.id) "
+                "SELECT f.id, f.name, f.color, (SELECT COUNT(*) FROM notes n WHERE n.folder = f.id AND n.deleted = 0) "
                         + "FROM folders f ORDER BY f.id", null);
         try {
             while (c.moveToNext()) out.add(new Folder(c.getLong(0), c.getString(1), c.getInt(2), c.getInt(3)));
@@ -690,8 +704,137 @@ final class TaskDb extends SQLiteOpenHelper {
         getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(noteId)});
     }
 
+    /** Deletes a note for good (used for empty notes and from the Bin). */
     void deleteNote(long id) {
         changed();
         getWritableDatabase().delete("notes", "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    // ------------------------------------------------------------ notes Bin
+
+    /** Days a deleted note stays in the Bin before it is removed for good. */
+    static final int BIN_DAYS = 30;
+
+    /** Moves a note to the Bin (unpinned, kept 30 days). */
+    void trashNote(long id) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("deleted", System.currentTimeMillis());
+        v.put("pinned", 0);
+        getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    void restoreNote(long id) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("deleted", 0);
+        getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    /** Notes in the Bin, most recently deleted first. Their {@code updated} is when they were last edited. */
+    List<Note> binNotes() {
+        purgeOldBin();
+        List<Note> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("notes", NOTE_COLS, "deleted > 0", null, null, null,
+                "deleted DESC, id DESC");
+        try {
+            while (c.moveToNext()) out.add(mapNote(c));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    /** When a Bin note was deleted (ms), or 0. */
+    long deletedAt(long id) {
+        Cursor c = getReadableDatabase().query("notes", new String[]{"deleted"}, "id = ?",
+                new String[]{String.valueOf(id)}, null, null, null);
+        try {
+            return c.moveToFirst() ? c.getLong(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    int binCount() {
+        Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM notes WHERE deleted > 0", null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    void emptyBin() {
+        changed();
+        getWritableDatabase().delete("notes", "deleted > 0", null);
+    }
+
+    private void purgeOldBin() {
+        long cutoff = System.currentTimeMillis() - BIN_DAYS * 24L * 60 * 60 * 1000;
+        getWritableDatabase().delete("notes", "deleted > 0 AND deleted < ?", new String[]{String.valueOf(cutoff)});
+    }
+
+    // ------------------------------------------------------ shared links
+
+    /** One link sent to the app from another app's Share menu. */
+    static final class Shared {
+        final long id;
+        final long created;
+        final String url;
+        final String title;
+        final String description;
+
+        Shared(long id, long created, String url, String title, String description) {
+            this.id = id;
+            this.created = created;
+            this.url = url;
+            this.title = title;
+            this.description = description;
+        }
+    }
+
+    long addShared(String url, String title, String description) {
+        ContentValues v = new ContentValues();
+        v.put("created", System.currentTimeMillis());
+        v.put("url", url);
+        v.put("title", title);
+        v.put("description", description);
+        return getWritableDatabase().insert("shared", null, v);
+    }
+
+    void updateShared(long id, String title, String description) {
+        ContentValues v = new ContentValues();
+        v.put("title", title);
+        v.put("description", description);
+        getWritableDatabase().update("shared", v, "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    void deleteShared(long id) {
+        getWritableDatabase().delete("shared", "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    int sharedCount() {
+        Cursor c = getReadableDatabase().rawQuery("SELECT COUNT(*) FROM shared", null);
+        try {
+            return c.moveToFirst() ? c.getInt(0) : 0;
+        } finally {
+            c.close();
+        }
+    }
+
+    /** Newest first. */
+    List<Shared> shared() {
+        List<Shared> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("shared", new String[]{"id", "created", "url", "title", "description"},
+                null, null, null, null, "created DESC, id DESC");
+        try {
+            while (c.moveToNext()) {
+                out.add(new Shared(c.getLong(0), c.getLong(1), c.getString(2), c.getString(3), c.getString(4)));
+            }
+        } finally {
+            c.close();
+        }
+        return out;
     }
 }
