@@ -11,8 +11,10 @@ final class Note {
     final long pinned;
     /** This note's own pinned colour (a PinTint style), or -1 to follow Settings. */
     final int pinColor;
+    /** The folder it lives in (0 = none). */
+    final long folder;
 
-    Note(long id, String title, String body, String plain, long updated, long pinned, int pinColor) {
+    Note(long id, String title, String body, String plain, long updated, long pinned, int pinColor, long folder) {
         this.id = id;
         this.title = title;
         this.body = body;
@@ -20,5 +22,6 @@ final class Note {
         this.updated = updated;
         this.pinned = pinned;
         this.pinColor = pinColor;
+        this.folder = folder;
     }
 }

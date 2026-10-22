@@ -32,6 +32,8 @@ final class IconView extends View {
     static final int PIN = 21;
     static final int LOOKS = 22;
     static final int SORT = 23;
+    static final int FOLDER = 24;
+    static final int MORE = 25;
 
     private final int kind;
     private boolean on;
@@ -163,6 +165,37 @@ final class IconView extends View {
                 canvas.drawLine(cx + 5 * d, cy + 7 * d, cx + 5 * d, cy - 7 * d, paint);
                 canvas.drawLine(cx + 1.5f * d, cy - 3.5f * d, cx + 5 * d, cy - 7 * d, paint);
                 canvas.drawLine(cx + 5 * d, cy - 7 * d, cx + 8.5f * d, cy - 3.5f * d, paint);
+                break;
+            case FOLDER: { // folder outline; tint gives it a colour and `on` fills it
+                path.reset();
+                path.moveTo(cx - 9 * d, cy - 5 * d);
+                path.quadTo(cx - 9 * d, cy - 7 * d, cx - 7 * d, cy - 7 * d);
+                path.lineTo(cx - 3 * d, cy - 7 * d);
+                path.lineTo(cx - 1 * d, cy - 5 * d);
+                path.lineTo(cx + 7 * d, cy - 5 * d);
+                path.quadTo(cx + 9 * d, cy - 5 * d, cx + 9 * d, cy - 3 * d);
+                path.lineTo(cx + 9 * d, cy + 5 * d);
+                path.quadTo(cx + 9 * d, cy + 7 * d, cx + 7 * d, cy + 7 * d);
+                path.lineTo(cx - 7 * d, cy + 7 * d);
+                path.quadTo(cx - 9 * d, cy + 7 * d, cx - 9 * d, cy + 5 * d);
+                path.close();
+                int fc = tint != 0 ? tint : Pal.ink;
+                if (on) {
+                    paint.setStyle(Paint.Style.FILL);
+                    paint.setColor(fc);
+                    canvas.drawPath(path, paint);
+                }
+                stroke(2.1f, fc);
+                paint.setStrokeJoin(Paint.Join.ROUND);
+                canvas.drawPath(path, paint);
+                break;
+            }
+            case MORE: // three dots, stacked
+                paint.setStyle(Paint.Style.FILL);
+                paint.setColor(Pal.ink);
+                canvas.drawCircle(cx, cy - 7 * d, 1.7f * d, paint);
+                canvas.drawCircle(cx, cy, 1.7f * d, paint);
+                canvas.drawCircle(cx, cy + 7 * d, 1.7f * d, paint);
                 break;
             case PIN: { // thumbtack; filled when the note is pinned
                 path.reset();

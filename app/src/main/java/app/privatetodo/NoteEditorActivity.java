@@ -31,6 +31,8 @@ import java.util.Map;
  */
 public class NoteEditorActivity extends Activity {
     static final String EXTRA_ID = "note_id";
+    /** A new note starts inside this folder (0 = none). */
+    static final String EXTRA_FOLDER = "folder_id";
 
     private static final int BULLET_KEY = -1;
     private static final int SIZE_KEY = -9;
@@ -1059,7 +1061,12 @@ public class NoteEditorActivity extends Activity {
                 noteId = 0;
             }
         } else {
+            boolean fresh = noteId <= 0;
             noteId = db.saveNote(noteId, t, RichText.toJson(b), RichText.tablesPlain(b));
+            if (fresh && noteId > 0) {
+                long inFolder = getIntent().getLongExtra(EXTRA_FOLDER, 0);
+                if (inFolder > 0) db.setNoteFolder(noteId, inFolder);
+            }
             getIntent().putExtra(EXTRA_ID, noteId);
             dateLabel.setText("Edited " + Reminders.when(this, System.currentTimeMillis()));
         }

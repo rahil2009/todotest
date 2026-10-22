@@ -861,7 +861,8 @@ public class SettingsActivity extends Activity {
             while ((n = in.read(b)) > 0) buf.write(b, 0, n);
             int tasks = Backup.restore(this, new String(buf.toByteArray(), StandardCharsets.UTF_8));
             Toast.makeText(this, tasks < 0 ? "That is not a Private Todo backup"
-                    : "Imported " + tasks + " tasks and your notes", Toast.LENGTH_LONG).show();
+                    : "Imported " + tasks + " tasks, notes, habits and settings", Toast.LENGTH_LONG).show();
+            if (tasks >= 0) recreate(); // pick up the restored theme and settings
         } catch (Exception e) {
             Toast.makeText(this, "Could not read that file", Toast.LENGTH_LONG).show();
         }

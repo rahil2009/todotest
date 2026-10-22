@@ -209,3 +209,15 @@ Hold the pin on a note (or long-press a note and choose "Pinned colour…") to p
 
 ### 10 more gradients (v3.29)
 Ten more gradient pinned colours (25 styles in all): Peach, Mint, Lagoon, Candy, Citrus, Forest, Midnight, Ember, Lilac, Slate. Same places as before: Settings > Notebook, and hold a pin for a single note.
+
+### Backup now covers everything (v3.30)
+Export/import now also includes the repeating tasks' per-day ticks (`occ_done`) and every setting (theme, main-screen layout, note look and sort, pin limit and colours, smart dates, alert and sound choices, habit units, Pomodoro stats). Habits were already included. Old backups still import; they just have no settings in them, so settings stay as they are. Not included: sound files you picked from outside the app (the backup stores the choice, which may need re-picking on a new phone) and home-screen widget placements.
+
+### Brought in line with the design boards (v3.31)
+Everything the in-page design edits had changed, now in the app:
+- **Notebook folders.** Folder chips under the title (colour, name, count; long-press to rename, recolour or delete), "+ Folder", and a folder icon in the header. Tap a chip to open a folder: its notes, "Notebook › Health · 3 notes", a ⋮ menu, and "New note in Health". The main notebook lists notes that are in no folder; search looks through every note. Move a note with long-press > "Move to folder…". Deleting a folder never deletes notes. DB v12 (`folders` table, `notes.folder`), both included in backups.
+- **Search** is now a round button next to "New note" at the bottom (it opens the search box at the top); the permanent search bar is gone. "New note" stays on one line.
+- **Sort** opens as a card at the bottom of the screen (one-hand reach).
+- **Checklist previews** use round ticks (ring, or filled circle with a tick and struck-through text); the other previews show ○ / ● instead of square ☐ / ☑.
+- **Hold-the-pin colour picker** is a sheet at the bottom; "Follow Settings" and "Cancel" share one line.
+- **New task / reminder dialog:** Alert type is one control (Full alert = rings like an alarm and shows over the lock screen and while unlocked, Normal alert, Silence) instead of two toggles; "Pick time…" is its own button just above Sound & volume (the time row stays one scrollable line); the chosen priority fills its whole pill with the priority colour, no dots.

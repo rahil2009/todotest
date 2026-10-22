@@ -28,7 +28,7 @@ final class TaskDb extends SQLiteOpenHelper {
     private final Context appCtx;
 
     TaskDb(Context context) {
-        super(context, "tasks.db", null, 11);
+        super(context, "tasks.db", null, 12);
         appCtx = context.getApplicationContext();
     }
 
@@ -55,6 +55,7 @@ final class TaskDb extends SQLiteOpenHelper {
                 + "emoji TEXT NOT NULL DEFAULT '')");
         createSubtasks(db);
         createNotes(db);
+        createFolders(db);
         createOcc(db);
     }
 
@@ -89,10 +90,23 @@ final class TaskDb extends SQLiteOpenHelper {
             db.execSQL("UPDATE tasks SET done = 0 WHERE repeat_mode > 0 AND done = 1");
         }
         if (oldVersion < 10) { // pinned notes: the time it was pinned, 0 = not pinned
-            db.execSQL("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
+            addColumn(db, "ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0");
         }
         if (oldVersion < 11) { // a pinned note's own colour, -1 = follow Settings
-            db.execSQL("ALTER TABLE notes ADD COLUMN pincolor INTEGER NOT NULL DEFAULT -1");
+            addColumn(db, "ALTER TABLE notes ADD COLUMN pincolor INTEGER NOT NULL DEFAULT -1");
+        }
+        if (oldVersion < 12) { // notebook folders
+            createFolders(db);
+            addColumn(db, "ALTER TABLE notes ADD COLUMN folder INTEGER NOT NULL DEFAULT 0");
+        }
+    }
+
+    /** Adds a column, ignoring "duplicate column" when a fresh notes table already has it. */
+    private static void addColumn(SQLiteDatabase db, String sql) {
+        try {
+            db.execSQL(sql);
+        } catch (android.database.SQLException ignore) {
+            // already there
         }
     }
 
@@ -150,7 +164,15 @@ final class TaskDb extends SQLiteOpenHelper {
                 + "plain TEXT NOT NULL DEFAULT '',"
                 + "updated INTEGER NOT NULL DEFAULT 0,"
                 + "pinned INTEGER NOT NULL DEFAULT 0,"
-                + "pincolor INTEGER NOT NULL DEFAULT -1)");
+                + "pincolor INTEGER NOT NULL DEFAULT -1,"
+                + "folder INTEGER NOT NULL DEFAULT 0)");
+    }
+
+    private static void createFolders(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS folders ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "name TEXT NOT NULL DEFAULT '',"
+                + "color INTEGER NOT NULL DEFAULT 0)");
     }
 
     private static void createSubtasks(SQLiteDatabase db) {
@@ -505,10 +527,10 @@ final class TaskDb extends SQLiteOpenHelper {
 
     // ------------------------------------------------------------ notebook
 
-    private static final String[] NOTE_COLS = {"id", "title", "body", "plain", "updated", "pinned", "pincolor"};
+    private static final String[] NOTE_COLS = {"id", "title", "body", "plain", "updated", "pinned", "pincolor", "folder"};
 
     private static Note mapNote(Cursor c) {
-        return new Note(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getLong(5), c.getInt(6));
+        return new Note(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getLong(5), c.getInt(6), c.getLong(7));
     }
 
     /** All notes, newest edit first; {@code query} filters title and text (empty = all). */
@@ -518,6 +540,11 @@ final class TaskDb extends SQLiteOpenHelper {
 
     /** Pinned notes first, then by {@code sort}: 0 edited newest, 1 edited oldest, 2 created newest, 3 title A-Z, 4 title Z-A. */
     List<Note> notes(String query, int sort) {
+        return notes(query, sort, -1);
+    }
+
+    /** Same, limited to one folder: {@code folder} -1 = every note, 0 = notes in no folder, otherwise that folder. */
+    List<Note> notes(String query, int sort, long folder) {
         String order;
         switch (sort) {
             case 1:
@@ -535,13 +562,21 @@ final class TaskDb extends SQLiteOpenHelper {
             default:
                 order = "updated DESC, id DESC";
         }
-        String where = null;
-        String[] args = null;
+        StringBuilder wh = new StringBuilder();
+        java.util.ArrayList<String> al = new java.util.ArrayList<>();
         if (query != null && !query.isEmpty()) {
-            where = "title LIKE ? OR plain LIKE ?";
+            wh.append("(title LIKE ? OR plain LIKE ?)");
             String like = "%" + query + "%";
-            args = new String[]{like, like};
+            al.add(like);
+            al.add(like);
         }
+        if (folder >= 0) {
+            if (wh.length() > 0) wh.append(" AND ");
+            wh.append("folder = ?");
+            al.add(String.valueOf(folder));
+        }
+        String where = wh.length() == 0 ? null : wh.toString();
+        String[] args = al.isEmpty() ? null : al.toArray(new String[0]);
         List<Note> out = new ArrayList<>();
         Cursor c = getReadableDatabase().query("notes", NOTE_COLS, where, args, null, null,
                 "(pinned > 0) DESC, pinned DESC, " + order);
@@ -599,6 +634,60 @@ final class TaskDb extends SQLiteOpenHelper {
         ContentValues v = new ContentValues();
         v.put("pincolor", style);
         getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    // ------------------------------------------------------------ folders
+
+    /** Every folder with its note count, in the order they were made. */
+    List<Folder> folders() {
+        List<Folder> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT f.id, f.name, f.color, (SELECT COUNT(*) FROM notes n WHERE n.folder = f.id) "
+                        + "FROM folders f ORDER BY f.id", null);
+        try {
+            while (c.moveToNext()) out.add(new Folder(c.getLong(0), c.getString(1), c.getInt(2), c.getInt(3)));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    Folder folder(long id) {
+        for (Folder f : folders()) if (f.id == id) return f;
+        return null;
+    }
+
+    long addFolder(String name, int color) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("name", name);
+        v.put("color", color);
+        return getWritableDatabase().insert("folders", null, v);
+    }
+
+    void updateFolder(long id, String name, int color) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("name", name);
+        v.put("color", color);
+        getWritableDatabase().update("folders", v, "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    /** Removes the folder; its notes go back to the main notebook, none are deleted. */
+    void deleteFolder(long id) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("folder", 0);
+        getWritableDatabase().update("notes", v, "folder = ?", new String[]{String.valueOf(id)});
+        getWritableDatabase().delete("folders", "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    /** Moves a note into a folder (0 = out of any folder); the edit time is left alone. */
+    void setNoteFolder(long noteId, long folderId) {
+        changed();
+        ContentValues v = new ContentValues();
+        v.put("folder", folderId);
+        getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(noteId)});
     }
 
     void deleteNote(long id) {

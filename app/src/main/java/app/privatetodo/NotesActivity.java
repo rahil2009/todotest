@@ -71,6 +71,17 @@ public class NotesActivity extends Activity {
         super.onDestroy();
     }
 
+    private long openFolder = 0; // 0 = the main notebook, otherwise the folder that is open
+    private TextView titleView;
+    private TextView crumb;
+    private TextView newLabel;
+    private IconView folderBtn;
+    private IconView moreBtn;
+    private IconView searchBtn;
+    private EditText searchField;
+    private HorizontalScrollView chipsScroll;
+    private LinearLayout chips;
+
     private View build() {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Pal.bg);
@@ -85,9 +96,12 @@ public class NotesActivity extends Activity {
         header.setPadding(dp(12), dp(12), dp(16), 0);
         IconView back = new IconView(this, IconView.BACK);
         back.setContentDescription("Back");
-        back.setOnClickListener(v -> finish());
+        back.setOnClickListener(v -> goBack());
         header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
-        header.addView(text("Notebook", 30, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        titleView = text("Notebook", 30, Pal.ink, true);
+        titleView.setSingleLine(true);
+        titleView.setEllipsize(TextUtils.TruncateAt.END);
+        header.addView(titleView, new LinearLayout.LayoutParams(0, -2, 1f));
         IconView sort = new IconView(this, IconView.SORT);
         sort.setContentDescription("Sort notes");
         sort.setOnClickListener(v -> {
@@ -102,23 +116,57 @@ public class NotesActivity extends Activity {
             lookDialog();
         });
         header.addView(looks, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        folderBtn = new IconView(this, IconView.FOLDER);
+        folderBtn.setTint(Pal.accent);
+        folderBtn.setContentDescription("New folder");
+        folderBtn.setOnClickListener(v -> {
+            Hap.tick(v);
+            folderDialog(null, null);
+        });
+        header.addView(folderBtn, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        moreBtn = new IconView(this, IconView.MORE);
+        moreBtn.setContentDescription("Folder options");
+        moreBtn.setOnClickListener(v -> {
+            Hap.tick(v);
+            Folder f = db.folder(openFolder);
+            if (f != null) folderMenu(f);
+        });
+        header.addView(moreBtn, new LinearLayout.LayoutParams(dp(48), dp(48)));
         col.addView(header);
 
-        // Search
-        EditText search = new EditText(this);
-        search.setHint("Search notes…");
-        search.setHintTextColor(Pal.muted);
-        search.setTextColor(Pal.ink);
-        search.setTextSize(16);
-        search.setSingleLine(true);
-        search.setInputType(InputType.TYPE_CLASS_TEXT);
-        search.setBackground(null);
-        search.setPadding(dp(20), 0, dp(20), 0);
+        // "Notebook > Health . 3 notes", only inside a folder
+        crumb = text("", 13, Pal.muted, false);
+        crumb.setPadding(dp(28), dp(2), dp(16), dp(6));
+        col.addView(crumb);
+
+        // Folder chips: pills with the folder's colour, a count, and "+ Folder"
+        chipsScroll = new HorizontalScrollView(this);
+        chipsScroll.setHorizontalScrollBarEnabled(false);
+        chipsScroll.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        chips = new LinearLayout(this);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setPadding(dp(16), 0, dp(8), 0);
+        chipsScroll.addView(chips);
+        LinearLayout.LayoutParams chp = new LinearLayout.LayoutParams(-1, -2);
+        chp.topMargin = dp(16);
+        chp.bottomMargin = dp(8);
+        col.addView(chipsScroll, chp);
+
+        // Search: opened with the button next to "New note"
+        searchField = new EditText(this);
+        searchField.setHint("Search notes…");
+        searchField.setHintTextColor(Pal.muted);
+        searchField.setTextColor(Pal.ink);
+        searchField.setTextSize(16);
+        searchField.setSingleLine(true);
+        searchField.setInputType(InputType.TYPE_CLASS_TEXT);
+        searchField.setPadding(dp(20), 0, dp(20), 0);
         GradientDrawable sbg = new GradientDrawable();
         sbg.setColor(Pal.card);
         sbg.setCornerRadius(dp(24));
-        search.setBackground(sbg);
-        search.addTextChangedListener(new TextWatcher() {
+        searchField.setBackground(sbg);
+        searchField.setVisibility(View.GONE);
+        searchField.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence c, int a, int b, int n) {
             }
@@ -134,8 +182,8 @@ public class NotesActivity extends Activity {
             }
         });
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(-1, dp(48));
-        slp.setMargins(dp(16), dp(12), dp(16), dp(8));
-        col.addView(search, slp);
+        slp.setMargins(dp(16), dp(4), dp(16), dp(8));
+        col.addView(searchField, slp);
 
         FrameLayout body = new FrameLayout(this);
         list = new ListView(this);
@@ -164,7 +212,10 @@ public class NotesActivity extends Activity {
         body.addView(emptyView, new FrameLayout.LayoutParams(-1, -1));
         col.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        // New note pill
+        // Bottom bar: "New note" on one line, and a search button right next to it
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout pill = new LinearLayout(this);
         pill.setOrientation(LinearLayout.HORIZONTAL);
         pill.setGravity(Gravity.CENTER);
@@ -179,29 +230,301 @@ public class NotesActivity extends Activity {
         IconView plus = new IconView(this, IconView.PLUS);
         plus.setClickable(false);
         pill.addView(plus, new LinearLayout.LayoutParams(dp(32), dp(32)));
-        pill.addView(text("New note", 16, Pal.onAccent, true));
+        newLabel = text("New note", 16, Pal.onAccent, true);
+        newLabel.setSingleLine(true);
+        newLabel.setEllipsize(null);
+        pill.addView(newLabel, new LinearLayout.LayoutParams(-2, -2));
         pill.setOnClickListener(v -> openNote(0));
+        bar.addView(pill, new LinearLayout.LayoutParams(-2, dp(56)));
+        searchBtn = new IconView(this, IconView.SEARCH);
+        searchBtn.setContentDescription("Search notes");
+        GradientDrawable sg = new GradientDrawable();
+        sg.setShape(GradientDrawable.OVAL);
+        sg.setColor(Pal.card);
+        searchBtn.setBackground(sg);
+        searchBtn.setOnClickListener(v -> {
+            Hap.tick(v);
+            toggleSearch();
+        });
+        LinearLayout.LayoutParams sblp = new LinearLayout.LayoutParams(dp(56), dp(56));
+        sblp.leftMargin = dp(8);
+        bar.addView(searchBtn, sblp);
         FrameLayout.LayoutParams plp = new FrameLayout.LayoutParams(-2, dp(56));
         plp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
         plp.bottomMargin = dp(24);
-        root.addView(pill, plp);
+        root.addView(bar, plp);
         return root;
     }
 
+    private void toggleSearch() {
+        android.view.inputmethod.InputMethodManager imm =
+                (android.view.inputmethod.InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (searchField.getVisibility() == View.VISIBLE) {
+            searchField.setText("");
+            searchField.setVisibility(View.GONE);
+            searchBtn.setOn(false);
+            if (imm != null) imm.hideSoftInputFromWindow(searchField.getWindowToken(), 0);
+        } else {
+            searchField.setVisibility(View.VISIBLE);
+            searchBtn.setOn(true);
+            searchField.requestFocus();
+            if (imm != null) imm.showSoftInput(searchField, 0);
+        }
+        refresh();
+    }
+
+    private void goBack() {
+        if (searchField.getVisibility() == View.VISIBLE) {
+            toggleSearch();
+        } else if (openFolder > 0) {
+            openFolder = 0;
+            refresh();
+        } else {
+            finish();
+        }
+    }
+
+    @Override
+    public void onBackPressed() {
+        goBack();
+    }
+
+    // ------------------------------------------------------------ folders
+
+    /** The folder chips under the title: one per folder, then "+ Folder". */
+    private void buildChips(List<Folder> folders) {
+        chips.removeAllViews();
+        for (final Folder f : folders) {
+            LinearLayout chip = chip();
+            IconView ic = new IconView(this, IconView.FOLDER);
+            ic.setTint(f.rgb());
+            ic.setOn(true);
+            ic.setClickable(false);
+            chip.addView(ic, new LinearLayout.LayoutParams(dp(26), dp(26)));
+            TextView name = text(f.name, 14, Pal.ink, true);
+            name.setSingleLine(true);
+            name.setEllipsize(TextUtils.TruncateAt.END);
+            name.setMaxWidth(dp(120));
+            name.setPadding(dp(4), 0, 0, 0);
+            chip.addView(name);
+            TextView cnt = text(String.valueOf(f.count), 12, Pal.muted, false);
+            cnt.setPadding(dp(10), 0, 0, 0);
+            chip.addView(cnt);
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                openFolder = f.id;
+                refresh();
+            });
+            chip.setOnLongClickListener(v -> {
+                Hap.confirm(v);
+                folderMenu(f);
+                return true;
+            });
+            chips.addView(chip, chipLp());
+        }
+        LinearLayout add = chip();
+        IconView plus = new IconView(this, IconView.PLUS);
+        plus.setClickable(false);
+        add.addView(plus, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        TextView lab = text("Folder", 14, Pal.ink, true);
+        lab.setPadding(dp(4), 0, 0, 0);
+        add.addView(lab);
+        add.setOnClickListener(v -> {
+            Hap.tick(v);
+            folderDialog(null, null);
+        });
+        chips.addView(add, chipLp());
+    }
+
+    private LinearLayout chip() {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(12), 0, dp(14), 0);
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(22));
+        g.setColor(Pal.card);
+        chip.setBackground(g);
+        chip.setClickable(true);
+        return chip;
+    }
+
+    private LinearLayout.LayoutParams chipLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(44));
+        lp.rightMargin = dp(8);
+        return lp;
+    }
+
+    /** New folder (existing == null) or rename / recolour. {@code done} gets the folder id once it is saved. */
+    private void folderDialog(final Folder existing, final java.util.function.LongConsumer done) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        final EditText name = new EditText(this);
+        name.setHint("Folder name");
+        name.setHintTextColor(Pal.muted);
+        name.setTextColor(Pal.ink);
+        name.setTextSize(18);
+        name.setSingleLine(true);
+        name.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        if (existing != null) name.setText(existing.name);
+        box.addView(name, new LinearLayout.LayoutParams(-1, dp(52)));
+        final int[] sel = {existing != null ? existing.color : 0};
+        final View[] dots = new View[Folder.COLORS.length];
+        final Runnable paint = () -> {
+            for (int i = 0; i < dots.length; i++) {
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColor(Folder.COLORS[i]);
+                g.setStroke(dp(i == sel[0] ? 3 : 1), i == sel[0] ? Pal.ink : Pal.chip);
+                dots[i].setBackground(g);
+            }
+        };
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(14), 0, dp(4));
+        for (int i = 0; i < dots.length; i++) {
+            final int idx = i;
+            dots[i] = new View(this);
+            dots[i].setContentDescription(Folder.COLOR_NAMES[i]);
+            dots[i].setOnClickListener(v -> {
+                Hap.tick(v);
+                sel[0] = idx;
+                paint.run();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(34), 1f);
+            lp.setMargins(dp(3), 0, dp(3), 0);
+            row.addView(dots[i], lp);
+        }
+        box.addView(row);
+        paint.run();
+        new Dlg.Builder(this)
+                .setTitle(existing == null ? "New folder" : "Edit folder")
+                .setView(box)
+                .setPositiveButton("Save", (d, w) -> {
+                    String nm = name.getText().toString().trim();
+                    if (nm.isEmpty()) return;
+                    long id;
+                    if (existing == null) {
+                        id = db.addFolder(nm, sel[0]);
+                    } else {
+                        id = existing.id;
+                        db.updateFolder(id, nm, sel[0]);
+                    }
+                    if (done != null) done.accept(id);
+                    refresh();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void folderMenu(final Folder f) {
+        new Dlg.Builder(this)
+                .setTitle(f.name)
+                .setItems(new String[]{"Rename or change colour", "Delete folder"}, (d, which) -> {
+                    if (which == 0) {
+                        folderDialog(f, null);
+                    } else {
+                        new Dlg.Builder(this)
+                                .setTitle("Delete folder?")
+                                .setMessage(f.count == 0 ? f.name
+                                        : f.name + "\nIts " + f.count + " note" + (f.count == 1 ? "" : "s")
+                                        + " go back to the notebook. No note is deleted.")
+                                .setPositiveButton("Delete", (d2, w2) -> {
+                                    db.deleteFolder(f.id);
+                                    if (openFolder == f.id) openFolder = 0;
+                                    refresh();
+                                })
+                                .setNegativeButton("Keep", null)
+                                .show();
+                    }
+                })
+                .show();
+    }
+
+    /** Pick the folder a note lives in (or take it out of its folder). */
+    private void moveDialog(final Note n) {
+        final List<Folder> fs = db.folders();
+        final List<String> names = new ArrayList<>();
+        final List<Long> ids = new ArrayList<>();
+        names.add(n.folder == 0 ? "✓  Notebook (no folder)" : "Notebook (no folder)");
+        ids.add(0L);
+        for (Folder f : fs) {
+            names.add((n.folder == f.id ? "✓  " : "") + f.name);
+            ids.add(f.id);
+        }
+        names.add("+ New folder…");
+        new Dlg.Builder(this)
+                .setTitle("Move to folder")
+                .setItems(names.toArray(new String[0]), (d, which) -> {
+                    if (which == names.size() - 1) {
+                        folderDialog(null, id -> {
+                            db.setNoteFolder(n.id, id);
+                            refresh();
+                        });
+                    } else {
+                        db.setNoteFolder(n.id, ids.get(which));
+                        refresh();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** A card pinned to the bottom of the screen (easy to reach with one hand) over a light dim. */
+    private android.app.Dialog bottomSheet(View card) {
+        FrameLayout wrapper = new FrameLayout(this);
+        wrapper.setPadding(dp(16), 0, dp(16), dp(16));
+        wrapper.addView(card, new FrameLayout.LayoutParams(-1, -2));
+        final android.app.Dialog dlg = new android.app.Dialog(this);
+        dlg.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE);
+        dlg.setContentView(wrapper);
+        android.view.Window w = dlg.getWindow();
+        if (w != null) {
+            w.setBackgroundDrawable(new ColorDrawable(0));
+            w.setGravity(Gravity.BOTTOM);
+            w.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+            w.setDimAmount(0.35f);
+        }
+        dlg.setCanceledOnTouchOutside(true);
+        return dlg;
+    }
+
     private void refresh() {
+        List<Folder> folders = db.folders();
+        Folder open = null;
+        for (Folder f : folders) if (f.id == openFolder) open = f;
+        if (open == null) openFolder = 0;
+        boolean searching = !query.isEmpty();
         notes.clear();
-        notes.addAll(db.notes(query, Prefs.noteSort(this)));
+        // The main notebook lists notes that are in no folder; a search looks through every note.
+        notes.addAll(db.notes(query, Prefs.noteSort(this), searching ? -1 : openFolder));
         buildRows();
         adapter.notifyDataSetChanged();
         boolean empty = notes.isEmpty();
         emptyView.setVisibility(empty ? View.VISIBLE : View.GONE);
         list.setVisibility(empty ? View.GONE : View.VISIBLE);
-        emptyTitle.setText(query.isEmpty() ? "No notes yet" : "No matches");
+        emptyTitle.setText(searching ? "No matches" : open != null ? "No notes in this folder" : "No notes yet");
+
+        titleView.setText(open != null ? open.name : "Notebook");
+        crumb.setVisibility(open != null ? View.VISIBLE : View.GONE);
+        if (open != null) {
+            crumb.setText("Notebook › " + open.name + " · " + open.count + " note"
+                    + (open.count == 1 ? "" : "s"));
+        }
+        folderBtn.setVisibility(open != null ? View.GONE : View.VISIBLE);
+        moreBtn.setVisibility(open != null ? View.VISIBLE : View.GONE);
+        chipsScroll.setVisibility(open == null && !searching ? View.VISIBLE : View.GONE);
+        if (open == null) buildChips(folders);
+        newLabel.setText(open != null ? "New note in " + open.name : "New note");
+        Fonts.apply(chips);
     }
 
     private void openNote(long id) {
         startActivity(new Intent(this, NoteEditorActivity.class)
-                .putExtra(NoteEditorActivity.EXTRA_ID, id));
+                .putExtra(NoteEditorActivity.EXTRA_ID, id)
+                .putExtra(NoteEditorActivity.EXTRA_FOLDER, openFolder));
     }
 
     private void confirmDelete(final Note n) {
@@ -293,7 +616,7 @@ public class NotesActivity extends Activity {
     private static final String[] SORT_NAMES = {"Date edited (newest)", "Date edited (oldest)", "Date created",
             "Title A to Z", "Title Z to A"};
 
-    /** The sort menu: a small card under the button, as on the design board. */
+    /** The sort menu: a card at the bottom of the screen, as on the design board. */
     private void sortMenu(View anchor) {
         final int cur = Prefs.noteSort(this);
         LinearLayout box = new LinearLayout(this);
@@ -303,10 +626,7 @@ public class NotesActivity extends Activity {
         bg.setColor(Pal.raised);
         bg.setCornerRadius(dp(20));
         box.setBackground(bg);
-        final android.widget.PopupWindow pop = new android.widget.PopupWindow(box, dp(260),
-                ViewGroup.LayoutParams.WRAP_CONTENT, true);
-        pop.setBackgroundDrawable(new ColorDrawable(0));
-        pop.setElevation(dp(12));
+        final android.app.Dialog pop = bottomSheet(box);
         TextView head = text("SORT BY", 12, Pal.muted, true);
         head.setLetterSpacing(0.08f);
         head.setPadding(dp(12), dp(10), dp(12), dp(6));
@@ -323,7 +643,7 @@ public class NotesActivity extends Activity {
             row.setBackground(rg);
             TextView name = text(SORT_NAMES[i], 16, Pal.ink, true);
             row.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
-            if (cur == i) row.addView(text("\u2713", 18, Pal.accent, true));
+            if (cur == i) row.addView(text("✓", 18, Pal.accent, true));
             row.setOnClickListener(v -> {
                 Hap.tick(v);
                 Prefs.setNoteSort(this, id);
@@ -341,7 +661,7 @@ public class NotesActivity extends Activity {
         foot.setPadding(dp(12), dp(10), dp(12), dp(8));
         box.addView(foot);
         Fonts.apply(box);
-        pop.showAsDropDown(anchor, 0, 0, Gravity.END);
+        pop.show();
     }
 
     private void buildRows() {
@@ -434,12 +754,19 @@ public class NotesActivity extends Activity {
         refresh();
     }
 
-    /** Choose one pinned note's own colour: any of the styles, or follow Settings. */
+    /** Choose one pinned note's own colour: any of the styles, or follow Settings. A sheet at the bottom. */
     private void pinColorDialog(final Note n) {
         final LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(dp(16), dp(8), dp(16), 0);
-        final android.app.AlertDialog[] dlg = new android.app.AlertDialog[1];
+        box.setPadding(dp(18), dp(22), dp(18), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Pal.raised);
+        bg.setCornerRadius(dp(28));
+        box.setBackground(bg);
+        final android.app.Dialog dlg = bottomSheet(box);
+        TextView title = text("Colour for this note", 20, Pal.ink, true);
+        title.setPadding(dp(4), 0, 0, dp(8));
+        box.addView(title);
         int current = n.pinColor;
         for (int start = 0; start < PinTint.COUNT; start += 5) {
             LinearLayout line = new LinearLayout(this);
@@ -463,17 +790,20 @@ public class NotesActivity extends Activity {
                 cell.setOnClickListener(v -> {
                     Hap.tick(v);
                     db.setPinColor(n.id, idx);
-                    if (dlg[0] != null) dlg[0].dismiss();
+                    dlg.dismiss();
                     refresh();
                 });
                 line.addView(cell, new LinearLayout.LayoutParams(0, -2, 1f));
             }
             box.addView(line);
         }
-        TextView follow = text(current < 0 ? "\u2713  Follow Settings" : "Follow Settings", 14,
+        // "Follow Settings" and "Cancel" share one line
+        LinearLayout foot = new LinearLayout(this);
+        foot.setOrientation(LinearLayout.HORIZONTAL);
+        foot.setGravity(Gravity.CENTER_VERTICAL);
+        TextView follow = text(current < 0 ? "✓  Follow Settings" : "Follow Settings", 14,
                 current < 0 ? Pal.onSel : Pal.ink, true);
         follow.setGravity(Gravity.CENTER);
-        follow.setMinHeight(dp(44));
         GradientDrawable fg = new GradientDrawable();
         fg.setCornerRadius(dp(22));
         fg.setColor(current < 0 ? Pal.sel : Pal.chip);
@@ -481,33 +811,44 @@ public class NotesActivity extends Activity {
         follow.setOnClickListener(v -> {
             Hap.tick(v);
             db.setPinColor(n.id, -1);
-            if (dlg[0] != null) dlg[0].dismiss();
+            dlg.dismiss();
             refresh();
         });
+        foot.addView(follow, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        TextView cancel = text("Cancel", 14, Pal.accent, true);
+        cancel.setGravity(Gravity.CENTER);
+        cancel.setPadding(dp(18), 0, dp(18), 0);
+        GradientDrawable cg = new GradientDrawable();
+        cg.setCornerRadius(dp(22));
+        cg.setColor(Pal.chip);
+        cancel.setBackground(cg);
+        cancel.setOnClickListener(v -> dlg.dismiss());
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, dp(44));
+        clp.leftMargin = dp(8);
+        foot.addView(cancel, clp);
         LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(-1, -2);
         flp.topMargin = dp(10);
-        box.addView(follow, flp);
-        dlg[0] = new Dlg.Builder(this)
-                .setTitle("Colour for this note")
-                .setView(scrollOf(box))
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private View scrollOf(View v) {
-        ScrollView sv = new ScrollView(this);
-        sv.addView(v);
-        return sv;
+        box.addView(foot, flp);
+        Fonts.apply(box);
+        dlg.show();
     }
 
     private void noteMenu(final Note n) {
+        final List<String> names = new ArrayList<>();
+        final List<Runnable> acts = new ArrayList<>();
+        names.add(n.pinned > 0 ? "Unpin" : "Pin to top");
+        acts.add(() -> togglePin(n));
+        if (n.pinned > 0) {
+            names.add("Pinned colour…");
+            acts.add(() -> pinColorDialog(n));
+        }
+        names.add("Move to folder…");
+        acts.add(() -> moveDialog(n));
+        names.add("Delete");
+        acts.add(() -> confirmDelete(n));
         new Dlg.Builder(this)
                 .setTitle(n.title.isEmpty() ? "Untitled" : n.title)
-                .setItems(n.pinned > 0 ? new String[]{"Unpin", "Pinned colour\u2026", "Delete"} : new String[]{"Pin to top", "Delete"}, (d, which) -> {
-                    if (which == 0) togglePin(n);
-                    else if (n.pinned > 0 && which == 1) pinColorDialog(n);
-                    else confirmDelete(n);
-                })
+                .setItems(names.toArray(new String[0]), (d, which) -> acts.get(which).run())
                 .show();
     }
 
@@ -597,7 +938,47 @@ public class NotesActivity extends Activity {
             }
             if (c > 0) return sb.toString();
         }
-        return n.plain.replace('\n', ' ').trim();
+        return n.plain.replace('\n', ' ').replace('\u2610', '\u25CB').replace('\u2611', '\u25CF').trim();
+    }
+
+    /** To-do lines as round ticks (an empty ring, or a filled circle with a tick and the text struck through). */
+    private View tickList(String preview, int sp, int textColor, int doneColor, boolean onColour) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(0, dp(4), 0, 0);
+        for (String line : preview.split("\n")) {
+            boolean done = line.startsWith("\u2611");
+            String label = line.length() > 1 ? line.substring(1).trim() : "";
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            TextView dot = new TextView(this);
+            dot.setGravity(Gravity.CENTER);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            if (done) {
+                g.setColor(doneColor);
+                dot.setText("\u2713");
+                dot.setTextSize(10);
+                dot.setTypeface(Typeface.DEFAULT_BOLD);
+                dot.setTextColor(onColour ? Pal.accent : Pal.onAccent);
+                dot.setIncludeFontPadding(false);
+            } else {
+                g.setColor(0);
+                g.setStroke(dp(2), textColor);
+            }
+            dot.setBackground(g);
+            row.addView(dot, new LinearLayout.LayoutParams(dp(16), dp(16)));
+            TextView t = text(label, sp, textColor, false);
+            t.setSingleLine(true);
+            t.setEllipsize(TextUtils.TruncateAt.END);
+            t.setPadding(dp(8), 0, 0, 0);
+            if (done) t.setPaintFlags(t.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+            row.addView(t, new LinearLayout.LayoutParams(0, -2, 1f));
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, dp(24));
+            box.addView(row, rlp);
+        }
+        return box;
     }
 
     /** A white note card with a pin in the corner; the arguments pick how much of the note it shows. */
@@ -630,14 +1011,17 @@ public class NotesActivity extends Activity {
 
         String preview = lines > 0 ? previewOf(n, checklist) : "";
         if (!preview.isEmpty()) {
-            TextView p = text(preview, previewSp, tinted ? fg : Pal.muted, false);
-            if (tinted) p.setAlpha(0.85f);
-            boolean list = checklist && preview.indexOf('\n') >= 0;
-            p.setMaxLines(list ? 3 : lines);
-            p.setEllipsize(TextUtils.TruncateAt.END);
-            p.setPadding(0, dp(4), 0, 0);
-            if (list) p.setLineSpacing(dp(4), 1f);
-            card.addView(p);
+            if (checklist && (preview.startsWith("\u2610") || preview.startsWith("\u2611"))) {
+                card.addView(tickList(preview, previewSp, tinted ? fg : Pal.muted, tinted ? fg : Pal.accent,
+                        tinted));
+            } else {
+                TextView p = text(preview, previewSp, tinted ? fg : Pal.muted, false);
+                if (tinted) p.setAlpha(0.85f);
+                p.setMaxLines(lines);
+                p.setEllipsize(TextUtils.TruncateAt.END);
+                p.setPadding(0, dp(4), 0, 0);
+                card.addView(p);
+            }
         }
         if (edited) {
             TextView when = text("Edited " + Reminders.when(c, n.updated), 12, tinted ? fg : Pal.muted, false);

@@ -1111,16 +1111,6 @@ public class MainActivity extends Activity {
                 ql.rightMargin = dp(8);
                 quick.addView(q, ql);
             }
-            TextView pk = formChip("Pick time…", false);
-            pk.setMinHeight(dp(44));
-            pk.setTextColor(Pal.accent);
-            pk.setOnClickListener(v -> {
-                Hap.tick(v);
-                togglePick.run();
-            });
-            LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(-2, -2);
-            pl.rightMargin = dp(8);
-            quick.addView(pk, pl);
             TextView add = formChip("+ Add", false);
             add.setMinHeight(dp(44));
             add.setTextColor(Pal.accent);
@@ -1224,7 +1214,7 @@ public class MainActivity extends Activity {
         repBox.addView(everyDial, edlp);
         form.addView(repBox, new LinearLayout.LayoutParams(-1, -2));
 
-        // PRIORITY: one segmented bar, the chosen level is a pill and the dot shows its colour
+        // PRIORITY: one segmented bar, the chosen level fills its pill with the priority colour
         TextView prioLabel = sectionLabel("Priority");
         prioLabel.setPadding(0, dp(18), 0, dp(8));
         form.addView(prioLabel);
@@ -1234,19 +1224,14 @@ public class MainActivity extends Activity {
         final int prioPill = Pal.dark ? 0xFF3A4643 : Color.WHITE;
         final Runnable[] updPrio = new Runnable[1];
         updPrio[0] = () -> {
-            for (int k = 0; k < 4; k++) segState(prioChips[k], prio[0] == k, prioPill, Pal.ink);
+            for (int k = 0; k < 4; k++) {
+                if (k == 0) segState(prioChips[k], prio[0] == 0, prioPill, Pal.ink);
+                else segState(prioChips[k], prio[0] == k, priorityColor(k), k == 2 ? 0xFF0E1513 : Color.WHITE);
+            }
         };
         for (int k = 0; k < 4; k++) {
             final int level = k;
-            prioChips[k] = text("", 14, Pal.muted, true);
-            if (k == 0) {
-                prioChips[k].setText(prioNames[k]);
-            } else {
-                android.text.SpannableString sp = new android.text.SpannableString("● " + prioNames[k]);
-                sp.setSpan(new android.text.style.ForegroundColorSpan(priorityColor(k)), 0, 1,
-                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                prioChips[k].setText(sp);
-            }
+            prioChips[k] = text(prioNames[k], 14, Pal.muted, true);
             prioChips[k].setOnClickListener(v -> {
                 Hap.tick(v);
                 prio[0] = level;
@@ -1257,64 +1242,15 @@ public class MainActivity extends Activity {
         updPrio[0].run();
 
 
-        LinearLayout alarmRow = new LinearLayout(this);
-        alarmRow.setOrientation(LinearLayout.HORIZONTAL);
-        alarmRow.setGravity(Gravity.CENTER_VERTICAL);
-        alarmRow.setMinimumHeight(dp(64));
-        alarmRow.setPadding(0, dp(16), 0, 0);
-        LinearLayout alarmText = new LinearLayout(this);
-        alarmText.setOrientation(LinearLayout.VERTICAL);
-        alarmText.addView(text("Ring like an alarm", 16, Pal.ink, true));
-        TextView alarmDesc = text("Full screen on the lock screen until dismissed", 13, Pal.muted, false);
-        alarmDesc.setPadding(0, dp(2), 0, 0);
-        alarmText.addView(alarmDesc);
-        alarmRow.addView(alarmText, new LinearLayout.LayoutParams(0, -2, 1f));
-        final LinearLayout alwaysRow = new LinearLayout(this);
-        final ToggleView alarmSwitch = new ToggleView(this);
-        alarmSwitch.set(alarm[0], false);
-        alarmSwitch.setListener(on -> {
-            alarm[0] = on;
-            alwaysRow.setVisibility(on ? View.VISIBLE : View.GONE);
-            if (updSnd[0] != null) updSnd[0].run(); // default volume differs for alarms
-        });
-        LinearLayout.LayoutParams swLp = new LinearLayout.LayoutParams(-2, -2);
-        swLp.leftMargin = dp(16);
-        alarmRow.addView(alarmSwitch, swLp);
-        alarmRow.setOnClickListener(v -> alarmSwitch.performClick());
-        extras.addView(alarmRow, new LinearLayout.LayoutParams(-1, -2));
-
-        // Full screen even while the phone is in use (needs "display over other apps")
-        alwaysRow.setOrientation(LinearLayout.HORIZONTAL);
-        alwaysRow.setGravity(Gravity.CENTER_VERTICAL);
-        alwaysRow.setMinimumHeight(dp(64));
-        alwaysRow.setPadding(0, dp(8), 0, 0);
-        LinearLayout alwaysText = new LinearLayout(this);
-        alwaysText.setOrientation(LinearLayout.VERTICAL);
-        alwaysText.addView(text("Show even when unlocked", 16, Pal.ink, true));
-        TextView alwaysDesc = text("Takes over the screen while you are using the phone, so you never miss it.",
-                13, Pal.muted, false);
-        alwaysDesc.setPadding(0, dp(2), 0, 0);
-        alwaysText.addView(alwaysDesc);
-        alwaysRow.addView(alwaysText, new LinearLayout.LayoutParams(0, -2, 1f));
-        final ToggleView alwaysSwitch = new ToggleView(this);
-        alwaysSwitch.set(always[0], false);
-        alwaysSwitch.setListener(on -> {
-            always[0] = on;
-            if (on && !android.provider.Settings.canDrawOverlays(this)) askOverlayPermission();
-        });
-        LinearLayout.LayoutParams swLp2 = new LinearLayout.LayoutParams(-2, -2);
-        swLp2.leftMargin = dp(16);
-        alwaysRow.addView(alwaysSwitch, swLp2);
-        alwaysRow.setOnClickListener(v -> alwaysSwitch.performClick());
-        extras.addView(alwaysRow, new LinearLayout.LayoutParams(-1, -2));
-        alwaysRow.setVisibility(alarm[0] ? View.VISIBLE : View.GONE);
-
         // Per-task sound and volume. Off by default: the task simply follows Settings.
         final String[] tSound = {existing == null ? "" : existing.sound};
         final int[] tVol = {existing == null ? -1 : existing.volume};
+        final Runnable[] updType = new Runnable[1];
+        final LinearLayout sndExtras = new LinearLayout(this); // sound: only when a time is set
+        sndExtras.setOrientation(LinearLayout.VERTICAL);
         TextView sndLabel = sectionLabel("Sound & volume");
         sndLabel.setPadding(0, dp(16), 0, dp(8));
-        extras.addView(sndLabel);
+        sndExtras.addView(sndLabel);
         LinearLayout sndChips = new LinearLayout(this);
         sndChips.setOrientation(LinearLayout.HORIZONTAL);
         final TextView chipSame = formChip("Same as Settings", false);
@@ -1323,7 +1259,7 @@ public class MainActivity extends Activity {
         chipLp.rightMargin = dp(8);
         sndChips.addView(chipSame, chipLp);
         sndChips.addView(chipOwn, new LinearLayout.LayoutParams(-2, -2));
-        extras.addView(sndChips);
+        sndExtras.addView(sndChips);
 
         final LinearLayout sndBox = new LinearLayout(this);
         sndBox.setOrientation(LinearLayout.VERTICAL);
@@ -1354,7 +1290,7 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams vlp = new LinearLayout.LayoutParams(-1, dp(48));
         vlp.topMargin = dp(6);
         sndBox.addView(volBar, vlp);
-        extras.addView(sndBox);
+        sndExtras.addView(sndBox);
 
         updSnd[0] = () -> {
             boolean own = tVol[0] >= 0 || !tSound[0].isEmpty();
@@ -1366,6 +1302,7 @@ public class MainActivity extends Activity {
             int v = tVol[0] >= 0 ? tVol[0] : Prefs.volume(this, kind);
             volBar.setValue(v);
             volPct.setText(v + "%");
+            if (updType[0] != null) updType[0].run();
         };
         chipSame.setOnClickListener(v -> {
             tSound[0] = "";
@@ -1414,8 +1351,58 @@ public class MainActivity extends Activity {
                     .setNegativeButton("Cancel", null)
                     .show();
         });
+        // ALERT TYPE: one control instead of two toggles. Full alert = rings like an alarm and takes over
+        // the screen even when unlocked; Normal alert = an ordinary notification; Silence = no sound.
+        TextView typeLabel = sectionLabel("Alert type");
+        typeLabel.setPadding(0, dp(18), 0, dp(8));
+        extras.addView(typeLabel);
+        final TextView[] typeChips = new TextView[3];
+        String[] typeNames = {"Full alert", "Normal alert", "Silence"};
+        final String[] typeHelp = {
+                "Full alert rings like an alarm and takes over the screen, even when unlocked",
+                "Normal alert shows a notification and plays the sound you chose",
+                "Silence shows a notification with no sound"};
+        final TextView typeNote = text("", 13, Pal.muted, false);
+        typeNote.setPadding(0, dp(8), 0, 0);
+        for (int k = 0; k < 3; k++) {
+            final int mode = k;
+            typeChips[k] = text(typeNames[k], 14, Pal.muted, true);
+            typeChips[k].setOnClickListener(v -> {
+                Hap.tick(v);
+                if (Prefs.SILENT.equals(tSound[0])) tSound[0] = "";
+                alarm[0] = mode == 0;
+                always[0] = mode == 0;
+                if (mode == 2) tSound[0] = Prefs.SILENT;
+                if (mode == 0 && !android.provider.Settings.canDrawOverlays(this)) askOverlayPermission();
+                updSnd[0].run();
+            });
+        }
+        extras.addView(segTrack(typeChips), new LinearLayout.LayoutParams(-1, -2));
+        extras.addView(typeNote);
+        updType[0] = () -> {
+            int mode = alarm[0] ? 0 : Prefs.SILENT.equals(tSound[0]) ? 2 : 1;
+            for (int k = 0; k < 3; k++) segState(typeChips[k], mode == k, Pal.sel, Pal.onSel);
+            typeNote.setText(typeHelp[mode]);
+        };
         updSnd[0].run();
+
+        // Pick time: its own full-width button, just above Sound & volume (always visible, so a time can be set)
+        final TextView pickBtn = formChip("Pick time\u2026", false);
+        pickBtn.setMinHeight(dp(44));
+        pickBtn.setTextColor(Pal.accent);
+        pickBtn.setOnClickListener(v -> {
+            Hap.tick(v);
+            togglePick.run();
+            if (dial.getVisibility() == View.VISIBLE) {
+                dial.post(() -> dial.requestRectangleOnScreen(
+                        new android.graphics.Rect(0, 0, dial.getWidth(), dial.getHeight())));
+            }
+        });
+        LinearLayout.LayoutParams pbl = new LinearLayout.LayoutParams(-1, -2);
+        pbl.topMargin = dp(12);
         form.addView(extras, new LinearLayout.LayoutParams(-1, -2));
+        form.addView(pickBtn, pbl);
+        form.addView(sndExtras, new LinearLayout.LayoutParams(-1, -2));
         if (existing != null) { // quiet link at the end of the form
             TextView dup = text("Duplicate task", 15, Pal.accent, true);
             dup.setGravity(Gravity.CENTER);
@@ -1442,6 +1429,7 @@ public class MainActivity extends Activity {
             pick.setTextColor(has ? Pal.accent : Pal.muted);
             clear.setVisibility(has ? View.VISIBLE : View.GONE);
             extras.setVisibility(has ? View.VISIBLE : View.GONE);
+            sndExtras.setVisibility(has ? View.VISIBLE : View.GONE);
             repBox.setVisibility(has ? View.VISIBLE : View.GONE);
             boolean daysMode = rep[1] == 5 && rep[0] > 0;
             boolean daily = rep[0] == 1 && rep[1] == 2;

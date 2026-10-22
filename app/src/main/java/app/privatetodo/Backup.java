@@ -9,9 +9,9 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-/** Export / import of every task, subtask and note as one JSON file you choose where to keep. */
+/** Export / import of everything: tasks, subtasks, repeat ticks, notes, habits, Pomodoro stats and every setting, as one JSON file you choose where to keep. */
 final class Backup {
-    private static final String[] TABLES = {"tasks", "subtasks", "notes"};
+    private static final String[] TABLES = {"tasks", "subtasks", "notes", "occ_done", "folders"};
 
     private Backup() {
     }
@@ -54,10 +54,71 @@ final class Backup {
                 root.put(table, rows);
             }
             root.put("habitData", HabitDb.export(ctx));
+            JSONObject prefs = new JSONObject();
+            prefs.put("settings", exportPrefs(ctx.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE), null));
+            prefs.put("pomodoro", exportPrefs(ctx.getApplicationContext().getSharedPreferences("pomodoro", Context.MODE_PRIVATE), POMO_LIVE));
+            root.put("prefs", prefs);
             return root.toString();
         } finally {
             helper.close();
         }
+    }
+
+    /** Pomodoro keys that describe a timer running right now; they are not worth restoring. */
+    private static final java.util.Set<String> POMO_LIVE = new java.util.HashSet<>(
+            java.util.Arrays.asList("running", "began", "end", "left", "phase", "round", "task"));
+
+    private static JSONObject exportPrefs(android.content.SharedPreferences sp, java.util.Set<String> skip)
+            throws JSONException {
+        JSONObject o = new JSONObject();
+        for (java.util.Map.Entry<String, ?> e : sp.getAll().entrySet()) {
+            if (skip != null && skip.contains(e.getKey())) continue;
+            Object v = e.getValue();
+            JSONObject item = new JSONObject();
+            if (v instanceof Boolean) {
+                item.put("t", "b");
+                item.put("v", (Boolean) v);
+            } else if (v instanceof Integer) {
+                item.put("t", "i");
+                item.put("v", (Integer) v);
+            } else if (v instanceof Long) {
+                item.put("t", "l");
+                item.put("v", (Long) v);
+            } else if (v instanceof Float) {
+                item.put("t", "f");
+                item.put("v", ((Float) v).doubleValue());
+            } else if (v instanceof String) {
+                item.put("t", "s");
+                item.put("v", (String) v);
+            } else {
+                continue;
+            }
+            o.put(e.getKey(), item);
+        }
+        return o;
+    }
+
+    private static void restorePrefs(android.content.SharedPreferences sp, JSONObject o, java.util.Set<String> keep) {
+        if (o == null) return;
+        android.content.SharedPreferences.Editor ed = sp.edit();
+        for (String k : sp.getAll().keySet()) {
+            if (keep == null || !keep.contains(k)) ed.remove(k);
+        }
+        java.util.Iterator<String> it = o.keys();
+        while (it.hasNext()) {
+            String k = it.next();
+            JSONObject item = o.optJSONObject(k);
+            if (item == null) continue;
+            switch (item.optString("t")) {
+                case "b": ed.putBoolean(k, item.optBoolean("v")); break;
+                case "i": ed.putInt(k, item.optInt("v")); break;
+                case "l": ed.putLong(k, item.optLong("v")); break;
+                case "f": ed.putFloat(k, (float) item.optDouble("v")); break;
+                case "s": ed.putString(k, item.optString("v")); break;
+                default: break;
+            }
+        }
+        ed.apply();
     }
 
     /** Replaces everything in the app with the backup's content. Returns the number of tasks, or -1 if the file is not a backup. */
@@ -108,6 +169,13 @@ final class Backup {
                 db.endTransaction();
             }
             if (root.optJSONObject("habitData") != null) HabitDb.restore(ctx, root.optJSONObject("habitData"));
+            JSONObject prefs = root.optJSONObject("prefs");
+            if (prefs != null) {
+                restorePrefs(ctx.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE),
+                        prefs.optJSONObject("settings"), null);
+                restorePrefs(ctx.getApplicationContext().getSharedPreferences("pomodoro", Context.MODE_PRIVATE),
+                        prefs.optJSONObject("pomodoro"), POMO_LIVE);
+            }
             // Arm the reminders that were in the backup.
             for (Task t : helper.withReminders()) Reminders.schedule(ctx, t);
             return root.getJSONArray("tasks").length();
