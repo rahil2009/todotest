@@ -55,8 +55,6 @@ public class NoteEditorActivity extends Activity {
     private EditText title;
     private RichEditText body;
     private TextView dateLabel;
-    private LinearLayout colorRow;
-    private LinearLayout fgRow;
 
     // Finger mode: pick a style, then swipe over the text to apply it.
     private boolean paintMode;
@@ -67,7 +65,6 @@ public class NoteEditorActivity extends Activity {
     private FrameLayout fab;
     private IconView fabIcon;
     private TextView paintHint;
-    private final Map<Integer, TextView> buttons = new HashMap<>();
 
     // Styles chosen with only a cursor (apply to the next typed text). 0 = off, 1 = on, colour for highlight.
     private final Map<Integer, Integer> pending = new HashMap<>();
@@ -94,12 +91,14 @@ public class NoteEditorActivity extends Activity {
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         RichText.init(this);
+        NoteFonts.init(this);
         db = new TaskDb(this);
         noteId = savedInstanceState != null ? savedInstanceState.getLong(EXTRA_ID, 0)
                 : getIntent().getLongExtra(EXTRA_ID, 0);
         if (noteId == 0) noteId = getIntent().getLongExtra(EXTRA_ID, 0);
         setContentView(build());
         Fonts.apply(getWindow().getDecorView());
+        body.setTypeface(NoteFonts.face(NoteFonts.noteDefault(this)));
 
         Note n = noteId > 0 ? db.note(noteId) : null;
         if (n == null) {
@@ -116,6 +115,7 @@ public class NoteEditorActivity extends Activity {
             content.requestFocus(); // so the title does not grab focus and pop the keyboard up
             title.setText(n.title);
             RichText.fromJson(n.body, body.getText());
+            RichText.refold(body.getText());
             dateLabel.setText("Edited " + Reminders.when(this, n.updated));
         }
         dirty = false;
@@ -205,14 +205,14 @@ public class NoteEditorActivity extends Activity {
         root.addView(dateLabel);
 
         body = new RichEditText(this);
+        body.setTag("keepfont");
         body.setHint("Start writing…");
         body.setHintTextColor(Pal.muted);
         body.setTextColor(Pal.ink);
         scale = Prefs.noteScale(this);
         RichText.zoom = scale;
         body.setTextSize(17 * scale);
-        body.setTableTapListener(tb -> editTable(tb));
-        body.setTableChangedListener(() -> changed());
+        body.setTableTapListener((tb, r, c, onTick, l, t) -> onTableTap(tb, r, c, onTick));
         body.setZoomListener((f, done) -> {
             if (done) {
                 Prefs.setNoteScale(this, scale);
@@ -248,7 +248,8 @@ public class NoteEditorActivity extends Activity {
         body.setCheckTapListener(ls -> keepScroll(() -> {
             commitNow();
             busy = true;
-            RichText.flipCheck(body.getText(), ls);
+            if (RichText.isToggle(RichText.prefixAt(body.getText(), ls))) RichText.flipToggle(body.getText(), ls);
+            else RichText.flipCheck(body.getText(), ls);
             busy = false;
             changed();
         }));
@@ -296,8 +297,8 @@ public class NoteEditorActivity extends Activity {
         styleFab();
         root.addView(area, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        root.addView(buildColorRow());
-        root.addView(buildFgRow());
+        buildCellEdit(area);
+        root.addView(buildTableBar());
         root.addView(buildToolbar());
         return root;
     }
@@ -312,267 +313,13 @@ public class NoteEditorActivity extends Activity {
         fabIcon.setOn(paintMode);
     }
 
-    private View buildColorRow() {
-        colorRow = palette("Highlight", RichText.HL_COLORS, false);
-        return colorRow;
-    }
-
-    private View buildFgRow() {
-        fgRow = palette("Text colour", RichText.FG_COLORS, true);
-        return fgRow;
-    }
-
-    private LinearLayout palette(String name, int[] colors, boolean text) {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(16), dp(8), dp(16), dp(8));
-        row.setBackgroundColor(Pal.raised);
-        row.setVisibility(View.GONE);
-        TextView label = new TextView(this);
-        label.setText(name);
-        label.setTextColor(Pal.muted);
-        label.setTextSize(13);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        label.setPadding(0, 0, dp(12), 0);
-        row.addView(label);
-        HorizontalScrollView hs = new HorizontalScrollView(this);
-        hs.setHorizontalScrollBarEnabled(false);
-        LinearLayout dots = new LinearLayout(this);
-        dots.setOrientation(LinearLayout.HORIZONTAL);
-        dots.setGravity(Gravity.CENTER_VERTICAL);
-        for (final int color : colors) dots.addView(swatch(color, null, text), swatchLp());
-        dots.addView(swatch(Pal.chip, "\u2715", text), swatchLp()); // none / default
-        hs.addView(dots);
-        row.addView(hs, new LinearLayout.LayoutParams(0, -2, 1f));
-        return row;
-    }
-
-    private LinearLayout.LayoutParams swatchLp() {
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(36), dp(36));
-        lp.rightMargin = dp(10);
-        return lp;
-    }
-
-    private TextView swatch(final int color, String mark, final boolean text) {
-        TextView t = new TextView(this);
-        t.setGravity(Gravity.CENTER);
-        t.setTextColor(Pal.muted);
-        t.setTextSize(14);
-        if (mark != null) {
-            t.setText(mark);
-            t.setContentDescription(text ? "Default text colour" : "No highlight");
-        } else {
-            t.setContentDescription(text ? "Text colour" : "Highlight colour");
-        }
-        GradientDrawable g = new GradientDrawable();
-        g.setShape(GradientDrawable.OVAL);
-        g.setColor(color);
-        t.setBackground(g);
-        t.setOnClickListener(v -> {
-            int c = mark == null ? color : 0;
-            if (text) textColor(c); else highlight(c);
-            (text ? fgRow : colorRow).setVisibility(View.GONE);
-        });
-        return t;
-    }
-
     private float scale = 1f;
 
     private void setScale(float v) {
         scale = Math.max(0.7f, Math.min(2.6f, v));
         RichText.zoom = scale;
         body.setTextSize(17 * scale); // the title keeps its own fixed size
-    }
-
-    private void tableMenu() {
-        Editable e = body.getText();
-        RichText.Tbl t = RichText.tableOnLine(e, selStart());
-        if (t != null) editTable(t);
-        else newTableDialog();
-    }
-
-    private void newTableDialog() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.HORIZONTAL);
-        box.setPadding(dp(24), dp(8), dp(24), 0);
-        final Wheel cols = new Wheel(this);
-        cols.setMinValue(2);
-        cols.setMaxValue(6);
-        cols.setWrapSelectorWheel(false);
-        cols.setValue(3);
-        final Wheel rows = new Wheel(this);
-        rows.setMinValue(2);
-        rows.setMaxValue(15);
-        rows.setWrapSelectorWheel(false);
-        rows.setValue(3);
-        box.addView(labelled("Columns", cols), new LinearLayout.LayoutParams(0, -2, 1f));
-        box.addView(labelled("Rows", rows), new LinearLayout.LayoutParams(0, -2, 1f));
-        new Dlg.Builder(this)
-                .setTitle("Insert table")
-                .setView(box)
-                .setPositiveButton("Insert", (d, w) -> {
-                    int at = RichText.insertTable(body.getText(), selStart(), cols.getValue(), rows.getValue());
-                    body.setSelection(Math.min(body.getText().length(), at + 2));
-                    changed();
-                    RichText.Tbl t = RichText.tableOnLine(body.getText(), at);
-                    if (t != null) editTable(t);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    // ----- table editor: a grid of real text fields (first row = column headers)
-
-    private String[][] tmpCells;
-    private LinearLayout tmpGrid;
-
-    private void editTable(final RichText.Tbl t) {
-        tmpCells = new String[t.rows()][];
-        for (int r = 0; r < t.rows(); r++) tmpCells[r] = t.cells[r].clone();
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(16), dp(8), dp(16), 0);
-
-        tmpGrid = new LinearLayout(this);
-        tmpGrid.setOrientation(LinearLayout.VERTICAL);
-        buildGrid();
-        HorizontalScrollView hs = new HorizontalScrollView(this);
-        hs.setHorizontalScrollBarEnabled(false);
-        hs.addView(tmpGrid);
-        // Cap the grid's height so the + Row / + Column / - Row / - Column chips below
-        // always stay on screen, however many rows the table has (it scrolls instead).
-        final int maxGridH = (int) (getResources().getDisplayMetrics().heightPixels * 0.5f);
-        android.widget.ScrollView vs = new android.widget.ScrollView(this) {
-            @Override
-            protected void onMeasure(int wSpec, int hSpec) {
-                super.onMeasure(wSpec, View.MeasureSpec.makeMeasureSpec(maxGridH, View.MeasureSpec.AT_MOST));
-            }
-        };
-        vs.addView(hs);
-        root.addView(vs, new LinearLayout.LayoutParams(-1, -2));
-
-        FlowLayout tools = new FlowLayout(this, dp(8), dp(8));
-        tools.setPadding(0, dp(8), 0, dp(4));
-        tools.addView(toolChip("+ Row", () -> {
-            if (tmpCells.length >= 40) return;
-            String[][] n2 = new String[tmpCells.length + 1][];
-            System.arraycopy(tmpCells, 0, n2, 0, tmpCells.length);
-            n2[tmpCells.length] = new String[tmpCells[0].length];
-            java.util.Arrays.fill(n2[tmpCells.length], "");
-            tmpCells = n2;
-            buildGrid();
-        }));
-        tools.addView(toolChip("+ Column", () -> {
-            if (tmpCells[0].length >= 8) return;
-            for (int r = 0; r < tmpCells.length; r++) {
-                String[] row = java.util.Arrays.copyOf(tmpCells[r], tmpCells[r].length + 1);
-                row[row.length - 1] = r == 0 ? "Column " + row.length : "";
-                tmpCells[r] = row;
-            }
-            buildGrid();
-        }));
-        tools.addView(toolChip("\u2212 Row", () -> {
-            if (tmpCells.length <= 2) {
-                Toast.makeText(this, "A table keeps its header and one row", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            // choose which body row to delete (the header row stays)
-            final String[] items = new String[tmpCells.length - 1];
-            for (int r = 1; r < tmpCells.length; r++) {
-                items[r - 1] = "Row " + r + (preview(tmpCells[r]).isEmpty() ? " (empty)" : ":  " + preview(tmpCells[r]));
-            }
-            new Dlg.Builder(this)
-                    .setTitle("Delete which row?")
-                    .setItems(items, (d, which) -> {
-                        final int row = which + 1;
-                        new Dlg.Builder(this)
-                                .setTitle("Delete row " + row + "?")
-                                .setMessage(preview(tmpCells[row]).isEmpty() ? "It is empty." : preview(tmpCells[row]))
-                                .setPositiveButton("Delete", (d2, w2) -> {
-                                    String[][] next = new String[tmpCells.length - 1][];
-                                    for (int r = 0, o = 0; r < tmpCells.length; r++) {
-                                        if (r != row) next[o++] = tmpCells[r];
-                                    }
-                                    tmpCells = next;
-                                    buildGrid();
-                                })
-                                .setNegativeButton("Keep", null)
-                                .show();
-                    })
-                    .setNegativeButton("Cancel", null)
-                    .show();
-        }));
-        tools.addView(toolChip("\u2212 Column", () -> {
-            if (tmpCells[0].length <= 2) {
-                Toast.makeText(this, "A table keeps at least two columns", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            final int cols = tmpCells[0].length;
-            final String[] items = new String[cols];
-            for (int k = 0; k < cols; k++) {
-                String head = RichText.Tbl.label(tmpCells[0][k]).trim();
-                items[k] = "Column " + (k + 1) + (head.isEmpty() ? "" : ":  " + head);
-            }
-            new Dlg.Builder(this)
-                    .setTitle("Delete which column?")
-                    .setItems(items, (d, which) -> {
-                        final int col = which;
-                        StringBuilder what = new StringBuilder();
-                        for (String[] row : tmpCells) {
-                            String shown = RichText.Tbl.label(row[col]).trim();
-                            if (!shown.isEmpty()) what.append(what.length() > 0 ? " \u00B7 " : "").append(shown);
-                        }
-                        new Dlg.Builder(this)
-                                .setTitle("Delete column " + (col + 1) + "?")
-                                .setMessage(what.length() == 0 ? "It is empty." : what.toString())
-                                .setPositiveButton("Delete", (d2, w2) -> {
-                                    for (int r = 0; r < tmpCells.length; r++) {
-                                        String[] row = new String[cols - 1];
-                                        for (int k = 0, o = 0; k < cols; k++) {
-                                            if (k != col) row[o++] = tmpCells[r][k];
-                                        }
-                                        tmpCells[r] = row;
-                                    }
-                                    buildGrid();
-                                })
-                                .setNegativeButton("Keep", null)
-                                .show();
-                    })
-                    .setNegativeButton("Cancel", null)
-                    .show();
-        }));
-        root.addView(tools);
-
-        new Dlg.Builder(this)
-                .setTitle("Table")
-                .setView(root)
-                .setPositiveButton("Done", (d, w) -> {
-                    t.cells = tmpCells;
-                    RichText.refresh(body.getText(), t);
-                    changed();
-                    body.invalidate();
-                })
-                .setNeutralButton("Remove table", (d, w) -> {
-                    Editable e = body.getText();
-                    int a = e.getSpanStart(t);
-                    if (a >= 0) {
-                        e.removeSpan(t);
-                        e.delete(a, Math.min(e.length(), a + 1));
-                        changed();
-                    }
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
-    }
-
-    private static String preview(String[] row) {
-        StringBuilder sb = new StringBuilder();
-        for (String cell : row) {
-            String shown = RichText.Tbl.label(cell).trim();
-            if (!shown.isEmpty()) sb.append(sb.length() > 0 ? " \u00B7 " : "").append(shown);
-        }
-        return sb.length() > 40 ? sb.substring(0, 40) + "\u2026" : sb.toString();
+        if (cellOpen) body.post(this::placeCell);
     }
 
     private TextView toolChip(String label, final Runnable action) {
@@ -593,103 +340,6 @@ public class NoteEditorActivity extends Activity {
             action.run();
         });
         return c;
-    }
-
-    private void buildGrid() {
-        tmpGrid.removeAllViews();
-        for (int r = 0; r < tmpCells.length; r++) {
-            LinearLayout row = new LinearLayout(this);
-            for (int k = 0; k < tmpCells[r].length; k++) {
-                final int rr = r;
-                final int kk = k;
-                LinearLayout cell = new LinearLayout(this);
-                cell.setGravity(Gravity.CENTER_VERTICAL);
-                GradientDrawable g = new GradientDrawable();
-                g.setCornerRadius(dp(8));
-                if (r == 0) {
-                    g.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x38000000 : 0x2E000000));
-                } else {
-                    g.setColor(Pal.chip);
-                }
-                cell.setBackground(g);
-
-                final EditText et = new EditText(this);
-                et.setText(RichText.Tbl.label(tmpCells[r][k]));
-                et.setSingleLine(true);
-                et.setTextSize(15);
-                et.setTextColor(Pal.ink);
-                et.setHint(r == 0 ? "Header" : "");
-                et.setHintTextColor(Pal.muted);
-                et.setMaxLines(1);
-                et.setBackground(null);
-                et.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_NEXT);
-                et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-                et.setTypeface(r == 0 ? Typeface.DEFAULT_BOLD : Typeface.DEFAULT);
-                et.setPadding(dp(8), 0, dp(8), 0);
-                final TextView tickBtn = r == 0 ? null : new TextView(this);
-                if (tickBtn != null) {
-                    tickBtn.setGravity(Gravity.CENTER);
-                    tickBtn.setContentDescription("Tick box in this cell");
-                    paintTick(tickBtn, RichText.Tbl.tick(tmpCells[r][k]));
-                    tickBtn.setOnClickListener(v -> {
-                        Hap.tick(v);
-                        int st = (RichText.Tbl.tick(tmpCells[rr][kk]) + 1) % 3; // none -> box -> ticked -> none
-                        tmpCells[rr][kk] = RichText.Tbl.compose(st, et.getText().toString());
-                        paintTick(tickBtn, st);
-                    });
-                    cell.addView(tickBtn, new LinearLayout.LayoutParams(dp(36), dp(46)));
-                }
-                et.addTextChangedListener(new SimpleWatcher() {
-                    @Override
-                    public void afterTextChanged(Editable s) {
-                        tmpCells[rr][kk] = RichText.Tbl.compose(RichText.Tbl.tick(tmpCells[rr][kk]), s.toString());
-                    }
-                });
-                cell.addView(et, new LinearLayout.LayoutParams(0, dp(46), 1f));
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(160), dp(46));
-                lp.setMargins(0, 0, dp(6), dp(6));
-                row.addView(cell, lp);
-            }
-            tmpGrid.addView(row);
-        }
-        Fonts.apply(tmpGrid);
-    }
-
-    /** The little tick control in a table cell: faint = none, ring = box, filled = ticked. */
-    private void paintTick(TextView t, int state) {
-        GradientDrawable g = new GradientDrawable();
-        g.setShape(GradientDrawable.OVAL);
-        int size = dp(22);
-        g.setSize(size, size);
-        if (state == 2) {
-            g.setColor(Pal.accent);
-            t.setText("\u2713");
-            t.setTextColor(Pal.onAccent);
-        } else if (state == 1) {
-            g.setColor(0);
-            g.setStroke(dp(2), Pal.muted);
-            t.setText("");
-        } else {
-            g.setColor(0);
-            g.setStroke(dp(1), (Pal.muted & 0x00FFFFFF) | 0x55000000);
-            t.setText("");
-        }
-        t.setTextSize(13);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
-        t.setBackground(new android.graphics.drawable.InsetDrawable(g, dp(7), dp(12), dp(7), dp(12)));
-    }
-
-    private View labelled(String label, View v) {
-        LinearLayout l = new LinearLayout(this);
-        l.setOrientation(LinearLayout.VERTICAL);
-        TextView t = new TextView(this);
-        t.setText(label);
-        t.setTextSize(13);
-        t.setTextColor(Pal.muted);
-        t.setGravity(Gravity.CENTER);
-        l.addView(t);
-        l.addView(v, new LinearLayout.LayoutParams(-1, -2));
-        return l;
     }
 
     /** Aa: pick any size (8 to 72) for the selected text, or for what you type next when nothing is selected. */
@@ -822,62 +472,799 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
-    private View buildToolbar() {
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(8), dp(6), dp(8), dp(6));
+    // ------------------------------------------------ bottom toolbar: tools of the open tab, tab pills below
 
-        TextView aa = addButton(bar, SIZE_KEY, "Aa", Typeface.BOLD, "Text size");
-        aa.setOnClickListener(v -> pickSize());
-        addButton(bar, RichText.BOLD, "B", Typeface.BOLD, "Bold");
-        addButton(bar, RichText.ITALIC, "I", Typeface.ITALIC, "Italic");
-        addButton(bar, RichText.UNDER, "U", Typeface.NORMAL, "Underline");
-        addButton(bar, RichText.STRIKE, "S", Typeface.NORMAL, "Strikethrough");
-        TextView hl = addButton(bar, RichText.HILITE, "A", Typeface.BOLD, "Highlight colour");
-        SpannableString marked = new SpannableString("A");
-        marked.setSpan(new RichText.Hl(RichText.HL_COLORS[0]), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        hl.setText(marked);
-        TextView fg = addButton(bar, RichText.FG, "A", Typeface.BOLD, "Text colour");
-        SpannableString fgMark = new SpannableString("A");
-        fgMark.setSpan(new android.text.style.ForegroundColorSpan(RichText.FG_COLORS[0]), 0, 1,
-                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        fg.setText(fgMark);
-        addButton(bar, CLEAR_KEY, "Tx", Typeface.BOLD, "Back to standard text (clear styles)");
-        addButton(bar, RichText.HEAD, "H", Typeface.BOLD, "Heading");
-        addButton(bar, BULLET_KEY, "\u2022", Typeface.BOLD, "Bullet list");
-        addButton(bar, NUM_KEY, "1.", Typeface.BOLD, "Numbered list");
-        addButton(bar, CHECK_KEY, "(\u2713)", Typeface.BOLD, "To-do list");
-        addButton(bar, OUT_KEY, "\u2190", Typeface.BOLD, "Move item out one level");
-        addButton(bar, IN_KEY, "\u2192", Typeface.BOLD, "Nest item one level in");
-        addButton(bar, TABLE_KEY, "\u25A6", Typeface.BOLD, "Table");
-        addButton(bar, RichText.CODE, "`", Typeface.NORMAL, "Inline code").setTypeface(Typeface.MONOSPACE);
-        addButton(bar, RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block").setTypeface(Typeface.MONOSPACE);
+    private static final int TOGGLE_KEY = -11;
+    private static final int KANBAN_KEY = -12;
+    private static final int DIVIDER_KEY = -13;
+    private static final int DATE_KEY = -14;
+    private static final int TIME_KEY = -15;
+    private static final int FONT_BASE = 1000;
+    private static final int CASE_BASE = 2000;
+    private static final int ACT_BASE = 3000; // templates and Markdown actions
+    private static final int REQ_MD = 71;
 
-        HorizontalScrollView scroll = new HorizontalScrollView(this);
-        scroll.setHorizontalScrollBarEnabled(false);
-        scroll.setBackgroundColor(Pal.raised);
-        scroll.addView(bar);
-        return scroll;
+    private static final String[] TABS = {"Text", "Lists", "Insert", "Case", "Color", "Font", "Templates", "Markdown"};
+    private static int lastTab = 0;
+
+    private FrameLayout toolHost;
+    private LinearLayout tabRow;
+    private int curTab = -1;
+    private final java.util.ArrayList<TextView> fgSwatches = new java.util.ArrayList<>();
+    private final java.util.ArrayList<TextView> hlSwatches = new java.util.ArrayList<>();
+
+    /** One button of the tool row: a glyph over a small label. */
+    private static final class Tool {
+        LinearLayout box;
+        TextView glyph;
+        TextView label;
     }
 
-    private TextView addButton(LinearLayout bar, final int key, String label, int style, String desc) {
-        TextView t = new TextView(this);
-        t.setText(label);
-        t.setTextSize(17);
-        t.setTypeface(Typeface.DEFAULT, style);
-        t.setGravity(Gravity.CENTER);
-        t.setMinWidth(dp(48));
-        t.setMinHeight(dp(44));
-        t.setContentDescription(desc);
-        if (key == RichText.UNDER) t.setPaintFlags(t.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
-        if (key == RichText.STRIKE) t.setPaintFlags(t.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
-        t.setOnClickListener(v -> onTool(key));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-        lp.rightMargin = dp(4);
-        bar.addView(t, lp);
+    private final Map<Integer, Tool> buttons = new HashMap<>();
+
+    private View buildToolbar() {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setBackgroundColor(Pal.raised);
+        toolHost = new FrameLayout(this);
+        wrap.addView(toolHost, new LinearLayout.LayoutParams(-1, -2));
+
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        tabRow = new LinearLayout(this);
+        tabRow.setOrientation(LinearLayout.HORIZONTAL);
+        tabRow.setGravity(Gravity.CENTER_VERTICAL);
+        tabRow.setPadding(dp(10), dp(2), dp(10), dp(8));
+        for (int i = 0; i < TABS.length; i++) {
+            final int idx = i;
+            TextView t = new TextView(this);
+            t.setText(TABS[i]);
+            t.setTextSize(13);
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(dp(14), 0, dp(14), 0);
+            t.setMinHeight(dp(34));
+            t.setOnClickListener(v -> {
+                Hap.tick(v);
+                showTab(idx);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(34));
+            lp.rightMargin = dp(6);
+            tabRow.addView(t, lp);
+        }
+        hs.addView(tabRow);
+        wrap.addView(hs, new LinearLayout.LayoutParams(-1, -2));
+        showTab(lastTab);
+        return wrap;
+    }
+
+    private void showTab(int i) {
+        curTab = i;
+        lastTab = i;
+        buttons.clear();
+        fgSwatches.clear();
+        hlSwatches.clear();
+        toolHost.removeAllViews();
+        View v = buildTab(i);
+        if (i != 5) Fonts.apply(v);
+        toolHost.addView(v, new FrameLayout.LayoutParams(-1, -2));
+        for (int k = 0; k < tabRow.getChildCount(); k++) {
+            TextView t = (TextView) tabRow.getChildAt(k);
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(17));
+            g.setColor(k == i ? Pal.accent : Pal.chip);
+            t.setBackground(g);
+            t.setTextColor(k == i ? Pal.onAccent : Pal.ink);
+        }
+        refreshToolbar();
+    }
+
+    private View buildTab(int i) {
+        switch (i) {
+            case 0:
+                return toolRow(
+                        tool(SIZE_KEY, "Aa", Typeface.BOLD, "Size", "Text size"),
+                        tool(RichText.BOLD, "B", Typeface.BOLD, "Bold", "Bold"),
+                        tool(RichText.ITALIC, "I", Typeface.ITALIC, "Italic", "Italic"),
+                        tool(RichText.UNDER, "U", Typeface.NORMAL, "Underline", "Underline"),
+                        tool(RichText.STRIKE, "S", Typeface.NORMAL, "Strike", "Strikethrough"),
+                        tool(RichText.CODE, "`", Typeface.NORMAL, "Code", "Inline code"),
+                        tool(RichText.HEAD, "H", Typeface.BOLD, "Heading", "Heading"),
+                        tool(CLEAR_KEY, "Tx", Typeface.BOLD, "Clear", "Back to standard text (clear styles)"));
+            case 1:
+                return toolRow(
+                        tool(BULLET_KEY, "•", Typeface.BOLD, "Bullets", "Bullet list"),
+                        tool(NUM_KEY, "1.", Typeface.BOLD, "Numbered", "Numbered list"),
+                        tool(CHECK_KEY, "(✓)", Typeface.BOLD, "To-do", "To-do list"),
+                        tool(TOGGLE_KEY, "▸", Typeface.BOLD, "Toggle", "Toggle: hide or show the lines under it"),
+                        tool(OUT_KEY, "←", Typeface.BOLD, "Out", "Move item out one level"),
+                        tool(IN_KEY, "→", Typeface.BOLD, "In", "Nest item one level in"));
+            case 2:
+                return toolRow(
+                        tool(TABLE_KEY, "▦", Typeface.BOLD, "Table", "Table"),
+                        tool(KANBAN_KEY, "◫", Typeface.BOLD, "Kanban", "Kanban board (To do, Doing, Done)"),
+                        tool(RichText.QUOTE, "“", Typeface.BOLD, "Quote", "Quote"),
+                        tool(RichText.CALLOUT, "▤", Typeface.BOLD, "Callout", "Callout box"),
+                        tool(DIVIDER_KEY, "―", Typeface.BOLD, "Divider", "Divider line"),
+                        tool(RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block", "Code block"),
+                        tool(DATE_KEY, "◷", Typeface.BOLD, "Date", "Insert today's date"),
+                        tool(TIME_KEY, "⏱", Typeface.BOLD, "Time", "Insert the time"));
+            case 3: {
+                Tool[] t = new Tool[CaseTools.NAMES.length];
+                for (int k = 0; k < t.length; k++) {
+                    t[k] = tool(CASE_BASE + k, caseGlyph(k), Typeface.BOLD, CaseTools.NAMES[k],
+                            CaseTools.NAMES[k] + ": " + CaseTools.SAMPLES[k]);
+                    t[k].box.setMinimumWidth(dp(70));
+                }
+                return toolRow(t);
+            }
+            case 4:
+                return colorTab();
+            case 5: {
+                Tool[] t = new Tool[NoteFonts.count()];
+                for (int k = 0; k < t.length; k++) {
+                    t[k] = tool(FONT_BASE + k, "Ag", Typeface.NORMAL, k == 0 ? "Default" : NoteFonts.NAMES[k],
+                            NoteFonts.NOTES[k]);
+                    t[k].glyph.setTypeface(NoteFonts.face(k));
+                    t[k].glyph.setTag("keepfont");
+                    t[k].glyph.setTextSize(22);
+                    t[k].box.setMinimumWidth(dp(74));
+                }
+                return toolRow(t);
+            }
+            case 6:
+                return toolRow(
+                        tool(ACT_BASE, "☰", Typeface.BOLD, "Daily log", "Daily log template"),
+                        tool(ACT_BASE + 1, "☷", Typeface.BOLD, "Meeting", "Meeting notes template"),
+                        tool(ACT_BASE + 2, "☕", Typeface.BOLD, "Recipe", "Recipe template"),
+                        tool(ACT_BASE + 3, "▦", Typeface.BOLD, "Week plan", "Week plan table"),
+                        tool(ACT_BASE + 4, "★", Typeface.BOLD, "Mine", "Insert my saved template"),
+                        tool(ACT_BASE + 5, "+", Typeface.BOLD, "Save as mine", "Save this note as my template"));
+            default:
+                return toolRow(
+                        tool(ACT_BASE + 10, "↓", Typeface.BOLD, "Paste MD", "Paste Markdown from the clipboard as formatted text"),
+                        tool(ACT_BASE + 11, "MD", Typeface.BOLD, "Copy MD", "Copy this note as Markdown"),
+                        tool(ACT_BASE + 12, "⇩", Typeface.BOLD, "Save .md", "Save this note as a .md file"),
+                        tool(ACT_BASE + 13, "↻", Typeface.BOLD, "Convert", "Turn the selected Markdown into formatted text"),
+                        tool(ACT_BASE + 14, "?", Typeface.BOLD, "Shortcuts", "Markdown typing shortcuts"));
+        }
+    }
+
+    private static String caseGlyph(int k) {
+        switch (k) {
+            case 0: return "AA";
+            case 1: return "aa";
+            case 2: return "Aa";
+            case 3: return "A.";
+            case 4: return "aB";
+            case 5: return "AB";
+            case 6: return "a_b";
+            case 7: return "a-b";
+            case 8: return "A_B";
+            case 9: return "a.b";
+            case 10: return "aA";
+            default: return "⇅";
+        }
+    }
+
+    private View toolRow(Tool... tools) {
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(8), dp(6), dp(8), dp(2));
+        for (Tool t : tools) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(54));
+            lp.rightMargin = dp(4);
+            row.addView(t.box, lp);
+        }
+        hs.addView(row);
+        return hs;
+    }
+
+    private Tool tool(final int key, String glyph, int style, String label, String desc) {
+        final Tool t = new Tool();
+        t.box = new LinearLayout(this);
+        t.box.setOrientation(LinearLayout.VERTICAL);
+        t.box.setGravity(Gravity.CENTER);
+        t.box.setMinimumWidth(dp(58));
+        t.box.setPadding(dp(8), dp(2), dp(8), dp(2));
+        t.box.setContentDescription(desc);
+        t.glyph = new TextView(this);
+        t.glyph.setText(glyph);
+        t.glyph.setTextSize(18);
+        t.glyph.setTypeface(Typeface.DEFAULT, style);
+        t.glyph.setGravity(Gravity.CENTER);
+        t.glyph.setSingleLine(true);
+        if (key == RichText.UNDER) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
+        if (key == RichText.STRIKE) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
+        if (key == RichText.CODE || key == RichText.BLOCK) t.glyph.setTypeface(Typeface.MONOSPACE);
+        t.label = new TextView(this);
+        t.label.setText(label);
+        t.label.setTextSize(10.5f);
+        t.label.setGravity(Gravity.CENTER);
+        t.label.setSingleLine(true);
+        t.box.addView(t.glyph, new LinearLayout.LayoutParams(-2, -2));
+        t.box.addView(t.label, new LinearLayout.LayoutParams(-2, -2));
+        t.box.setOnClickListener(v -> {
+            Hap.tick(v);
+            if (key == SIZE_KEY) pickSize();
+            else onTool(key);
+        });
         buttons.put(key, t);
         return t;
+    }
+
+    // ----- Color tab: text and mark swatches right in the tab
+
+    private View colorTab() {
+        LinearLayout v = new LinearLayout(this);
+        v.setOrientation(LinearLayout.VERTICAL);
+        v.setPadding(dp(12), dp(6), dp(8), dp(2));
+        v.addView(colorLine("TEXT", RichText.FG_COLORS, true));
+        v.addView(colorLine("MARK", RichText.HL_COLORS, false));
+        return v;
+    }
+
+    private View colorLine(String name, int[] colors, boolean text) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView label = new TextView(this);
+        label.setText(name);
+        label.setTextColor(Pal.muted);
+        label.setTextSize(11);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        row.addView(label, new LinearLayout.LayoutParams(dp(46), -2));
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout dots = new LinearLayout(this);
+        dots.setOrientation(LinearLayout.HORIZONTAL);
+        dots.setGravity(Gravity.CENTER_VERTICAL);
+        for (final int color : colors) dots.addView(swatch(color, false, text), swatchLp());
+        dots.addView(swatch(Pal.chip, true, text), swatchLp()); // none / default
+        hs.addView(dots);
+        row.addView(hs, new LinearLayout.LayoutParams(0, -2, 1f));
+        row.setMinimumHeight(dp(44));
+        return row;
+    }
+
+    private LinearLayout.LayoutParams swatchLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(34), dp(34));
+        lp.setMargins(0, dp(4), dp(10), dp(4));
+        return lp;
+    }
+
+    private TextView swatch(final int color, final boolean none, final boolean text) {
+        TextView t = new TextView(this);
+        t.setGravity(Gravity.CENTER);
+        t.setTextColor(Pal.muted);
+        t.setTextSize(14);
+        t.setTag(none ? 0 : color);
+        if (none) {
+            t.setText("✕");
+            t.setContentDescription(text ? "Default text colour" : "No highlight");
+        } else {
+            t.setContentDescription(text ? "Text colour" : "Highlight colour");
+        }
+        paintSwatch(t, color, false);
+        t.setOnClickListener(v -> {
+            Hap.tick(v);
+            int c = none ? 0 : color;
+            if (text) textColor(c); else highlight(c);
+        });
+        (text ? fgSwatches : hlSwatches).add(t);
+        return t;
+    }
+
+    private void paintSwatch(TextView t, int color, boolean sel) {
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(color);
+        if (sel) g.setStroke(dp(3), Pal.ink);
+        t.setBackground(g);
+    }
+
+    private void updateSwatches() {
+        if (fgSwatches.isEmpty() && hlSwatches.isEmpty()) return;
+        int s = selStart();
+        int en = selEnd();
+        Editable e = body.getText();
+        int pos = s == en ? Math.max(0, s - 1) : s;
+        int fg = pending.containsKey(RichText.FG) && s == en ? pending.get(RichText.FG) : RichText.colorAt(e, RichText.FG, pos);
+        int hl = pending.containsKey(RichText.HILITE) && s == en ? pending.get(RichText.HILITE) : RichText.colorAt(e, RichText.HILITE, pos);
+        if (paintMode) {
+            fg = brush == RichText.FG ? brushFg : -1;
+            hl = brush == RichText.HILITE ? brushHl : -1;
+        }
+        for (TextView t : fgSwatches) {
+            int c = (Integer) t.getTag();
+            paintSwatch(t, c == 0 ? Pal.chip : c, c == fg);
+        }
+        for (TextView t : hlSwatches) {
+            int c = (Integer) t.getTag();
+            paintSwatch(t, c == 0 ? Pal.chip : c, c == hl);
+        }
+    }
+
+    // ----- the tools themselves
+
+    private void dayStamp(boolean time) {
+        String f = time ? "HH:mm" : "EEE, d MMM yyyy";
+        insertPlain(new java.text.SimpleDateFormat(f, java.util.Locale.getDefault()).format(new java.util.Date()));
+    }
+
+    private void insertPlain(String text) {
+        commitNow();
+        Editable e = body.getText();
+        int s = selStart();
+        int en = selEnd();
+        busy = true;
+        e.replace(s, en, text);
+        busy = false;
+        body.setSelection(Math.min(e.length(), s + text.length()));
+        changed();
+        refreshToolbar();
+    }
+
+    private void insertTableBlock(RichText.Tbl t) {
+        commitNow();
+        Editable e = body.getText();
+        busy = true;
+        int at = RichText.insertTable(e, selStart(), t);
+        busy = false;
+        body.setSelection(Math.min(e.length(), at + 2));
+        changed();
+        final int pos = at;
+        body.post(() -> {
+            RichText.Tbl made = RichText.tableOnLine(body.getText(), pos);
+            if (made != null) openCell(made, 0, 0);
+        });
+    }
+
+    private void applyFont(int idx) {
+        commitNow();
+        Editable e = body.getText();
+        int s = selStart();
+        int en = selEnd();
+        if (s == en) {
+            pending.put(RichText.FONT, idx);
+        } else {
+            RichText.apply(e, RichText.FONT, s, en, idx, idx != 0);
+            changed();
+        }
+        refreshToolbar();
+    }
+
+    private void applyCase(int mode) {
+        commitNow();
+        Editable e = body.getText();
+        int s = selStart();
+        int en = selEnd();
+        busy = true;
+        int ne = CaseTools.apply(e, mode, s, en);
+        busy = false;
+        if (s != en) body.setSelection(s, Math.min(e.length(), ne));
+        changed();
+        refreshToolbar();
+    }
+
+    private static final String[] TEMPLATES = {
+            "# {date}\n\n## Plan\n- [ ] \n- [ ] \n- [ ] \n\n## Notes\n- \n\n## Done today\n- ",
+            "# Meeting\n\n**Date:** {date}\n**With:** \n\n## Agenda\n1. \n2. \n\n## Notes\n- \n\n## Action items\n| Task | Owner | Done |\n| --- | --- | --- |\n|  |  | [ ] |\n|  |  | [ ] |",
+            "# Recipe\n\n> Serves 2 · 30 min\n\n## Ingredients\n- [ ] \n- [ ] \n- [ ] \n\n## Steps\n1. \n2. \n3. \n\n## Notes\n- ",
+            "# Week plan\n\n| Mon | Tue | Wed | Thu | Fri |\n| --- | --- | --- | --- | --- |\n|  |  |  |  |  |\n|  |  |  |  |  |\n|  |  |  |  |  |"};
+
+    private void insertTemplate(int i) {
+        String md;
+        if (i == 4) {
+            md = getSharedPreferences("settings", MODE_PRIVATE).getString("my_template", "");
+            if (md.isEmpty()) {
+                Toast.makeText(this, "Nothing saved yet: write a note, then tap Save as mine", Toast.LENGTH_LONG).show();
+                return;
+            }
+        } else {
+            md = TEMPLATES[i].replace("{date}",
+                    new java.text.SimpleDateFormat("EEE, d MMM yyyy", java.util.Locale.getDefault()).format(new java.util.Date()));
+        }
+        commitNow();
+        busy = true;
+        int c = Markdown.insert(body.getText(), selStart(), md);
+        busy = false;
+        body.setSelection(Math.min(body.getText().length(), c));
+        changed();
+        refreshToolbar();
+    }
+
+    private void markdownAction(int n) {
+        Editable e = body.getText();
+        switch (n) {
+            case 0: { // paste
+                android.content.ClipboardManager cm = getSystemService(android.content.ClipboardManager.class);
+                CharSequence clip = cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0
+                        ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
+                if (clip == null || clip.length() == 0) {
+                    Toast.makeText(this, "The clipboard is empty", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                commitNow();
+                busy = true;
+                int c = Markdown.insert(e, selStart(), clip.toString());
+                busy = false;
+                body.setSelection(Math.min(e.length(), c));
+                changed();
+                break;
+            }
+            case 1: {
+                android.content.ClipboardManager cm = getSystemService(android.content.ClipboardManager.class);
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Markdown",
+                        Markdown.export(e, title.getText().toString())));
+                Toast.makeText(this, "Copied as Markdown", Toast.LENGTH_SHORT).show();
+                break;
+            }
+            case 2: {
+                flushCell();
+                String name = title.getText().toString().trim();
+                if (name.isEmpty()) name = "note";
+                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_CREATE_DOCUMENT);
+                i.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+                i.setType("text/markdown");
+                i.putExtra(android.content.Intent.EXTRA_TITLE, name.replaceAll("[\\\\/:*?\"<>|]", "_") + ".md");
+                startActivityForResult(i, REQ_MD);
+                break;
+            }
+            case 3: {
+                int s = selStart();
+                int en = selEnd();
+                if (s == en) {
+                    Toast.makeText(this, "Select the Markdown text first", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                commitNow();
+                busy = true;
+                int c = Markdown.convertSelection(e, s, en);
+                busy = false;
+                body.setSelection(Math.min(e.length(), c));
+                changed();
+                break;
+            }
+            default:
+                new Dlg.Builder(this)
+                        .setTitle("Markdown shortcuts")
+                        .setMessage("Type at the start of a line, then a space:\n\n"
+                                + "#  heading\n-  or  *  bullet\n[]  to-do\n>  quote\n\n"
+                                + "Type --- and press Enter for a divider line.\n"
+                                + "1. starts a numbered list.\n\n"
+                                + "Paste MD turns pasted Markdown (headings, **bold**, *italic*, ~~strike~~, `code`, ==mark==, lists, quotes, tables) into formatted text. Copy MD and Save .md go the other way.")
+                        .setPositiveButton("OK", null)
+                        .show();
+        }
+        refreshToolbar();
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, android.content.Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req != REQ_MD || res != RESULT_OK || data == null || data.getData() == null) return;
+        try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData())) {
+            out.write(Markdown.export(body.getText(), title.getText().toString()).getBytes("UTF-8"));
+            Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show();
+        } catch (Exception ex) {
+            Toast.makeText(this, "Could not save the file", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    // ----------------------------------------- tables: edited right in the note, no dialog
+
+    private EditText cellEdit;
+    private RichText.Tbl curTbl;
+    private int curR;
+    private int curC;
+    private boolean cellOpen;
+    private boolean cellBusy;
+    private FrameLayout areaView;
+    private View tableBarView;
+
+    private void buildCellEdit(FrameLayout area) {
+        areaView = area;
+        cellEdit = new EditText(this);
+        cellEdit.setTag("keepfont");
+        cellEdit.setSingleLine(true);
+        cellEdit.setIncludeFontPadding(false);
+        cellEdit.setGravity(Gravity.CENTER_VERTICAL);
+        cellEdit.setTextColor(Pal.ink);
+        cellEdit.setImeOptions(EditorInfo.IME_ACTION_NEXT);
+        cellEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        cellEdit.setVisibility(View.GONE);
+        cellEdit.setOnEditorActionListener((tv, a, ev) -> {
+            nextCell();
+            return true;
+        });
+        cellEdit.setOnFocusChangeListener((v, has) -> {
+            if (!has && cellOpen && !cellBusy) closeCell(false);
+        });
+        area.addView(cellEdit, new FrameLayout.LayoutParams(dp(100), dp(40)));
+        noteScroll.getViewTreeObserver().addOnScrollChangedListener(this::placeCell);
+        area.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (cellOpen && (b - t) != (ob - ot)) {
+                placeCell();
+                ensureCellVisible();
+            }
+        });
+    }
+
+    private static int blend(int base, int over, float a) {
+        int r = Math.round(android.graphics.Color.red(base) * (1 - a) + android.graphics.Color.red(over) * a);
+        int g = Math.round(android.graphics.Color.green(base) * (1 - a) + android.graphics.Color.green(over) * a);
+        int b = Math.round(android.graphics.Color.blue(base) * (1 - a) + android.graphics.Color.blue(over) * a);
+        return android.graphics.Color.rgb(r, g, b);
+    }
+
+    private void onTableTap(RichText.Tbl t, int r, int c, boolean onTick) {
+        if (paintMode) return;
+        if (onTick) {
+            flushCell();
+            commitNow();
+            t.flipTick(r, c);
+            RichText.refresh(body.getText(), t);
+            changed();
+            body.invalidate();
+            return;
+        }
+        openCell(t, r, c);
+    }
+
+    private void openCell(RichText.Tbl t, int r, int c) {
+        if (paintMode || t == null || r >= t.rows() || c >= t.cols()) return;
+        if (cellOpen) flushCell();
+        cellBusy = true;
+        curTbl = t;
+        curR = r;
+        curC = c;
+        cellOpen = true;
+        String lab = RichText.Tbl.label(t.cells[r][c]);
+        cellEdit.setText(lab);
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(6));
+        g.setColor(r == 0 ? blend(Pal.bg, Pal.accent, Pal.dark ? 0.22f : 0.18f) : Pal.card);
+        g.setStroke(dp(2), Pal.accent);
+        cellEdit.setBackground(g);
+        Typeface base = body.getTypeface() == null ? Typeface.DEFAULT : body.getTypeface();
+        cellEdit.setTypeface(r == 0 ? Typeface.create(base, Typeface.BOLD) : base);
+        cellEdit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, body.getTextSize());
+        cellEdit.setHint(r == 0 ? "Header" : "");
+        cellEdit.setHintTextColor(Pal.muted);
+        cellEdit.setVisibility(View.VISIBLE);
+        placeCell();
+        cellEdit.requestFocus();
+        if (lab.matches("Column \\d+")) cellEdit.selectAll();
+        else cellEdit.setSelection(lab.length());
+        android.view.inputmethod.InputMethodManager imm =
+                getSystemService(android.view.inputmethod.InputMethodManager.class);
+        imm.showSoftInput(cellEdit, 0);
+        cellBusy = false;
+        tableBarView.setVisibility(View.VISIBLE);
+        ensureCellVisible();
+        cellEdit.postDelayed(this::ensureCellVisible, 320);
+    }
+
+    /** Pixel geometry of the open cell inside the editor area: {x, y, w, h, paddingLeft}. */
+    private float[] cellGeometry() {
+        android.text.Layout l = body.getLayout();
+        if (l == null || curTbl == null) return null;
+        int st = body.getText().getSpanStart(curTbl);
+        if (st < 0) return null;
+        int line = l.getLineForOffset(st);
+        android.graphics.Paint p = body.getPaint();
+        float top = l.getLineTop(line) + body.getTotalPaddingTop() + body.getTop();
+        float left = body.getTotalPaddingLeft();
+        float rh = curTbl.rowH(p);
+        float cw = curTbl.colW();
+        float pad = curTbl.padX(p);
+        float size = p.getTextSize();
+        boolean tick = RichText.Tbl.tick(curTbl.cells[curR][curC]) > 0;
+        float ax = left + curC * cw;
+        float ox = tick ? ax + pad + size * 1.25f : ax;
+        float padL = tick ? size * 0.05f : pad;
+        return new float[]{ox, top + curR * rh, cw - (ox - ax) - 1, rh - 1, padL, pad};
+    }
+
+    private void placeCell() {
+        if (!cellOpen || curTbl == null) return;
+        float[] g = cellGeometry();
+        if (g == null) {
+            dropCell();
+            return;
+        }
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) cellEdit.getLayoutParams();
+        int w = Math.round(g[2]);
+        int h = Math.round(g[3]);
+        if (lp.width != w || lp.height != h) {
+            lp.width = w;
+            lp.height = h;
+            cellEdit.setLayoutParams(lp);
+        }
+        cellEdit.setPadding(Math.round(g[4]), 0, Math.round(g[5]), 0);
+        cellEdit.setTranslationX(g[0]);
+        cellEdit.setTranslationY(g[1] - noteScroll.getScrollY());
+    }
+
+    private void ensureCellVisible() {
+        if (!cellOpen) return;
+        float[] g = cellGeometry();
+        if (g == null) return;
+        float y = g[1] - noteScroll.getScrollY();
+        int ah = areaView.getHeight();
+        if (y < dp(8)) noteScroll.scrollBy(0, Math.round(y - dp(8)));
+        else if (ah > 0 && y + g[3] > ah - dp(8)) noteScroll.scrollBy(0, Math.round(y + g[3] - ah + dp(8)));
+        placeCell();
+    }
+
+    /** Writes the open cell's text back into the table (one undo step). */
+    private void flushCell() {
+        if (!cellOpen || curTbl == null) return;
+        if (body.getText().getSpanStart(curTbl) < 0 || curR >= curTbl.rows() || curC >= curTbl.cols()) return;
+        String txt = cellEdit.getText().toString().replace('\n', ' ');
+        String old = curTbl.cells[curR][curC];
+        String neu = RichText.Tbl.compose(RichText.Tbl.tick(old), txt);
+        if (neu.equals(old)) return;
+        commitNow();
+        curTbl.cells[curR][curC] = neu;
+        RichText.refresh(body.getText(), curTbl);
+        changed();
+    }
+
+    private void closeCell(boolean hideKeyboard) {
+        if (!cellOpen) return;
+        flushCell();
+        dropCell();
+        if (hideKeyboard) {
+            getSystemService(android.view.inputmethod.InputMethodManager.class)
+                    .hideSoftInputFromWindow(body.getWindowToken(), 0);
+            body.requestFocus();
+        }
+    }
+
+    /** Hides the cell editor without writing anything. */
+    private void dropCell() {
+        cellOpen = false;
+        if (cellEdit != null) cellEdit.setVisibility(View.GONE);
+        if (tableBarView != null) tableBarView.setVisibility(View.GONE);
+    }
+
+    /** IME "next": on to the cell on the right, then the next row; past the last cell it adds a row. */
+    private void nextCell() {
+        if (!cellOpen) return;
+        flushCell();
+        final RichText.Tbl t = curTbl;
+        int r = curR;
+        int c = curC + 1;
+        if (c >= t.cols()) {
+            c = 0;
+            r++;
+        }
+        if (r >= t.rows()) {
+            if (t.rows() >= 40) return;
+            commitNow();
+            t.addRow(t.rows());
+            RichText.refresh(body.getText(), t);
+            changed();
+        }
+        final int rr = r;
+        final int cc = c;
+        cellOpen = false;
+        body.post(() -> openCell(t, rr, cc));
+    }
+
+    private View buildTableBar() {
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setBackgroundColor(Pal.raised);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(8), dp(6), dp(8), dp(6));
+        String[] names = {"Done", "+ Row", "+ Col", "− Row", "− Col", "Tick", "←", "→", "↑", "↓", "Delete table"};
+        for (int i = 0; i < names.length; i++) {
+            final int op = i;
+            TextView chip = toolChip(names[i], () -> tableOp(op));
+            chip.setMinHeight(dp(38));
+            chip.setTextSize(13);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(38));
+            lp.rightMargin = dp(6);
+            row.addView(chip, lp);
+        }
+        hs.addView(row);
+        hs.setVisibility(View.GONE);
+        tableBarView = hs;
+        return hs;
+    }
+
+    private void tableOp(int op) {
+        if (!cellOpen || curTbl == null) return;
+        if (op == 0) {
+            closeCell(true);
+            return;
+        }
+        flushCell();
+        final RichText.Tbl t = curTbl;
+        int r = curR;
+        int c = curC;
+        commitNow();
+        Editable e = body.getText();
+        switch (op) {
+            case 1:
+                if (t.rows() >= 40) return;
+                t.addRow(r + 1);
+                r = Math.max(1, r + 1);
+                break;
+            case 2:
+                if (t.cols() >= 8) return;
+                t.addCol(c + 1);
+                c++;
+                break;
+            case 3:
+                if (r == 0 || !t.delRow(r)) {
+                    Toast.makeText(this, r == 0 ? "The header row stays" : "A table keeps its header and one row",
+                            Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                r = Math.min(r, t.rows() - 1);
+                break;
+            case 4:
+                if (!t.delCol(c)) {
+                    Toast.makeText(this, "A table keeps at least two columns", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                c = Math.min(c, t.cols() - 1);
+                break;
+            case 5:
+                if (r == 0) {
+                    Toast.makeText(this, "Header cells have no tick", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                t.cycleTick(r, c);
+                break;
+            case 6: case 7: case 8: case 9: {
+                int nr = r + (op == 8 ? -1 : op == 9 ? 1 : 0);
+                int nc = c + (op == 6 ? -1 : op == 7 ? 1 : 0);
+                boolean ok = nr >= 0 && nc >= 0 && nr < t.rows() && nc < t.cols() && (r == 0) == (nr == 0);
+                if (!ok) {
+                    Toast.makeText(this, "Nowhere to move it", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                t.swap(r, c, nr, nc);
+                r = nr;
+                c = nc;
+                break;
+            }
+            default: {
+                int a = e.getSpanStart(t);
+                dropCell();
+                if (a >= 0) {
+                    e.removeSpan(t);
+                    e.delete(a, Math.min(e.length(), a + 1));
+                    changed();
+                }
+                return;
+            }
+        }
+        RichText.refresh(e, t);
+        changed();
+        final int rr = r;
+        final int cc = c;
+        cellOpen = false;
+        body.post(() -> openCell(t, rr, cc));
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (cellOpen) {
+            closeCell(true);
+            return;
+        }
+        super.onBackPressed();
     }
 
     // --------------------------------------------------------- formatting
@@ -920,24 +1307,48 @@ public class NoteEditorActivity extends Activity {
     private void onToolImpl(int key) {
         commitNow();
         if (paintMode && isBrush(key)) { // finger mode: the button picks the brush instead of applying
-            selectBrush(key == brush && key != RichText.HILITE && key != RichText.FG ? NO_BRUSH : key);
-            if (key == RichText.HILITE || key == RichText.FG) {
-                colorRow.setVisibility(key == RichText.HILITE ? View.VISIBLE : View.GONE);
-                fgRow.setVisibility(key == RichText.FG ? View.VISIBLE : View.GONE);
+            selectBrush(key == brush ? NO_BRUSH : key);
+            return;
+        }
+        if (key >= ACT_BASE && key < ACT_BASE + 100) {
+            int n = key - ACT_BASE;
+            if (n < 6) {
+                if (n == 5) {
+                    flushCell();
+                    getSharedPreferences("settings", MODE_PRIVATE).edit()
+                            .putString("my_template", Markdown.export(body.getText(), "")).apply();
+                    Toast.makeText(this, "Saved as your template", Toast.LENGTH_SHORT).show();
+                } else {
+                    insertTemplate(n);
+                }
             } else {
-                colorRow.setVisibility(View.GONE);
-                fgRow.setVisibility(View.GONE);
+                markdownAction(n - 10);
             }
             return;
         }
-        if (key == RichText.HILITE) {
-            fgRow.setVisibility(View.GONE);
-            colorRow.setVisibility(colorRow.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        if (key >= CASE_BASE && key < CASE_BASE + 100) {
+            applyCase(key - CASE_BASE);
             return;
         }
-        if (key == RichText.FG) {
-            colorRow.setVisibility(View.GONE);
-            fgRow.setVisibility(fgRow.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
+        if (key >= FONT_BASE && key < FONT_BASE + 100) {
+            applyFont(key - FONT_BASE);
+            return;
+        }
+        if (key == DATE_KEY || key == TIME_KEY) {
+            dayStamp(key == TIME_KEY);
+            return;
+        }
+        if (key == DIVIDER_KEY) {
+            busy = true;
+            int at = RichText.insertRule(body.getText(), selStart());
+            busy = false;
+            body.setSelection(Math.min(body.getText().length(), at + 2));
+            changed();
+            refreshToolbar();
+            return;
+        }
+        if (key == KANBAN_KEY) {
+            insertTableBlock(new RichText.Tbl(RichText.Tbl.kanban()));
             return;
         }
         Editable e = body.getText();
@@ -946,7 +1357,7 @@ public class NoteEditorActivity extends Activity {
         if (key == CLEAR_KEY) {
             if (s == en) { // just a cursor: the next typed text is plain
                 for (int t : new int[]{RichText.BOLD, RichText.ITALIC, RichText.UNDER, RichText.STRIKE,
-                        RichText.HILITE, RichText.CODE, RichText.FG}) pending.put(t, 0);
+                        RichText.HILITE, RichText.CODE, RichText.FG, RichText.FONT}) pending.put(t, 0);
             } else {
                 RichText.clearStyles(e, s, en);
                 changed();
@@ -977,10 +1388,26 @@ public class NoteEditorActivity extends Activity {
             return;
         }
         if (key == TABLE_KEY) {
-            tableMenu();
+            insertTableBlock(new RichText.Tbl(RichText.Tbl.blank(3, 3)));
             return;
         }
-        boolean lineType = key == RichText.HEAD || key == RichText.BLOCK;
+        if (key == TOGGLE_KEY) {
+            busy = true;
+            int d = RichText.toggleToggle(e, s);
+            busy = false;
+            body.setSelection(Math.max(0, Math.min(e.length(), en + d)));
+            changed();
+            refreshToolbar();
+            return;
+        }
+        boolean lineType = key == RichText.HEAD || key == RichText.BLOCK || key == RichText.QUOTE
+                || key == RichText.CALLOUT;
+        if (key == RichText.QUOTE || key == RichText.CALLOUT) { // quote and callout are alternatives
+            int other = key == RichText.QUOTE ? RichText.CALLOUT : RichText.QUOTE;
+            int a0 = RichText.lineStart(e, s);
+            int b0 = RichText.lineEnd(e, en);
+            if (b0 > a0) RichText.apply(e, other, a0, b0, 0, false);
+        }
         if (s == en) {
             int a = RichText.lineStart(e, s);
             int b = RichText.lineEnd(e, s);
@@ -1029,6 +1456,7 @@ public class NoteEditorActivity extends Activity {
             p = le + 1;
         }
         RichText.renumber(e, firstLs, -1);
+        RichText.refold(e);
         busy = false;
         int newEnd = RichText.lineEnd(e, lastLs);
         if (s == en) {
@@ -1069,9 +1497,8 @@ public class NoteEditorActivity extends Activity {
         paintMode = on;
         brush = NO_BRUSH;
         styleFab();
-        colorRow.setVisibility(View.GONE);
-        fgRow.setVisibility(View.GONE);
         if (on) {
+            closeCell(false);
             android.view.inputmethod.InputMethodManager imm =
                     getSystemService(android.view.inputmethod.InputMethodManager.class);
             imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
@@ -1214,43 +1641,57 @@ public class NoteEditorActivity extends Activity {
         return RichText.active(body.getText(), key, s, en);
     }
 
-    private void refreshToolbar() {
-        if (body == null || buttons.isEmpty()) return;
+    private int fontSel() {
         int s = selStart();
         int en = selEnd();
-        for (Map.Entry<Integer, TextView> b : buttons.entrySet()) {
-            int key = b.getKey();
-            boolean on;
-            if (key == BULLET_KEY) {
-                on = RichText.prefixAt(body.getText(), RichText.lineStart(body.getText(), s))
-                        == RichText.P_BULLET;
-            } else if (key == CHECK_KEY) {
-                on = RichText.prefixAt(body.getText(), RichText.lineStart(body.getText(), s))
-                        >= RichText.P_CHECK_OFF;
-            } else if (key == RichText.HILITE) {
-                on = isOn(key, s, en);
-            } else {
-                on = isOn(key, s, en);
-            }
-            if (key == SIZE_KEY) on = RichText.sizeAt(body.getText(), s, en) != 0;
-            if (key == NUM_KEY) {
-                on = RichText.numLen(body.getText(), RichText.lineStart(body.getText(), s)) > 0;
-            }
-            if (key == CLEAR_KEY || key == IN_KEY || key == OUT_KEY) on = false;
-            style(b.getValue(), on, paintMode && key == brush);
-        }
+        if (s == en && pending.containsKey(RichText.FONT)) return pending.get(RichText.FONT);
+        return RichText.fontAt(body.getText(), s, en);
     }
 
-    private void style(TextView t, boolean on, boolean brushed) {
+    private void refreshToolbar() {
+        if (body == null) return;
+        int s = selStart();
+        int en = selEnd();
+        if (!buttons.isEmpty()) {
+            int mk = RichText.prefixAt(body.getText(), RichText.lineStart(body.getText(), s));
+            int font = fontSel();
+            for (Map.Entry<Integer, Tool> b : buttons.entrySet()) {
+                int key = b.getKey();
+                boolean on;
+                if (key == BULLET_KEY) {
+                    on = mk == RichText.P_BULLET;
+                } else if (key == CHECK_KEY) {
+                    on = RichText.isCheck(mk);
+                } else if (key == TOGGLE_KEY) {
+                    on = RichText.isToggle(mk);
+                } else if (key >= FONT_BASE && key < FONT_BASE + 100) {
+                    on = font == key - FONT_BASE;
+                } else if (key >= CASE_BASE || key < 0 && key != SIZE_KEY && key != NUM_KEY
+                        && key != BULLET_KEY && key != CHECK_KEY) {
+                    on = false;
+                } else {
+                    on = isOn(key, s, en);
+                }
+                if (key == SIZE_KEY) on = RichText.sizeAt(body.getText(), s, en) != 0;
+                if (key == NUM_KEY) {
+                    on = RichText.numLen(body.getText(), RichText.lineStart(body.getText(), s)) > 0;
+                }
+                if (key == TABLE_KEY) on = false;
+                style(b.getValue(), on, paintMode && key == brush);
+            }
+        }
+        updateSwatches();
+    }
+
+    private void style(Tool t, boolean on, boolean brushed) {
         GradientDrawable g = new GradientDrawable();
         g.setCornerRadius(dp(12));
         g.setColor(brushed ? Pal.accent : on ? Pal.sel : 0);
         if (paintMode && !brushed) g.setStroke(dp(1), Pal.chip);
-        t.setBackground(g);
-        // The highlight / text-colour buttons keep their own colour.
-        if (!(t.getText() instanceof Spanned)) {
-            t.setTextColor(brushed ? Pal.onAccent : on ? Pal.onSel : Pal.ink);
-        }
+        t.box.setBackground(g);
+        int col = brushed ? Pal.onAccent : on ? Pal.onSel : Pal.ink;
+        t.glyph.setTextColor(col);
+        t.label.setTextColor(brushed || on ? col : Pal.muted);
     }
 
     /** Runs after every text change: applies "next typed text" styles and continues bullet lists. */
@@ -1269,9 +1710,13 @@ public class NoteEditorActivity extends Activity {
                 }
             }
             boolean moved = false;
+            // Markdown-style shortcuts: "# ", "- ", "[] ", "> " at the start of a line
+            if (insCount == 1 && insBefore == 0 && insStart < e.length() && e.charAt(insStart) == ' ') {
+                moved = mdShortcut(e);
+            }
             // Enter = the last inserted character is a newline (some keyboards commit "word\n" together).
             int nl = insStart + insCount - 1;
-            boolean enter = insCount >= 1 && nl < e.length() && e.charAt(nl) == '\n'
+            boolean enter = !moved && insCount >= 1 && nl < e.length() && e.charAt(nl) == '\n'
                     && e.subSequence(insStart, nl).toString().indexOf('\n') < 0;
             if (enter) {
                 int ps = RichText.lineStart(e, nl); // the line that Enter just ended
@@ -1281,7 +1726,15 @@ public class NoteEditorActivity extends Activity {
                 int lvl = RichText.indentOf(e, ps);
                 boolean emptyItem = (kind != RichText.P_NONE && nl - ps == 2)
                         || (numLen > 0 && nl - ps == numLen);
-                if (emptyItem && restEmpty && lvl > 0) {
+                if (kind == RichText.P_NONE && numLen == 0 && nl - ps == 3
+                        && e.subSequence(ps, nl).toString().equals("---")) {
+                    // --- and Enter = a divider line
+                    e.replace(ps, nl, String.valueOf(RichText.RULE_CHAR));
+                    e.setSpan(new RichText.Rule(), ps, ps + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    expectCursor = Math.min(e.length(), ps + 2);
+                    body.setSelection(expectCursor);
+                    moved = true;
+                } else if (emptyItem && restEmpty && lvl > 0) {
                     // Enter on an empty nested item steps it back out one level
                     e.delete(nl, nl + 1);
                     RichText.setIndent(e, ps, lvl - 1);
@@ -1292,6 +1745,14 @@ public class NoteEditorActivity extends Activity {
                 } else if (emptyItem && restEmpty) { // Enter on an empty item ends the list
                     e.delete(ps, nl + 1);
                     expectCursor = ps;
+                    body.setSelection(Math.min(expectCursor, e.length()));
+                    moved = true;
+                } else if (RichText.isToggle(kind)) {
+                    // Enter in a toggle opens it and starts a line inside it
+                    if (kind == RichText.P_TOGGLE_CLOSED) e.replace(ps, ps + 1, "\u25BE");
+                    RichText.setIndent(e, ps, lvl);
+                    RichText.setIndent(e, nl + 1, Math.min(RichText.MAX_INDENT, lvl + 1));
+                    expectCursor = nl + 1;
                     body.setSelection(Math.min(expectCursor, e.length()));
                     moved = true;
                 } else if (kind != RichText.P_NONE) {
@@ -1315,6 +1776,13 @@ public class NoteEditorActivity extends Activity {
                     expectCursor = nl + 1 + next.length();
                     body.setSelection(Math.min(expectCursor, e.length()));
                     moved = true;
+                } else if (kind == RichText.P_NONE && numLen == 0 && nl == ps && restEmpty && lvl > 0) {
+                    // Enter on an empty indented line steps it back out
+                    e.delete(nl, nl + 1);
+                    RichText.setIndent(e, ps, lvl - 1);
+                    expectCursor = Math.min(e.length(), RichText.lineEnd(e, ps));
+                    body.setSelection(expectCursor);
+                    moved = true;
                 } else if (lvl > 0 || RichText.indentOf(e, nl + 1 <= e.length() ? nl + 1 : nl) > 0) {
                     RichText.setIndent(e, ps, lvl);
                     RichText.setIndent(e, nl + 1, lvl);
@@ -1326,7 +1794,7 @@ public class NoteEditorActivity extends Activity {
                 int ls = RichText.lineStart(e, Math.min(insStart, e.length()));
                 if (insStart == ls + 1 && ls < e.length()) {
                     char ch = e.charAt(ls);
-                    if (ch == '\u2022' || ch == '\u2610' || ch == '\u2611') {
+                    if (ch == '\u2022' || ch == '\u2610' || ch == '\u2611' || ch == '\u25B8' || ch == '\u25BE') {
                         e.delete(ls, ls + 1);
                         expectCursor = ls;
                         body.setSelection(Math.min(ls, e.length()));
@@ -1335,12 +1803,41 @@ public class NoteEditorActivity extends Activity {
                 }
             }
             if (!moved) expectCursor = insStart + insCount;
+            if (enter || insBefore > 0) RichText.refold(e); // lines may have joined or split under a toggle
         } finally {
             busy = false;
             typing = false;
             insCount = 0;
         }
         refreshToolbar();
+    }
+
+    /** "# ", "- ", "* ", "[] ", "> " typed at the start of a line become a heading, bullet, to-do or quote. */
+    private boolean mdShortcut(Editable e) {
+        int ls = RichText.lineStart(e, insStart);
+        int upto = insStart + 1;
+        String pre = e.subSequence(ls, upto).toString();
+        int lvl = RichText.indentOf(e, ls);
+        if (pre.equals("- ") || pre.equals("* ")) {
+            e.replace(ls, upto, RichText.BULLET);
+            if (lvl > 0) RichText.setIndent(e, ls, lvl);
+            expectCursor = ls + 2;
+        } else if (pre.equals("[] ") || pre.equals("[ ] ")) {
+            e.replace(ls, upto, RichText.CHECK_OFF);
+            if (lvl > 0) RichText.setIndent(e, ls, lvl);
+            expectCursor = ls + 2;
+        } else if (pre.matches("#{1,3} ") || pre.equals("> ")) {
+            e.delete(ls, upto);
+            int type = pre.startsWith("#") ? RichText.HEAD : RichText.QUOTE;
+            int le = RichText.lineEnd(e, ls);
+            if (le > ls) RichText.apply(e, type, ls, le, 0, true);
+            else pending.put(type, 1);
+            expectCursor = ls;
+        } else {
+            return false;
+        }
+        body.setSelection(Math.min(expectCursor, e.length()));
+        return true;
     }
 
     /**
@@ -1356,8 +1853,10 @@ public class NoteEditorActivity extends Activity {
                 if (a < nl) e.setSpan(RichText.make(RichText.HEAD, 0), a, nl, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
             }
         }
-        if (nl == ps && RichText.active(e, RichText.BLOCK, ps, nl + 1)) {
-            RichText.apply(e, RichText.BLOCK, ps, nl + 1, 0, false); // second Enter ends the code block
+        if (nl == ps) { // second Enter on an empty line ends a code block, quote or callout
+            for (int ty : new int[]{RichText.BLOCK, RichText.QUOTE, RichText.CALLOUT}) {
+                if (RichText.active(e, ty, ps, nl + 1)) RichText.apply(e, ty, ps, nl + 1, 0, false);
+            }
         }
     }
 
@@ -1395,22 +1894,26 @@ public class NoteEditorActivity extends Activity {
     }
 
     private void undo() {
+        flushCell();
         commitNow();
         if (histPos > 0) restore(histPos - 1);
     }
 
     private void redo() {
+        flushCell();
         commitNow();
         if (histPos < hist.size() - 1) restore(histPos + 1);
     }
 
     private void restore(int pos) {
+        dropCell();
         restoring = true;
         busy = true;
         try {
             Editable e = body.getText();
             e.clear();
             RichText.fromJson(hist.get(pos), e);
+            RichText.refold(e);
             int[] sel = histSel.get(pos);
             body.setSelection(Math.min(sel[0], e.length()), Math.min(sel[1], e.length()));
         } finally {
@@ -1436,6 +1939,7 @@ public class NoteEditorActivity extends Activity {
     }
 
     private void saveNow() {
+        flushCell();
         if (body != null) body.removeCallbacks(commitTask);
         if (deleted || !dirty) return;
         String t = title.getText().toString().trim();

@@ -25,6 +25,16 @@ final class HabitUi {
                 Math.round(Color.blue(a) * t + Color.blue(b) * (1 - t)));
     }
 
+    /** A "drink water" habit (it gets the rising-water background): a goal in a drink unit, or "water" in the name. */
+    static boolean isWater(Habit h) {
+        if (h.goal <= 0) return false;
+        String n = h.name.toLowerCase(java.util.Locale.ROOT);
+        String u = h.unit.toLowerCase(java.util.Locale.ROOT).trim();
+        if (n.contains("water") || n.contains("hydrat")) return true;
+        return u.equals("ml") || u.equals("l") || u.startsWith("litre") || u.startsWith("liter")
+                || u.equals("oz") || u.equals("fl oz") || u.startsWith("glass") || u.startsWith("cup");
+    }
+
     static int alpha(int c, int a) {
         return (c & 0x00FFFFFF) | (a << 24);
     }

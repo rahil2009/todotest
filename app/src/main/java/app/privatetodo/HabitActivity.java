@@ -3,6 +3,7 @@ package app.privatetodo;
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -153,7 +154,12 @@ public class HabitActivity extends Activity {
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(Pal.card);
         bg.setCornerRadius(dp(28));
-        card.setBackground(bg);
+        if (HabitUi.isWater(h)) { // drink water: the card fills with water as the day's total climbs to the goal
+            card.setBackground(new android.graphics.drawable.LayerDrawable(new Drawable[]{bg,
+                    new WaterDrawable(density, 28, h.color, h.id, amt / (float) h.goal)}));
+        } else {
+            card.setBackground(bg);
+        }
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2);
         clp.bottomMargin = dp(12);
         card.setLayoutParams(clp);

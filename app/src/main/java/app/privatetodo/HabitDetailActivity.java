@@ -73,7 +73,14 @@ public class HabitDetailActivity extends Activity {
         // ---- coloured header
         LinearLayout head = new LinearLayout(this);
         head.setOrientation(LinearLayout.VERTICAL);
-        head.setBackgroundColor(tint);
+        if (HabitUi.isWater(h)) { // the header fills with water up to today's goal
+            int today0 = m.containsKey(today) ? m.get(today) : 0;
+            head.setBackground(new android.graphics.drawable.LayerDrawable(new android.graphics.drawable.Drawable[]{
+                    new android.graphics.drawable.ColorDrawable(tint),
+                    new WaterDrawable(density, 0, h.color, h.id + 1000000L, today0 / (float) h.goal)}));
+        } else {
+            head.setBackgroundColor(tint);
+        }
         head.setPadding(dp(18), dp(14), dp(18), dp(36));
         page.addView(head, new LinearLayout.LayoutParams(-1, -2));
 

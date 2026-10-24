@@ -242,8 +242,24 @@ Everything the in-page design edits had changed, now in the app:
 
 ## v3.34
 
-- **Task animations** (Settings > Task animations): 20 styles plus None, set separately for Normal, Low, Medium and High tasks. Every sample on the page plays live; tap one to use it. Drawn as a card foreground (`Fx.java`), only while on screen, never on finished tasks.
+- **Task animations**: replaced in v3.35 by tick animations (below).
 - **Done haptics** (Settings > Done haptics): Off, Standard and 15 Pixel-style patterns built from the phone's vibration primitives (`Hap.java`), with a simpler timed fallback on phones without them. Tap a pattern to feel it and use it. Plays when a task, a repeating round, or the last subtask completes.
 - **Notes Bin**: deleting a note moves it to the Bin (last chip in Notes). Restore or Delete forever, Empty Bin; notes leave the Bin by themselves after 30 days. DB v13 adds `notes.deleted`.
 - **Scroll jump fixed**: ticking a to-do, and the toolbar buttons (style, highlight, text colour, indent), keep the page where it was.
 - **Share to the app**: Private Todo appears in Android's Share menu for text/links. A share is saved at once to Notes > Shared notes (date and time, link, editable title and description, Remind me, Open, Copy, Delete). Remind me opens the Add task popup with the title and link filled in. No network access is used: nothing is fetched from the link.
+
+## v3.35
+
+- **Notes editor, new bottom toolbar**: tools sit only at the bottom, in eight tabs: **Text** (size, bold, italic, underline, strike, code, heading, clear), **Lists** (bullets, numbers, to-do, **toggle**, nest out / in), **Insert** (table, **Kanban**, **quote**, callout, divider, code block, date, time), **Case**, **Color** (text and mark swatches inline), **Font**, **Templates**, **Markdown**. Finger mode is unchanged: pick a style (including a colour) and swipe over text.
+- **Tables work inside the note**: tap a cell and type right there (a field sits on the cell, no popup). Next on the keyboard moves to the next cell and adds a row at the end. A bar above the toolbar: Done, + Row, + Col, - Row, - Col, **Tick** (none, box, ticked), move the cell with the arrows, Delete table. Tap a tick circle in a table to flip it. Rounded border, tinted bold header, separators. Everything is one undo step.
+- **Kanban**: a table with To do / Doing / Done columns; move a card with the arrows, tick it when finished.
+- **Toggle**: turns a line into a fold (tap the arrow to hide / show the lines nested under it). Enter in a toggle opens it and starts a line inside; Enter on an empty inside line steps back out.
+- **Quote** and **Callout**, **Divider** (or type `---` then Enter).
+- **Case** (12): UPPER, lower, Title Case, Sentence case, camelCase, PascalCase, snake_case, kebab-case, CONSTANT, dot.case, aLtErNaTe, iNVERT. On the selection, or the word at the cursor; formatting is kept.
+- **Markdown**: type `# `, `- `, `[] `, `> ` at the start of a line; **Paste MD** turns clipboard Markdown into formatted text; **Copy MD**; **Save .md** (system file picker, no storage permission); **Convert** the selected Markdown. Tables, tick boxes, bold, italic, strike, code and ==mark== are supported both ways.
+- **Templates**: Daily log, Meeting, Recipe, Week plan, plus one of your own (Save as mine / Mine).
+- **Fonts** (bundled, all SIL OFL; see `assets/font-licenses`): Bricolage Grotesque, Lora (the Georgia-style serif), Crimson Pro, Young Serif, Gloock, Instrument Serif, Outfit, Poiret One, a handwriting font, TeX Gyre Chorus (calligraphy) and JetBrains Mono. Per selection from the Font tab; the whole-note default is in Settings > Notebook > Note font.
+- Removed: Scan text, Voice to text, maths (x squared, x subscript) and the + button, from the design and the app.
+- **Task animations removed** (`Fx.java` deleted). The water effect now lives in the **Drink water** habit: the card (and the habit's header) fills with moving water as today's total rises to the goal. A habit counts as water when its name has "water" or its unit is ml, l, oz, glasses or cups.
+- **Tick animations** (Settings > Tick animation): 10 styles plus Off (Pop, Ripple, Confetti, Sparkles, Check draw, Ring burst, Fireworks, Row sweep, Confetti rain, Bubbles) for when you tick a task on the main screen, by the circle or by swiping right. Each row has a **Test** button. Drawn on a short-lived overlay (`TickFx.java`), nothing runs between ticks.
+- **Full-screen alert**: the upper volume button silences the ringing (sound and vibration); the alert stays open for Done / Snooze.

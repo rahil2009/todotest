@@ -123,7 +123,7 @@ public class BinActivity extends Activity {
         t.setSingleLine(true);
         t.setEllipsize(android.text.TextUtils.TruncateAt.END);
         c.addView(t);
-        String body = RichText.plain(n.body).replace('￼', ' ').trim();
+        String body = RichText.tidy(RichText.plain(n.body)).replace('￼', ' ').trim();
         if (!body.isEmpty()) {
             TextView p = text(body, 14, Pal.muted, false);
             p.setMaxLines(2);

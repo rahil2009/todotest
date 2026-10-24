@@ -258,6 +258,25 @@ public class AlarmActivity extends Activity {
         dismiss();
     }
 
+    /** The upper volume button silences the ringing (sound and vibration); the screen stays for Done / Snooze. */
+    @Override
+    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP && RingService.isRinging()) {
+            if (event.getRepeatCount() == 0) {
+                RingService.stopFor(this, id);
+                android.widget.Toast.makeText(this, "Silenced", android.widget.Toast.LENGTH_SHORT).show();
+            }
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) return true;
+        return super.onKeyUp(keyCode, event);
+    }
+
     private TextView label(String s, int sp, int color, boolean bold) {
         TextView t = new TextView(this);
         t.setText(s);

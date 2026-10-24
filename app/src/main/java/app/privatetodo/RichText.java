@@ -41,6 +41,17 @@ final class RichText {
     static final int FG = 10;
     /** Nesting level of a list line (paragraph indent); the arg is the level. */
     static final int INDENT = 11;
+    /** A font from {@link NoteFonts}; the arg is its index. */
+    static final int FONT = 12;
+    /** Quote paragraph (accent bar, serif italic). */
+    static final int QUOTE = 13;
+    /** Text folded away under a collapsed toggle. */
+    static final int HIDE = 14;
+    /** Horizontal divider drawn in place of one placeholder character. */
+    static final int RULE = 15;
+    /** Tinted callout paragraph. */
+    static final int CALLOUT = 16;
+    static final char RULE_CHAR = '\u2500';
     static final int MAX_INDENT = 5;
     static final int MIN_SIZE = 8;
     static final int MAX_SIZE = 72;
@@ -167,6 +178,167 @@ final class RichText {
         @Override
         public void updateDrawState(TextPaint p) {
             updateMeasureState(p);
+        }
+    }
+
+    /** Text in one of the bundled fonts (bold / italic follow the surrounding styles). */
+    static final class Fnt extends MetricAffectingSpan {
+        final int idx;
+
+        Fnt(int idx) {
+            this.idx = Math.max(0, Math.min(NoteFonts.count() - 1, idx));
+        }
+
+        private void set(TextPaint p) {
+            Typeface cur = p.getTypeface();
+            int st = cur == null ? Typeface.NORMAL : cur.getStyle();
+            Typeface f = NoteFonts.face(idx);
+            p.setTypeface(st == Typeface.NORMAL ? f : Typeface.create(f, st));
+        }
+
+        @Override
+        public void updateMeasureState(TextPaint p) {
+            set(p);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+            set(p);
+        }
+    }
+
+    /** A quote: accent bar on the left, serif italic text. */
+    static final class Quote extends MetricAffectingSpan implements android.text.style.LeadingMarginSpan {
+        private void set(TextPaint p) {
+            p.setTypeface(Typeface.create(NoteFonts.face(2), Typeface.ITALIC));
+        }
+
+        @Override
+        public void updateMeasureState(TextPaint p) {
+            set(p);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+            set(p);
+        }
+
+        @Override
+        public int getLeadingMargin(boolean first) {
+            return Math.round(16 * density);
+        }
+
+        @Override
+        public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
+                                      int bottom, CharSequence text, int start, int end, boolean first,
+                                      android.text.Layout layout) {
+            int old = p.getColor();
+            Paint.Style os = p.getStyle();
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Pal.accent);
+            float w = 3 * density;
+            c.drawRect(dir > 0 ? x : x - w, top, dir > 0 ? x + w : x, bottom, p);
+            p.setColor(old);
+            p.setStyle(os);
+        }
+    }
+
+    /** A callout: tinted panel with an accent edge. */
+    static final class Callout extends MetricAffectingSpan
+            implements LineBackgroundSpan, android.text.style.LeadingMarginSpan {
+        @Override
+        public void updateMeasureState(TextPaint p) {
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+        }
+
+        @Override
+        public int getLeadingMargin(boolean first) {
+            return Math.round(16 * density);
+        }
+
+        @Override
+        public void drawLeadingMargin(Canvas c, Paint p, int x, int dir, int top, int baseline,
+                                      int bottom, CharSequence text, int start, int end, boolean first,
+                                      android.text.Layout layout) {
+        }
+
+        @Override
+        public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
+                                   int bottom, CharSequence text, int start, int end, int lnum) {
+            int old = p.getColor();
+            Paint.Style os = p.getStyle();
+            p.setStyle(Paint.Style.FILL);
+            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x2E000000 : 0x26000000));
+            c.drawRect(left, top, right, bottom, p);
+            p.setColor(Pal.accent);
+            c.drawRect(left, top, left + 4 * density, bottom, p);
+            p.setColor(old);
+            p.setStyle(os);
+        }
+    }
+
+    /** Whole paragraphs folded away under a collapsed toggle: invisible and zero height. */
+    static final class Hide extends MetricAffectingSpan implements android.text.style.LineHeightSpan {
+        @Override
+        public void updateMeasureState(TextPaint p) {
+            p.setTextSize(1f);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+            p.setTextSize(1f);
+            p.setColor(0);
+            p.bgColor = 0;
+        }
+
+        @Override
+        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
+                                 Paint.FontMetricsInt fm) {
+            fm.ascent = 0;
+            fm.descent = 0;
+            fm.top = 0;
+            fm.bottom = 0;
+        }
+    }
+
+    static boolean hiddenAt(CharSequence text, int start, int end) {
+        return text instanceof Spanned && ((Spanned) text).getSpans(start, Math.max(end, start + 1), Hide.class).length > 0;
+    }
+
+    /** A thin horizontal rule standing in for one placeholder character. */
+    static final class Rule extends android.text.style.ReplacementSpan {
+        @Override
+        public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            if (fm != null) {
+                int h = Math.round(p.getTextSize() * 0.9f);
+                fm.ascent = -h;
+                fm.top = -h;
+                fm.descent = 0;
+                fm.bottom = 0;
+            }
+            return tableWidth > 0 ? tableWidth : Math.round(300 * density);
+        }
+
+        @Override
+        public void draw(Canvas c, CharSequence text, int start, int end, float x, int top, int y,
+                         int bottom, Paint p) {
+            if (hiddenAt(text, start, end)) return;
+            int old = p.getColor();
+            Paint.Style os = p.getStyle();
+            float sw = p.getStrokeWidth();
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(1.5f, 1.5f * density));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setColor(Pal.dark ? 0xFF4A5753 : 0xFF9AA5A1);
+            float w = tableWidth > 0 ? tableWidth : 300 * density;
+            float cy = y - p.getTextSize() * 0.4f;
+            c.drawLine(x + 2 * density, cy, x + w - 2 * density, cy, p);
+            p.setColor(old);
+            p.setStyle(os);
+            p.setStrokeWidth(sw);
         }
     }
 
@@ -304,26 +476,120 @@ final class RichText {
             return (state == 2 ? CHECK_ON : CHECK_OFF) + label;
         }
 
-        /** Flips a tick box at (xl, yl) measured from the table's top-left; true if one was hit. */
-        boolean toggleAt(float xl, float yl, Paint p) {
+        /** Row height in px for the paint the table is drawn with. */
+        int rowH(Paint p) {
+            return Math.round(p.getTextSize() * 1.25f + p.getTextSize() * 1.0f);
+        }
+
+        float colW() {
+            return width() / (float) Math.max(1, cols());
+        }
+
+        /** Left padding inside a cell. */
+        float padX(Paint p) {
+            return p.getTextSize() * 0.5f;
+        }
+
+        /** Where a cell's text starts, measured from the cell's left edge (after the tick circle, if any). */
+        float textInset(Paint p, int r, int k) {
+            float in = padX(p);
+            if (tick(cells[r][k]) > 0) in += p.getTextSize() * 1.3f;
+            return in;
+        }
+
+        /** The {row, col} under (xl, yl), measured from the table's top-left; null when outside. */
+        int[] cellAt(float xl, float yl, Paint p) {
             int rows = rows();
             int cols = cols();
-            if (rows == 0 || cols == 0) return false;
-            float rh = rowH(p);
-            float colW = width() / (float) cols;
-            int r = (int) (yl / rh);
-            int k = (int) (xl / colW);
-            if (r < 0 || r >= rows || k < 0 || k >= cols) return false;
-            int st = tick(cells[r][k]);
-            if (st == 0) return false;
-            float into = xl - k * colW;
-            if (into > p.getTextSize() * 0.5f + p.getTextSize() * 1.3f + 10 * density) return false;
-            cells[r][k] = compose(st == 1 ? 2 : 1, label(cells[r][k]));
+            if (rows == 0 || cols == 0) return null;
+            int r = (int) (yl / rowH(p));
+            int k = (int) (xl / colW());
+            if (yl < 0 || xl < 0 || r >= rows || k >= cols) return null;
+            return new int[]{r, k};
+        }
+
+        /** True if (xl, yl) is on the tick circle of a cell that has one. */
+        boolean onTick(float xl, float yl, Paint p) {
+            int[] rc = cellAt(xl, yl, p);
+            if (rc == null || tick(cells[rc[0]][rc[1]]) == 0) return false;
+            float into = xl - rc[1] * colW();
+            return into <= padX(p) + p.getTextSize() * 1.3f + 8 * density;
+        }
+
+        /** Flips a tick box at (xl, yl) measured from the table's top-left; true if one was hit. */
+        boolean toggleAt(float xl, float yl, Paint p) {
+            if (!onTick(xl, yl, p)) return false;
+            int[] rc = cellAt(xl, yl, p);
+            int st = tick(cells[rc[0]][rc[1]]);
+            cells[rc[0]][rc[1]] = compose(st == 1 ? 2 : 1, label(cells[rc[0]][rc[1]]));
             return true;
         }
 
-        private int rowH(Paint p) {
-            return Math.round(p.getTextSize() * 1.25f + p.getTextSize() * 0.9f);
+        /** none -> empty box -> ticked -> none */
+        void cycleTick(int r, int k) {
+            int st = (tick(cells[r][k]) + 1) % 3;
+            cells[r][k] = compose(st, label(cells[r][k]));
+        }
+
+        /** Ticks / unticks a cell that already has a box. */
+        void flipTick(int r, int k) {
+            int st = tick(cells[r][k]);
+            if (st == 0) return;
+            cells[r][k] = compose(st == 1 ? 2 : 1, label(cells[r][k]));
+        }
+
+        static String[][] kanban() {
+            return new String[][]{{"To do", "Doing", "Done"}, {"", "", ""}, {"", "", ""}, {"", "", ""}};
+        }
+
+        void addRow(int at) {
+            at = Math.max(1, Math.min(rows(), at));
+            String[][] n = new String[rows() + 1][];
+            for (int r = 0, o = 0; r < n.length; r++) {
+                if (r == at) {
+                    n[r] = new String[cols()];
+                    java.util.Arrays.fill(n[r], "");
+                } else {
+                    n[r] = cells[o++];
+                }
+            }
+            cells = n;
+        }
+
+        void addCol(int at) {
+            at = Math.max(0, Math.min(cols(), at));
+            for (int r = 0; r < rows(); r++) {
+                String[] row = new String[cols() + 1];
+                for (int k = 0, o = 0; k < row.length; k++) {
+                    row[k] = k == at ? (r == 0 ? "Column " + (cols() + 1) : "") : cells[r][o++];
+                }
+                cells[r] = row;
+            }
+        }
+
+        boolean delRow(int at) {
+            if (rows() <= 2 || at < 1 || at >= rows()) return false; // header + one row stay
+            String[][] n = new String[rows() - 1][];
+            for (int r = 0, o = 0; r < rows(); r++) if (r != at) n[o++] = cells[r];
+            cells = n;
+            return true;
+        }
+
+        boolean delCol(int at) {
+            if (cols() <= 2 || at < 0 || at >= cols()) return false;
+            for (int r = 0; r < rows(); r++) {
+                String[] row = new String[cols() - 1];
+                for (int k = 0, o = 0; k < cols(); k++) if (k != at) row[o++] = cells[r][k];
+                cells[r] = row;
+            }
+            return true;
+        }
+
+        /** Swaps two cells (used to move a Kanban card between columns). */
+        void swap(int r1, int k1, int r2, int k2) {
+            String t = cells[r1][k1];
+            cells[r1][k1] = cells[r2][k2];
+            cells[r2][k2] = t;
         }
 
         @Override
@@ -343,13 +609,13 @@ final class RichText {
                          int bottom, Paint p) {
             int rows = rows();
             int cols = cols();
-            if (rows == 0 || cols == 0) return;
+            if (rows == 0 || cols == 0 || hiddenAt(text, start, end)) return;
             float w = width();
             float rh = rowH(p);
             float colW = w / cols;
             float t0 = y - rh * rows;
             float pad = p.getTextSize() * 0.5f;
-            float rad = 8 * density;
+            float rad = 10 * density;
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             Typeface oldFace = p.getTypeface();
@@ -360,6 +626,9 @@ final class RichText {
             line.setColor(Pal.dark ? 0xFF4A5753 : 0xFF9AA5A1);
             line.setStyle(Paint.Style.STROKE);
             line.setStrokeWidth(Math.max(1f, density));
+            Paint sep = new Paint(Paint.ANTI_ALIAS_FLAG);
+            sep.setColor((line.getColor() & 0x00FFFFFF) | 0x80000000);
+            sep.setStrokeWidth(Math.max(1f, density));
 
             android.graphics.RectF box = new android.graphics.RectF(x + 1, t0 + 1, x + w - 1, y - 1);
             c.save();
@@ -374,8 +643,8 @@ final class RichText {
             c.drawRect(x, t0 + rh, x + w, y, fill);
             c.restore();
 
-            for (int r = 1; r < rows; r++) c.drawLine(x, t0 + r * rh, x + w, t0 + r * rh, line);
-            for (int k = 1; k < cols; k++) c.drawLine(x + k * colW, t0, x + k * colW, y, line);
+            for (int r = 1; r < rows; r++) c.drawLine(x, t0 + r * rh, x + w, t0 + r * rh, r == 1 ? line : sep);
+            for (int k = 1; k < cols; k++) c.drawLine(x + k * colW, t0, x + k * colW, y, sep);
             c.drawRoundRect(box, rad, rad, line);
 
             android.text.TextPaint tp = new android.text.TextPaint(p);
@@ -451,6 +720,10 @@ final class RichText {
 
     /** Puts a new table on its own line at {@code pos}; returns the placeholder's start. */
     static int insertTable(Editable e, int pos, int cols, int rows) {
+        return insertTable(e, pos, new Tbl(Tbl.blank(rows, cols)));
+    }
+
+    static int insertTable(Editable e, int pos, Tbl table) {
         int at = lineStart(e, pos);
         boolean lineHasText = lineEnd(e, pos) > at;
         int ins = lineHasText ? lineEnd(e, pos) : at;
@@ -461,8 +734,92 @@ final class RichText {
         sb.append('\n'); // a line below to keep typing on
         e.insert(ins, sb.toString());
         int s = ins + off;
-        e.setSpan(new Tbl(Tbl.blank(rows, cols)), s, s + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        e.setSpan(table, s, s + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         return s;
+    }
+
+    /** Puts a divider line on its own line at {@code pos}. */
+    static int insertRule(Editable e, int pos) {
+        int at = lineStart(e, pos);
+        boolean lineHasText = lineEnd(e, pos) > at;
+        int ins = lineHasText ? lineEnd(e, pos) : at;
+        String sb = (lineHasText ? "\n" : "") + RULE_CHAR + "\n";
+        e.insert(ins, sb);
+        int s0 = ins + (lineHasText ? 1 : 0);
+        e.setSpan(new Rule(), s0, s0 + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return s0;
+    }
+
+    // ---- toggles: a "▸ " / "▾ " line whose deeper-indented lines below it fold away
+
+    /** End (exclusive) of the lines folded under the toggle at {@code ls}: the first line that is not deeper. */
+    static int childEnd(Spanned e, int ls) {
+        int lvl = indentOf(e, ls);
+        int le = lineEnd(e, ls);
+        if (le >= e.length()) return e.length();
+        int p = le + 1;
+        while (p <= e.length()) {
+            if (p >= e.length() || indentOf(e, p) <= lvl) return p;
+            int en = lineEnd(e, p);
+            if (en >= e.length()) return e.length();
+            p = en + 1;
+        }
+        return e.length();
+    }
+
+    /** Rebuilds every fold from the toggle markers (closed ▸ hides its children). */
+    static void refold(Editable e) {
+        for (Hide h : e.getSpans(0, e.length(), Hide.class)) e.removeSpan(h);
+        String all = e.toString();
+        if (all.indexOf('\u25B8') < 0) return;
+        int n = e.length();
+        int p = 0;
+        while (p <= n) {
+            if (prefixAt(e, p) == P_TOGGLE_CLOSED) {
+                int a = lineEnd(e, p) + 1;
+                int b = childEnd(e, p);
+                if (a < b) {
+                    e.setSpan(new Hide(), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    p = b;
+                    continue;
+                }
+            }
+            int le = lineEnd(e, p);
+            if (le >= n) break;
+            p = le + 1;
+        }
+    }
+
+    /** Opens / closes the toggle at line start {@code ls}. */
+    static void flipToggle(Editable e, int ls) {
+        int k = prefixAt(e, ls);
+        if (!isToggle(k)) return;
+        e.replace(ls, ls + 1, k == P_TOGGLE_CLOSED ? "\u25BE" : "\u25B8");
+        refold(e);
+    }
+
+    /** Turns the line at {@code pos} into a toggle (or back into plain text). Returns the cursor shift. */
+    static int toggleToggle(Editable e, int pos) {
+        int ls = lineStart(e, pos);
+        int k = prefixAt(e, ls);
+        int lvl = indentOf(e, ls);
+        int delta;
+        if (isToggle(k)) {
+            e.delete(ls, ls + 2);
+            delta = -2;
+        } else if (k != P_NONE) {
+            if (k == P_CHECK_ON) apply(e, STRIKE, ls + 2, lineEnd(e, ls), 0, false);
+            e.replace(ls, ls + 2, TOGGLE_OPEN);
+            delta = 0;
+        } else {
+            int nl = numLen(e, ls);
+            if (nl > 0) e.delete(ls, ls + nl);
+            e.insert(ls, TOGGLE_OPEN);
+            delta = 2 - nl;
+        }
+        if (lvl > 0) setIndent(e, ls, lvl);
+        refold(e);
+        return delta;
     }
 
     /** Re-sets the span so the layout re-measures it after its cells changed. */
@@ -476,7 +833,7 @@ final class RichText {
 
     /** Text of every table's cells, for search. */
     static String tablesPlain(CharSequence text) {
-        if (!(text instanceof Spanned)) return text.toString();
+        if (!(text instanceof Spanned)) return tidy(text.toString());
         Spanned sp = (Spanned) text;
         StringBuilder out = new StringBuilder(text);
         Tbl[] tables = sp.getSpans(0, sp.length(), Tbl.class);
@@ -489,7 +846,12 @@ final class RichText {
             int i = out.indexOf(String.valueOf(TABLE_CHAR));
             if (i >= 0) out.replace(i, i + 1, cellText.toString().trim());
         }
-        return out.toString();
+        return tidy(out.toString());
+    }
+
+    /** Plain text for previews and search: no divider glyphs or toggle arrows. */
+    static String tidy(String t) {
+        return t.replace(String.valueOf(RULE_CHAR), " ").replace(TOGGLE_CLOSED, "").replace(TOGGLE_OPEN, "");
     }
 
     static Object make(int type, int arg) {
@@ -516,6 +878,16 @@ final class RichText {
                 return new Fg(arg);
             case INDENT:
                 return new Indent(arg);
+            case FONT:
+                return new Fnt(arg);
+            case QUOTE:
+                return new Quote();
+            case HIDE:
+                return new Hide();
+            case RULE:
+                return new Rule();
+            case CALLOUT:
+                return new Callout();
             default:
                 return new Block();
         }
@@ -535,6 +907,11 @@ final class RichText {
         if (o instanceof Sz) return SIZE;
         if (o instanceof Fg) return FG;
         if (o instanceof Indent) return INDENT;
+        if (o instanceof Fnt) return FONT;
+        if (o instanceof Quote) return QUOTE;
+        if (o instanceof Hide) return HIDE;
+        if (o instanceof Rule) return RULE;
+        if (o instanceof Callout) return CALLOUT;
         return -1;
     }
 
@@ -543,6 +920,7 @@ final class RichText {
         if (o instanceof Sz) return ((Sz) o).sp;
         if (o instanceof Fg) return ((Fg) o).color;
         if (o instanceof Indent) return ((Indent) o).level;
+        if (o instanceof Fnt) return ((Fnt) o).idx;
         return o instanceof Hl ? ((Hl) o).color : 0;
     }
 
@@ -588,6 +966,23 @@ final class RichText {
         return found;
     }
 
+    /** The font index of the text in [s, en) (or before the cursor); 0 = default, -1 = mixed. */
+    static int fontAt(Spanned e, int s, int en) {
+        if (s == en) {
+            if (s == 0) return 0;
+            s = s - 1;
+            en = s + 1;
+        }
+        int found = 0;
+        for (int i = s; i < en; i++) {
+            int here = 0;
+            for (Fnt z : e.getSpans(i, i + 1, Fnt.class)) here = z.idx;
+            if (i == s) found = here;
+            else if (here != found) return -1;
+        }
+        return found;
+    }
+
     /** True when every character in [s, en) has the style (or the one before the cursor if s == en). */
     static boolean active(Spanned e, int type, int s, int en) {
         if (s == en) {
@@ -626,12 +1021,26 @@ final class RichText {
     static final int P_BULLET = 1;
     static final int P_CHECK_OFF = 2;
     static final int P_CHECK_ON = 3;
+    static final int P_TOGGLE_CLOSED = 4;
+    static final int P_TOGGLE_OPEN = 5;
+    static final String TOGGLE_CLOSED = "\u25B8 ";
+    static final String TOGGLE_OPEN = "\u25BE ";
+
+    static boolean isCheck(int kind) {
+        return kind == P_CHECK_OFF || kind == P_CHECK_ON;
+    }
+
+    static boolean isToggle(int kind) {
+        return kind == P_TOGGLE_CLOSED || kind == P_TOGGLE_OPEN;
+    }
 
     /** Which list marker the line starting at {@code pos} has. */
     static int prefixAt(CharSequence t, int pos) {
         if (startsWith(t, pos, BULLET)) return P_BULLET;
         if (startsWith(t, pos, CHECK_OFF)) return P_CHECK_OFF;
         if (startsWith(t, pos, CHECK_ON)) return P_CHECK_ON;
+        if (startsWith(t, pos, TOGGLE_CLOSED)) return P_TOGGLE_CLOSED;
+        if (startsWith(t, pos, TOGGLE_OPEN)) return P_TOGGLE_OPEN;
         return P_NONE;
     }
 
@@ -683,7 +1092,9 @@ final class RichText {
         int k = prefixAt(e, ls);
         if (k != P_CHECK_OFF && k != P_CHECK_ON) return;
         boolean nowOn = k == P_CHECK_OFF;
+        int lvl = indentOf(e, ls);
         e.replace(ls, ls + 1, nowOn ? "\u2611" : "\u2610");
+        if (lvl > 0) setIndent(e, ls, lvl);
         apply(e, STRIKE, ls + 2, lineEnd(e, ls), 0, nowOn);
     }
 
@@ -710,7 +1121,7 @@ final class RichText {
 
     /** Removes every character style (bold .. size, colours, highlight, code) from [s, en). */
     static void clearStyles(Editable e, int s, int en) {
-        int[] types = {BOLD, ITALIC, UNDER, HILITE, CODE, SIZE, FG};
+        int[] types = {BOLD, ITALIC, UNDER, HILITE, CODE, SIZE, FG, FONT};
         for (int t : types) apply(e, t, s, en, 0, false);
         // ticked to-do lines stay struck through; everything else loses it
         int p = lineStart(e, s);
@@ -734,9 +1145,10 @@ final class RichText {
 
     static int indentOf(Spanned e, int ls) {
         int lvl = 0;
-        int end = Math.min(e.length(), ls + 1);
-        for (Indent o : e.getSpans(ls, Math.max(end, ls), Indent.class)) {
-            if (e.getSpanStart(o) <= ls) lvl = Math.max(lvl, o.level);
+        int le = lineEnd(e, ls);
+        int qEnd = Math.min(e.length(), Math.max(le, ls + 1));
+        for (Indent o : e.getSpans(ls, qEnd, Indent.class)) {
+            if (e.getSpanEnd(o) > ls) lvl = Math.max(lvl, o.level);
         }
         return lvl;
     }
@@ -801,7 +1213,11 @@ final class RichText {
             if (p != skip) {
                 int len = numLen(e, p);
                 String want = count[lvl] + ". ";
-                if (!e.subSequence(p, p + len).toString().equals(want)) e.replace(p, p + len, want);
+                if (!e.subSequence(p, p + len).toString().equals(want)) {
+                    int keep = indentOf(e, p);
+                    e.replace(p, p + len, want);
+                    if (keep > 0) setIndent(e, p, keep);
+                }
             } else {
                 count[lvl] = numValue(e, p);
             }
@@ -912,7 +1328,8 @@ final class RichText {
                     out.setSpan(new Tbl(cells), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     continue;
                 }
-                if (a < b) out.setSpan(make(r.getInt(0), r.optInt(3)), a, b, FLAGS);
+                if (a < b) out.setSpan(make(r.getInt(0), r.optInt(3)), a, b,
+                        r.getInt(0) == HIDE || r.getInt(0) == RULE ? Spanned.SPAN_EXCLUSIVE_EXCLUSIVE : FLAGS);
             }
             for (Object blk : out.getSpans(0, out.length(), Block.class)) { // old notes: drop code-in-block
                 apply(out, CODE, out.getSpanStart(blk), out.getSpanEnd(blk), 0, false);

@@ -83,7 +83,7 @@ public class SettingsActivity extends Activity {
         col.setPadding(dp(16), dp(12), dp(16), dp(32));
         scroll.addView(col, new ScrollView.LayoutParams(-1, -2));
 
-        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Animations", "Haptics"};
+        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Tick animation", "Haptics"};
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -103,7 +103,7 @@ public class SettingsActivity extends Activity {
         } else if (page == 6) {
             col.addView(notebookCard());
         } else if (page == 7) {
-            col.addView(fxCard());
+            col.addView(tickCard());
         } else if (page == 8) {
             col.addView(hapticCard());
         } else if (page == 3) {
@@ -192,8 +192,8 @@ public class SettingsActivity extends Activity {
         Object[][] tiles = {
                 {IconView.SCREEN, "Main screen", layoutNames[Math.min(5, Prefs.mainLayout(this))], 5,
                         "main screen layout test sections switch routine strip dock repeating one-off"},
-                {IconView.LOOKS, "Task animations", fxSummary(), 7,
-                        "animations animation effects priority low medium high normal task card glow shimmer pulse"},
+                {IconView.LOOKS, "Tick animation", tickSummary(), 7,
+                        "animations animation tick complete done confetti ripple sparkles fireworks bubbles sweep celebrate"},
                 {IconView.SWIPE_DONE, "Done haptics", Hap.NAMES[Hap.pick(this)], 8,
                         "haptics haptic vibration vibrate feedback completed done complete pixel"},
                 {IconView.NOTE, "Notebook", "Pin up to " + Prefs.maxPins(this), 6,
@@ -324,123 +324,89 @@ public class SettingsActivity extends Activity {
         return card;
     }
 
-    private int fxSlot; // which task type the Animations page is assigning to: 0 normal, 1 low, 2 medium, 3 high
-
-    private String fxSummary() {
-        int on = 0;
-        for (int i = 0; i < 4; i++) if (Fx.style(this, i) > 0) on++;
-        return on == 0 ? "Off" : on + " of 4 on";
+    private String tickSummary() {
+        return TickFx.NAMES[TickFx.style(this)];
     }
 
-    /** Task animations: pick a task type, then tap any live sample to use it. */
-    private LinearLayout fxCard() {
+    /** Tick animation: tap a style to use it (and see it); Test plays one without choosing it. */
+    private LinearLayout tickCard() {
         final LinearLayout card = card();
-        TextView intro = text("Pick the kind of task, then tap an animation to use it. Every sample is playing live, "
-                + "so you can judge them before you choose. Finished tasks never animate.", 14, Pal.muted, false);
+        TextView intro = text("What plays when you tick a task off on the main screen. Tap a style to use it; "
+                + "Test shows it without changing your choice. Nothing runs between ticks.", 14, Pal.muted, false);
         intro.setPadding(0, dp(8), 0, dp(8));
         card.addView(intro);
-        final String[] slotNames = {"Normal", "Low", "Medium", "High"};
-        final TextView[] chips = new TextView[4];
-        final TextView current = text("", 14, Pal.ink, true);
-        final View[] rows = new View[Fx.NAMES.length];
-        final TextView[] marks = new TextView[Fx.NAMES.length];
-        final GradientDrawable[] bgs = new GradientDrawable[Fx.NAMES.length];
-        final Runnable[] sync = new Runnable[1];
-        final Runnable[] rebuildRows = new Runnable[1];
-        FlowLayout slotRow = new FlowLayout(this, dp(6), dp(6));
-        for (int i = 0; i < 4; i++) {
-            final int slot = i;
-            TextView chip = text(slotNames[i], 14, Pal.muted, true);
-            chip.setGravity(Gravity.CENTER);
-            chip.setPadding(dp(16), 0, dp(16), 0);
-            chip.setOnClickListener(v -> {
-                Hap.tick(v);
-                fxSlot = slot;
-                rebuildRows[0].run();
-                sync[0].run();
-            });
-            chips[i] = chip;
-            slotRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(40)));
-        }
-        card.addView(slotRow);
-        current.setPadding(0, dp(10), 0, dp(6));
-        card.addView(current);
-        final LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        card.addView(list);
-        sync[0] = () -> {
-            for (int i = 0; i < 4; i++) {
-                boolean on = i == fxSlot;
-                chips[i].setTextColor(on ? Pal.onSel : Pal.muted);
-                GradientDrawable cg = new GradientDrawable();
-                cg.setCornerRadius(dp(20));
-                cg.setColor(on ? Pal.sel : Pal.chip);
-                chips[i].setBackground(cg);
-            }
-            int cur = Fx.style(this, fxSlot);
-            current.setText(slotNames[fxSlot] + " tasks: " + Fx.NAMES[cur]);
-            for (int i = 0; i < rows.length; i++) {
-                if (rows[i] == null) continue;
+        final int n = TickFx.NAMES.length;
+        final View[] rows = new View[n];
+        final View[] icons = new View[n];
+        final TextView[] marks = new TextView[n];
+        final GradientDrawable[] bgs = new GradientDrawable[n];
+        final Runnable sync = () -> {
+            int cur = TickFx.style(this);
+            for (int i = 0; i < n; i++) {
                 boolean on = i == cur;
                 marks[i].setText(on ? "\u2713 In use" : "");
                 bgs[i].setStroke(on ? dp(2) : 0, Pal.accent);
             }
         };
-        rebuildRows[0] = () -> {
-            list.removeAllViews();
-            final int color = Fx.colorFor(fxSlot);
-            for (int i = 0; i < Fx.NAMES.length; i++) {
-                final int style = i;
-                LinearLayout row = new LinearLayout(this);
-                row.setOrientation(LinearLayout.HORIZONTAL);
-                row.setGravity(Gravity.CENTER_VERTICAL);
-                row.setMinimumHeight(dp(68));
-                GradientDrawable g = new GradientDrawable();
-                g.setCornerRadius(dp(16));
-                g.setColor(Pal.bg);
-                row.setBackground(g);
-                bgs[i] = g;
-                if (fxSlot > 0) {
-                    View bar = new View(this);
-                    GradientDrawable bg2 = new GradientDrawable();
-                    bg2.setCornerRadius(dp(2));
-                    bg2.setColor(color);
-                    bar.setBackground(bg2);
-                    LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(dp(4), dp(40));
-                    blp.leftMargin = dp(10);
-                    row.addView(bar, blp);
-                }
-                LinearLayout tx = new LinearLayout(this);
-                tx.setOrientation(LinearLayout.VERTICAL);
-                tx.setPadding(dp(14), dp(10), dp(8), dp(10));
-                tx.addView(text((i == 0 ? "" : i + ". ") + Fx.NAMES[i], 16, Pal.ink, true));
-                TextView d = text(Fx.DESCS[i], 12, Pal.muted, false);
-                d.setPadding(0, dp(2), 0, 0);
-                tx.addView(d);
-                row.addView(tx, new LinearLayout.LayoutParams(0, -2, 1f));
-                TextView mark = text("", 12, Pal.accent, true);
-                mark.setPadding(0, 0, dp(14), 0);
-                row.addView(mark);
-                marks[i] = mark;
-                rows[i] = row;
-                row.setForeground(Fx.make(this, i, color));
-                row.setOnClickListener(v -> {
+        for (int i = 0; i < n; i++) {
+            final int style = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setMinimumHeight(dp(68));
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(16));
+            g.setColor(Pal.bg);
+            row.setBackground(g);
+            bgs[i] = g;
+            IconView ic = new IconView(this, IconView.CHECK);
+            ic.setOn(i != 0);
+            ic.setClickable(false);
+            LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(44), dp(48));
+            ilp.leftMargin = dp(6);
+            row.addView(ic, ilp);
+            icons[i] = ic;
+            LinearLayout tx = new LinearLayout(this);
+            tx.setOrientation(LinearLayout.VERTICAL);
+            tx.setPadding(dp(8), dp(10), dp(8), dp(10));
+            tx.addView(text((i == 0 ? "" : i + ". ") + TickFx.NAMES[i], 16, Pal.ink, true));
+            TextView d = text(TickFx.DESCS[i], 12, Pal.muted, false);
+            d.setPadding(0, dp(2), 0, 0);
+            tx.addView(d);
+            TextView mark = text("", 12, Pal.accent, true);
+            mark.setPadding(0, dp(2), 0, 0);
+            tx.addView(mark);
+            marks[i] = mark;
+            row.addView(tx, new LinearLayout.LayoutParams(0, -2, 1f));
+            if (i > 0) {
+                TextView test = text("Test", 13, Pal.accent, true);
+                test.setGravity(Gravity.CENTER);
+                test.setPadding(dp(14), 0, dp(14), 0);
+                GradientDrawable tg = new GradientDrawable();
+                tg.setCornerRadius(dp(18));
+                tg.setColor(Pal.chip);
+                test.setBackground(tg);
+                test.setOnClickListener(v -> {
                     Hap.tick(v);
-                    Fx.setStyle(this, fxSlot, style);
-                    sync[0].run();
+                    TickFx.play(this, icons[style], rows[style], style);
                 });
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-                lp.bottomMargin = dp(8);
-                list.addView(row, lp);
+                LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-2, dp(36));
+                tlp.rightMargin = dp(10);
+                row.addView(test, tlp);
             }
-            Fonts.apply(list);
-        };
-        rebuildRows[0].run();
-        sync[0].run();
-        TextView note = text("Animations run only while a task is on screen and are drawn with plain graphics, "
-                + "so they are light on battery. Pick None to switch one off.", 13, Pal.muted, false);
-        note.setPadding(0, dp(6), 0, 0);
-        card.addView(note);
+            rows[i] = row;
+            row.setOnClickListener(v -> {
+                Hap.tick(v);
+                TickFx.setStyle(this, style);
+                sync.run();
+                if (style > 0) TickFx.play(this, icons[style], rows[style], style);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = dp(8);
+            card.addView(row, lp);
+        }
+        sync.run();
+        Fonts.apply(card);
         return card;
     }
 
@@ -574,6 +540,51 @@ public class SettingsActivity extends Activity {
             card.addView(line);
         }
         paint.run();
+
+        // ---- the font new notes are written in
+        NoteFonts.init(this);
+        TextView ftitle = text("Note font", 16, Pal.ink, true);
+        ftitle.setPadding(0, dp(20), 0, 0);
+        card.addView(ftitle);
+        TextView fsub = text("The font every note is shown in. Inside a note, the Font tab can change the "
+                + "font of any part of the text.", 13, Pal.muted, false);
+        fsub.setPadding(0, dp(2), 0, dp(10));
+        card.addView(fsub);
+        final int nf = NoteFonts.count();
+        final TextView[] chips = new TextView[nf];
+        final TextView sample = text("The quick brown fox jumps over the lazy dog", 17, Pal.ink, false);
+        sample.setTag("keepfont");
+        final Runnable fpaint = () -> {
+            int cur = NoteFonts.noteDefault(this);
+            for (int i = 0; i < nf; i++) {
+                GradientDrawable g = new GradientDrawable();
+                g.setCornerRadius(dp(20));
+                g.setColor(i == cur ? Pal.sel : Pal.chip);
+                chips[i].setBackground(g);
+                chips[i].setTextColor(i == cur ? Pal.onSel : Pal.ink);
+            }
+            sample.setTypeface(NoteFonts.face(cur));
+        };
+        FlowLayout fl = new FlowLayout(this, dp(8), dp(8));
+        for (int i = 0; i < nf; i++) {
+            final int idx = i;
+            TextView c = text(NoteFonts.NAMES[i], 15, Pal.ink, false);
+            c.setTypeface(NoteFonts.face(i));
+            c.setTag("keepfont");
+            c.setGravity(Gravity.CENTER);
+            c.setPadding(dp(14), 0, dp(14), 0);
+            c.setOnClickListener(v -> {
+                Hap.tick(v);
+                NoteFonts.setNoteDefault(this, idx);
+                fpaint.run();
+            });
+            chips[i] = c;
+            fl.addView(c, new android.view.ViewGroup.LayoutParams(-2, dp(42)));
+        }
+        card.addView(fl);
+        sample.setPadding(0, dp(12), 0, dp(4));
+        card.addView(sample);
+        fpaint.run();
         return card;
     }
 

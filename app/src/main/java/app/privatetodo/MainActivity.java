@@ -1788,6 +1788,18 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    // Where the tick animation plays: the tick circle that was tapped, and the row it belongs to.
+    private View tickAnchor;
+    private View tickRow;
+
+    private void playTick() {
+        View a = tickAnchor;
+        View r = tickRow;
+        tickAnchor = null;
+        tickRow = null;
+        TickFx.play(this, a, r);
+    }
+
     private void toggleDone(final Task t) {
         if (t.repeat > 0) { // a repeating task: tick this round only, the series carries on
             final long today = startOfDayOf(System.currentTimeMillis());
@@ -1803,7 +1815,12 @@ public class MainActivity extends Activity {
                 return;
             }
             boolean nowDone = Reminders.toggleDay(this, db, t, day);
-            if (nowDone) Hap.complete(listView); else Hap.confirm(listView);
+            if (nowDone) {
+                Hap.complete(listView);
+                playTick();
+            } else {
+                Hap.confirm(listView);
+            }
             refresh();
             if (nowDone) {
                 showUndo("Done \u00B7 moved to Repeat", () -> {
@@ -1814,7 +1831,12 @@ public class MainActivity extends Activity {
             return;
         }
         setDoneAndSchedule(t.id, !t.done);
-        if (!t.done) Hap.complete(listView); else Hap.confirm(listView);
+        if (!t.done) {
+            Hap.complete(listView);
+            playTick();
+        } else {
+            Hap.confirm(listView);
+        }
         refresh();
         if (!t.done) {
             showUndo("Task completed", () -> {
@@ -1994,7 +2016,11 @@ public class MainActivity extends Activity {
             tm.setEllipsize(android.text.TextUtils.TruncateAt.END);
             tm.setAlpha(0.8f);
             tile.addView(tm);
-            tile.setOnClickListener(v -> toggleDone(t));
+            tile.setOnClickListener(v -> {
+                tickAnchor = v;
+                tickRow = null;
+                toggleDone(t);
+            });
             tile.setOnLongClickListener(v -> {
                 Hap.confirm(v);
                 Task full = db.get(t.id);
@@ -2078,6 +2104,8 @@ public class MainActivity extends Activity {
                 ck.setOn(t.done);
                 ck.setContentDescription(t.done ? "Mark as not done" : "Mark as done");
                 ck.setOnClickListener(v -> {
+                    tickAnchor = v;
+                    tickRow = null;
                     toggleDone(t);
                     fill[0].run();
                 });
@@ -2200,8 +2228,6 @@ public class MainActivity extends Activity {
         private final LinearLayout subsBox;
         private final IconView delete;
         private final LinearLayout card;
-        private int fxStyle = -1;
-        private int fxColor;
         private final FrameLayout reveal;
         private final GradientDrawable revealBg = new GradientDrawable();
         private final IconView revealTick;
@@ -2350,7 +2376,11 @@ public class MainActivity extends Activity {
                         () -> reveal.setVisibility(View.INVISIBLE)).start();
                 if (a == MotionEvent.ACTION_UP && t != null) {
                     if (dx <= -limit) confirmDelete(t);
-                    else if (dx >= limit) toggleDone(t);
+                    else if (dx >= limit) {
+                        tickAnchor = this;
+                        tickRow = this;
+                        toggleDone(t);
+                    }
                 }
             }
             return true;
@@ -2399,15 +2429,6 @@ public class MainActivity extends Activity {
                         : t.priority == 2 ? "Medium priority" : "High priority");
             } else {
                 prioBar.setVisibility(View.GONE);
-            }
-
-            int fxSlot = Fx.slotFor(t.done ? 0 : t.priority);
-            int fxSt = t.done ? 0 : Fx.style(card.getContext(), fxSlot);
-            int fxCol = Fx.colorFor(fxSlot);
-            if (fxSt != fxStyle || fxCol != fxColor) { // task animation chosen in Settings > Animations
-                fxStyle = fxSt;
-                fxColor = fxCol;
-                card.setForeground(Fx.make(card.getContext(), fxSt, fxCol));
             }
 
             String line = subLine(t);
@@ -2466,7 +2487,11 @@ public class MainActivity extends Activity {
 
             check.setOn(t.done);
             check.setContentDescription(t.done ? "Mark as not done" : "Mark as done");
-            check.setOnClickListener(v -> toggleDone(t));
+            check.setOnClickListener(v -> {
+                tickAnchor = v;
+                tickRow = Row.this;
+                toggleDone(t);
+            });
             // The whole text column opens the editor; only a tap exactly on a link pill opens the link.
             textCol.setOnClickListener(v -> editDialog(t, null));
             delete.setOnClickListener(v -> confirmDelete(t));
@@ -2493,11 +2518,13 @@ public class MainActivity extends Activity {
                         } else {
                             Reminders.toggleDay(MainActivity.this, db, t, startOfDayOf(t.due));
                             Hap.complete(v);
+                            TickFx.play(MainActivity.this, v, null);
                             toast("All subtasks done \u00B7 moved to Repeat");
                         }
                     } else if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
                         setDoneAndSchedule(t.id, true); // moves to Done, subtasks stay ticked
                         Hap.complete(v);
+                        TickFx.play(MainActivity.this, v, null);
                         toast("All subtasks done \u00B7 task completed");
                     } else if (!nowDone && t.done) { // un-ticking one re-opens the task
                         setDoneAndSchedule(t.id, false);

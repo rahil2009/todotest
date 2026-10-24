@@ -39,6 +39,7 @@ final class Fonts {
     private static void walk(View v) {
         if (v instanceof TextView) {
             TextView t = (TextView) v;
+            if ("keepfont".equals(v.getTag())) return; // a view showing its own font (note text, font samples)
             Typeface cur = t.getTypeface();
             if (cur != null && (cur.equals(Typeface.MONOSPACE) || cur.equals(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)))) {
                 return; // code stays monospace

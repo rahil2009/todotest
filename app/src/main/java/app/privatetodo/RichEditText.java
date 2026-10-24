@@ -49,6 +49,7 @@ final class RichEditText extends EditText {
         @Override
         public void draw(Canvas c, CharSequence t, int s, int e, float x, int top, int y,
                          int bottom, Paint p) {
+            if (RichText.hiddenAt(t, s, e)) return;
             float size = p.getTextSize();
             float r = size * 0.42f;
             float cx = x + size * 0.5f;
@@ -114,7 +115,7 @@ final class RichEditText extends EditText {
         int i = 0;
         while (i < n) {
             int k = RichText.prefixAt(e, i);
-            if (k >= RichText.P_CHECK_OFF) {
+            if (RichText.isCheck(k)) {
                 boolean on = k == RichText.P_CHECK_ON;
                 CircleSpan have = null;
                 for (CircleSpan o : old) {
@@ -131,21 +132,24 @@ final class RichEditText extends EditText {
             int st = e.getSpanStart(o);
             if (st < 0) continue;
             int k = RichText.prefixAt(e, st);
-            boolean ok = k >= RichText.P_CHECK_OFF && e.getSpanEnd(o) == st + 1 && o.on == (k == RichText.P_CHECK_ON);
+            boolean ok = RichText.isCheck(k) && e.getSpanEnd(o) == st + 1 && o.on == (k == RichText.P_CHECK_ON);
             if (!ok) e.removeSpan(o);
         }
     }
 
+    /** A tap on a table cell. left / top are the table's top-left corner in this view's own coordinates. */
     interface TableTapListener {
-        void onTableTap(RichText.Tbl t);
+        void onTableTap(RichText.Tbl t, int row, int col, boolean onTick, float left, float top);
     }
 
     private TableTapListener tableListener;
-    private Runnable changedListener;
-
-    void setTableChangedListener(Runnable r) {
-        changedListener = r;
-    }
+    private RichText.Tbl tblDown;
+    private int tblR;
+    private int tblC;
+    private boolean tblTick;
+    private boolean tblMoved;
+    private float tblLeft;
+    private float tblTop;
 
     void setTableTapListener(TableTapListener l) {
         tableListener = l;
@@ -157,23 +161,26 @@ final class RichEditText extends EditText {
         RichText.tableWidth = Math.max(0, w - getPaddingLeft() - getPaddingRight());
     }
 
-    /** A tap on a table block opens its editor. */
-    private boolean tapOnTable(float x, float y) {
+    /** True when a finger that just went down at (x, y) is on a table cell; remembers which. */
+    private boolean tableDown(float x, float y) {
         android.text.Layout l = getLayout();
         if (l == null || tableListener == null) return false;
         int line = l.getLineForVertical((int) (y - getTotalPaddingTop() + getScrollY()));
-        RichText.Tbl t = RichText.tableOnLine(getText(), l.getLineStart(line));
-        if (t == null) return false;
-        // a tap on a tick box inside the table flips it right here
+        int ls = l.getLineStart(line);
+        RichText.Tbl t = RichText.tableOnLine(getText(), ls);
+        if (t == null || RichText.hiddenAt(getText(), ls, ls + 1)) return false;
         float xl = x - getTotalPaddingLeft() + getScrollX();
-        float yl = y - (l.getLineTop(line) + getTotalPaddingTop() - getScrollY());
-        if (t.toggleAt(xl, yl, getPaint())) {
-            RichText.refresh(getText(), t);
-            invalidate();
-            if (changedListener != null) changedListener.run();
-            return true;
-        }
-        tableListener.onTableTap(t);
+        float lineTop = l.getLineTop(line);
+        float yl = y - (lineTop + getTotalPaddingTop() - getScrollY());
+        int[] rc = t.cellAt(xl, yl, getPaint());
+        if (rc == null) return false;
+        tblDown = t;
+        tblR = rc[0];
+        tblC = rc[1];
+        tblTick = t.onTick(xl, yl, getPaint());
+        tblLeft = getTotalPaddingLeft() - getScrollX();
+        tblTop = lineTop + getTotalPaddingTop() - getScrollY();
+        tblMoved = false;
         return true;
     }
 
@@ -281,7 +288,8 @@ final class RichEditText extends EditText {
         int off = getOffsetForPosition(x, y);
         CharSequence t = getText();
         int ls = RichText.lineStart(t, off);
-        if (off > ls + 1 || RichText.prefixAt(t, ls) < RichText.P_CHECK_OFF) return -1;
+        int mk = RichText.prefixAt(t, ls);
+        if (off > ls + 1 || !(RichText.isCheck(mk) || RichText.isToggle(mk))) return -1;
         float edge = getTotalPaddingLeft() + getLayout().getPrimaryHorizontal(ls + 1)
                 + 10 * getResources().getDisplayMetrics().density;
         float from = getTotalPaddingLeft() + getLayout().getPrimaryHorizontal(ls) - 12 * getResources().getDisplayMetrics().density;
@@ -303,6 +311,28 @@ final class RichEditText extends EditText {
             return true;
         }
         if (paintL != null) return paintTouch(e);
+        // A touch that starts on a table cell is ours too: no cursor, no keyboard from the note itself;
+        // a tap hands the cell to the editor, which opens it for typing right there.
+        if (tableListener != null) {
+            int act0 = e.getActionMasked();
+            if (act0 == MotionEvent.ACTION_DOWN) {
+                downX = e.getX();
+                downY = e.getY();
+                tblDown = null;
+                if (tableDown(e.getX(), e.getY())) return true;
+            } else if (tblDown != null) {
+                int slop0 = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(e.getX() - downX) >= slop0 || Math.abs(e.getY() - downY) >= slop0) tblMoved = true;
+                if (act0 == MotionEvent.ACTION_UP) {
+                    RichText.Tbl t = tblDown;
+                    tblDown = null;
+                    if (!tblMoved) tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
+                } else if (act0 == MotionEvent.ACTION_CANCEL) {
+                    tblDown = null;
+                }
+                return true;
+            }
+        }
         // A touch that starts on a to-do circle is ours alone: it ticks the box without focusing the
         // field, moving the cursor or raising the keyboard.
         if (checkListener != null) {
@@ -328,11 +358,6 @@ final class RichEditText extends EditText {
             }
         }
         boolean handled = super.onTouchEvent(e);
-        if (e.getActionMasked() == MotionEvent.ACTION_UP && getLayout() != null
-                && Math.abs(e.getX() - downX) < ViewConfiguration.get(getContext()).getScaledTouchSlop()
-                && Math.abs(e.getY() - downY) < ViewConfiguration.get(getContext()).getScaledTouchSlop()) {
-            if (tapOnTable(e.getX(), e.getY())) return true;
-        }
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
             downX = e.getX();
             downY = e.getY();
@@ -343,7 +368,8 @@ final class RichEditText extends EditText {
                 int off = getOffsetForPosition(e.getX(), e.getY());
                 CharSequence t = getText();
                 int ls = RichText.lineStart(t, off);
-                if (off <= ls + 1 && RichText.prefixAt(t, ls) >= RichText.P_CHECK_OFF) {
+                int mk = RichText.prefixAt(t, ls);
+                if (off <= ls + 1 && (RichText.isCheck(mk) || RichText.isToggle(mk))) {
                     // only the circle (plus a thumb's margin) ticks; the text after it just edits
                     float edge = getTotalPaddingLeft() + getLayout().getPrimaryHorizontal(ls + 1)
                             + 10 * getResources().getDisplayMetrics().density;
