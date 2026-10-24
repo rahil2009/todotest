@@ -1,0 +1,6 @@
+Calligra (CALLIG15)
+Copyright 1992 Peter Vanroose, 1999 S. Dachian
+You may freely use, modify and/or distribute this file, as long as this copyright notice is retained.
+
+This copy is the original Type 1 font converted to OpenType (CFF) and scaled up 30% so it reads at
+body-text size. Shapes are unchanged.

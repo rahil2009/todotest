@@ -196,6 +196,30 @@ final class RichEditText extends EditText {
         checkListener = l;
     }
 
+    interface LinkTapListener {
+        void onLinkTap(int noteId);
+    }
+
+    private LinkTapListener linkListener;
+
+    void setLinkTapListener(LinkTapListener l) {
+        linkListener = l;
+    }
+
+    /** The note id of the link under this point, or -1. */
+    private int linkAt(float x, float y) {
+        android.text.Layout l = getLayout();
+        if (l == null) return -1;
+        int off = getOffsetForPosition(x, y);
+        int line = l.getLineForVertical((int) (y - getTotalPaddingTop() + getScrollY()));
+        float hx = getTotalPaddingLeft() + l.getPrimaryHorizontal(off) - getScrollX();
+        int ch = x < hx ? off - 1 : off;
+        CharSequence t = getText();
+        if (ch < 0 || ch >= t.length() || l.getLineForOffset(ch) != line) return -1;
+        for (RichText.NoteLink k : getText().getSpans(ch, ch + 1, RichText.NoteLink.class)) return k.noteId;
+        return -1;
+    }
+
     // ---- finger (paint) mode: swipe over text to apply the chosen style
 
     interface PaintListener {
@@ -377,7 +401,36 @@ final class RichEditText extends EditText {
                 }
             }
         }
+        if (e.getActionMasked() == MotionEvent.ACTION_UP && linkListener != null) { // a quick tap on a note link opens it
+            int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            if (Math.abs(e.getX() - downX) < slop && Math.abs(e.getY() - downY) < slop
+                    && e.getEventTime() - e.getDownTime() < ViewConfiguration.getLongPressTimeout()) {
+                int id = linkAt(e.getX(), e.getY());
+                if (id >= 0) linkListener.onLinkTap(id);
+            }
+        }
         return handled;
+    }
+
+    private float baseStroke;
+
+    /** Outline (fraction of the text size) for the note's default font when it is a pen / marker font. */
+    void setBaseStroke(float k) {
+        baseStroke = k;
+        invalidate();
+    }
+
+    @Override
+    protected void onDraw(android.graphics.Canvas canvas) {
+        android.graphics.Paint p = getPaint();
+        if (baseStroke > 0) {
+            p.setStyle(android.graphics.Paint.Style.FILL_AND_STROKE);
+            p.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+            p.setStrokeWidth(getTextSize() * baseStroke);
+        } else if (p.getStyle() != android.graphics.Paint.Style.FILL) {
+            p.setStyle(android.graphics.Paint.Style.FILL);
+        }
+        super.onDraw(canvas);
     }
 
     @Override

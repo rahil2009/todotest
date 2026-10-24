@@ -28,7 +28,7 @@ final class TaskDb extends SQLiteOpenHelper {
     private final Context appCtx;
 
     TaskDb(Context context) {
-        super(context, "tasks.db", null, 13);
+        super(context, "tasks.db", null, 14);
         appCtx = context.getApplicationContext();
     }
 
@@ -58,6 +58,7 @@ final class TaskDb extends SQLiteOpenHelper {
         createFolders(db);
         createShared(db);
         createOcc(db);
+        createVersions(db);
     }
 
     @Override
@@ -104,6 +105,18 @@ final class TaskDb extends SQLiteOpenHelper {
             addColumn(db, "ALTER TABLE notes ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
             createShared(db);
         }
+        if (oldVersion < 14) createVersions(db); // note history
+    }
+
+    private static void createVersions(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS note_versions ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "note_id INTEGER NOT NULL,"
+                + "title TEXT NOT NULL DEFAULT '',"
+                + "body TEXT NOT NULL,"
+                + "plain TEXT NOT NULL DEFAULT '',"
+                + "saved INTEGER NOT NULL)");
+        db.execSQL("CREATE INDEX IF NOT EXISTS note_versions_note ON note_versions (note_id, saved)");
     }
 
     /** Adds a column, ignoring "duplicate column" when a fresh notes table already has it. */
@@ -612,7 +625,7 @@ final class TaskDb extends SQLiteOpenHelper {
         }
     }
 
-    /** Inserts (id <= 0) or updates a note; returns its id. */
+    /** Inserts (id <= 0) or updates a note; returns its id. The text it replaces is kept in the note's history. */
     long saveNote(long id, String title, String body, String plain) {
         changed();
         ContentValues v = new ContentValues();
@@ -621,8 +634,228 @@ final class TaskDb extends SQLiteOpenHelper {
         v.put("plain", plain);
         v.put("updated", System.currentTimeMillis());
         if (id <= 0) return getWritableDatabase().insert("notes", null, v);
+        try {
+            remember(id, title, body, plain);
+        } catch (RuntimeException ex) {
+            // history is a safety net: it must never stop the note itself from saving
+        }
         getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(id)});
         return id;
+    }
+
+    // ------------------------------------------------------------ note history
+
+    /** A saved earlier state of a note. */
+    static final class Version {
+        final long id;
+        final long noteId;
+        final String title;
+        final String body;
+        final String plain;
+        final long saved;
+
+        Version(long id, long noteId, String title, String body, String plain, long saved) {
+            this.id = id;
+            this.noteId = noteId;
+            this.title = title;
+            this.body = body;
+            this.plain = plain;
+            this.saved = saved;
+        }
+    }
+
+    /** One note that has history: how many versions, the newest one's title, and whether the note still exists. */
+    static final class HistoryNote {
+        long noteId;
+        String title;
+        int count;
+        long last;
+        boolean exists;
+        boolean inBin;
+    }
+
+    /** Versions kept per note; the oldest go first. */
+    private static final int MAX_VERSIONS = 60;
+    /** A new version is started at most this often while a note is being edited. */
+    private static final long VERSION_GAP_MS = 5 * 60 * 1000L;
+
+    /**
+     * Called just before a note's stored text is overwritten with {@code title/body/plain}: files the old
+     * text in the history when it is the first one, when the last version is at least five minutes older,
+     * or when the new text is far shorter than the old (a big deletion or a bug must never be the only copy).
+     */
+    private void remember(long id, String title, String body, String plain) {
+        SQLiteDatabase db = getWritableDatabase();
+        Cursor c = db.query("notes", new String[]{"title", "body", "plain", "updated"}, "id = ?",
+                new String[]{String.valueOf(id)}, null, null, null);
+        String oTitle;
+        String oBody;
+        String oPlain;
+        long oUpdated;
+        try {
+            if (!c.moveToFirst()) return;
+            oTitle = c.getString(0);
+            oBody = c.getString(1);
+            oPlain = c.getString(2);
+            oUpdated = c.getLong(3);
+        } finally {
+            c.close();
+        }
+        if (oBody == null || oBody.isEmpty()) return;
+        if (oBody.equals(body) && (oTitle == null ? "" : oTitle).equals(title == null ? "" : title)) return;
+        long lastSaved = -1;
+        String lastBody = null;
+        Cursor lc = db.query("note_versions", new String[]{"saved", "body"}, "note_id = ?",
+                new String[]{String.valueOf(id)}, null, null, "saved DESC, id DESC", "1");
+        try {
+            if (lc.moveToFirst()) {
+                lastSaved = lc.getLong(0);
+                lastBody = lc.getString(1);
+            }
+        } finally {
+            lc.close();
+        }
+        if (oBody.equals(lastBody)) return; // already filed
+        int oldLen = oPlain == null ? 0 : oPlain.trim().length();
+        int newLen = plain == null ? 0 : plain.trim().length();
+        boolean bigDrop = oldLen >= 60 && newLen * 2 < oldLen;
+        boolean due = lastSaved < 0 || oUpdated - lastSaved >= VERSION_GAP_MS;
+        if (!due && !bigDrop) return;
+        addVersion(db, id, oTitle, oBody, oPlain, oUpdated);
+    }
+
+    private void addVersion(SQLiteDatabase db, long noteId, String title, String body, String plain, long saved) {
+        ContentValues v = new ContentValues();
+        v.put("note_id", noteId);
+        v.put("title", title == null ? "" : title);
+        v.put("body", body);
+        v.put("plain", plain == null ? "" : plain);
+        v.put("saved", saved);
+        db.insert("note_versions", null, v);
+        db.execSQL("DELETE FROM note_versions WHERE note_id = ? AND id NOT IN ("
+                        + "SELECT id FROM note_versions WHERE note_id = ? ORDER BY saved DESC, id DESC LIMIT ?)",
+                new Object[]{noteId, noteId, MAX_VERSIONS});
+    }
+
+    /** Files a note's current stored text in its history right now (before a restore or a delete). */
+    void snapshotNow(long noteId) {
+        Note n = note(noteId);
+        if (n == null || n.body == null || n.body.isEmpty()) return;
+        SQLiteDatabase db = getWritableDatabase();
+        Cursor lc = db.query("note_versions", new String[]{"body"}, "note_id = ?",
+                new String[]{String.valueOf(noteId)}, null, null, "saved DESC, id DESC", "1");
+        try {
+            if (lc.moveToFirst() && n.body.equals(lc.getString(0))) return;
+        } finally {
+            lc.close();
+        }
+        addVersion(db, noteId, n.title, n.body, n.plain, n.updated);
+    }
+
+    /** Removes an emptied note, keeping what it held in the history. */
+    void discardNote(long id) {
+        try {
+            snapshotNow(id);
+        } catch (RuntimeException ex) {
+            // never block the delete
+        }
+        deleteNote(id);
+    }
+
+    /** Every note that has history, most recently changed first. */
+    List<HistoryNote> historyNotes() {
+        List<HistoryNote> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT v.note_id, COUNT(*), MAX(v.saved), "
+                        + "(SELECT v2.title FROM note_versions v2 WHERE v2.note_id = v.note_id "
+                        + "ORDER BY v2.saved DESC, v2.id DESC LIMIT 1), "
+                        + "(SELECT COUNT(*) FROM notes n WHERE n.id = v.note_id), "
+                        + "(SELECT COUNT(*) FROM notes n WHERE n.id = v.note_id AND n.deleted > 0), "
+                        + "(SELECT v3.plain FROM note_versions v3 WHERE v3.note_id = v.note_id "
+                        + "ORDER BY v3.saved DESC, v3.id DESC LIMIT 1) "
+                        + "FROM note_versions v GROUP BY v.note_id ORDER BY MAX(v.saved) DESC", null);
+        try {
+            while (c.moveToNext()) {
+                HistoryNote h = new HistoryNote();
+                h.noteId = c.getLong(0);
+                h.count = c.getInt(1);
+                h.last = c.getLong(2);
+                String t = c.getString(3);
+                if (t == null || t.trim().isEmpty()) {
+                    String pl = c.getString(6) == null ? "" : c.getString(6).trim();
+                    int nl = pl.indexOf('\n');
+                    t = nl >= 0 ? pl.substring(0, nl) : pl;
+                }
+                h.title = t == null || t.trim().isEmpty() ? "Untitled note" : t;
+                h.exists = c.getInt(4) > 0;
+                h.inBin = c.getInt(5) > 0;
+                out.add(h);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    /** The versions of one note, newest first. */
+    List<Version> versions(long noteId) {
+        List<Version> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("note_versions", new String[]{"id", "note_id", "title", "body", "plain", "saved"},
+                "note_id = ?", new String[]{String.valueOf(noteId)}, null, null, "saved DESC, id DESC");
+        try {
+            while (c.moveToNext()) {
+                out.add(new Version(c.getLong(0), c.getLong(1), c.getString(2), c.getString(3), c.getString(4),
+                        c.getLong(5)));
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    /**
+     * Puts a version back. If its note still exists the note gets that text (what it holds now is filed in the
+     * history first); otherwise a new note is made. Returns the note's id, or 0 if the version is gone.
+     */
+    long restoreVersion(long versionId) {
+        Cursor c = getReadableDatabase().query("note_versions", new String[]{"note_id", "title", "body", "plain"},
+                "id = ?", new String[]{String.valueOf(versionId)}, null, null, null);
+        long noteId;
+        String title;
+        String body;
+        String plain;
+        try {
+            if (!c.moveToFirst()) return 0;
+            noteId = c.getLong(0);
+            title = c.getString(1);
+            body = c.getString(2);
+            plain = c.getString(3);
+        } finally {
+            c.close();
+        }
+        changed();
+        if (note(noteId) == null) {
+            ContentValues v = new ContentValues();
+            v.put("title", title);
+            v.put("body", body);
+            v.put("plain", plain);
+            v.put("updated", System.currentTimeMillis());
+            return getWritableDatabase().insert("notes", null, v);
+        }
+        snapshotNow(noteId);
+        ContentValues v = new ContentValues();
+        v.put("title", title);
+        v.put("body", body);
+        v.put("plain", plain);
+        v.put("updated", System.currentTimeMillis());
+        v.put("deleted", 0);
+        getWritableDatabase().update("notes", v, "id = ?", new String[]{String.valueOf(noteId)});
+        return noteId;
+    }
+
+    /** Forgets all history of a note. */
+    void clearHistory(long noteId) {
+        getWritableDatabase().delete("note_versions", "note_id = ?", new String[]{String.valueOf(noteId)});
     }
 
     int pinnedCount() {

@@ -259,6 +259,7 @@ final class Markdown {
         for (int[] in : indents) {
             if (in[0] <= out.length()) RichText.setIndent(out, in[0], in[1]);
         }
+        RichText.normalize(out);
         return out;
     }
 
@@ -338,6 +339,7 @@ final class Markdown {
             e.insert(end, "\n");
         }
         RichText.renumber(e, at, -1);
+        RichText.normalize(e);
         RichText.refold(e);
         return Math.min(e.length(), end + 1);
     }
@@ -348,6 +350,7 @@ final class Markdown {
         SpannableStringBuilder rich = parse(md);
         e.replace(s, en, rich);
         RichText.renumber(e, s, -1);
+        RichText.normalize(e);
         return s + rich.length();
     }
 }

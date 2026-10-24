@@ -2,6 +2,7 @@ package app.privatetodo;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Intent;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -45,6 +46,10 @@ public class NoteEditorActivity extends Activity {
     private static final int IN_KEY = -5;
     private static final int OUT_KEY = -6;
     private static final int NO_BRUSH = -100;
+    private static final int LINK_KEY = -19;
+    private static final int ALIGN_L_KEY = -20;
+    private static final int ALIGN_C_KEY = -21;
+    private static final int ALIGN_R_KEY = -22;
 
     private TaskDb db;
     private float density;
@@ -65,6 +70,9 @@ public class NoteEditorActivity extends Activity {
     private FrameLayout fab;
     private IconView fabIcon;
     private TextView paintHint;
+    private LinearLayout paintBox;
+    private TextView helpCard;
+    private TextView helpBtn;
 
     // Styles chosen with only a cursor (apply to the next typed text). 0 = off, 1 = on, colour for highlight.
     private final Map<Integer, Integer> pending = new HashMap<>();
@@ -83,6 +91,12 @@ public class NoteEditorActivity extends Activity {
     private IconView undoBtn;
     private IconView redoBtn;
     private final Runnable commitTask = this::commitNow;
+    /** Saves the note a moment after typing pauses, so a crash or a killed app loses at most a few seconds. */
+    private final Runnable autosaveTask = () -> {
+        if (restoring || body == null) return;
+        commitNow();
+        saveNow(true);
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -99,6 +113,7 @@ public class NoteEditorActivity extends Activity {
         setContentView(build());
         Fonts.apply(getWindow().getDecorView());
         body.setTypeface(NoteFonts.face(NoteFonts.noteDefault(this)));
+        body.setBaseStroke(NoteFonts.stroke(NoteFonts.noteDefault(this)));
 
         Note n = noteId > 0 ? db.note(noteId) : null;
         if (n == null) {
@@ -114,8 +129,15 @@ public class NoteEditorActivity extends Activity {
             content.setFocusableInTouchMode(true);
             content.requestFocus(); // so the title does not grab focus and pop the keyboard up
             title.setText(n.title);
-            RichText.fromJson(n.body, body.getText());
-            RichText.refold(body.getText());
+            busy = true; // loading must never run the "typed text" logic (Enter, list continuation ...)
+            try {
+                RichText.fromJson(n.body, body.getText());
+                RichText.refold(body.getText());
+            } finally {
+                busy = false;
+                typing = false;
+                insCount = 0;
+            }
             dateLabel.setText("Edited " + Reminders.when(this, n.updated));
         }
         dirty = false;
@@ -192,6 +214,11 @@ public class NoteEditorActivity extends Activity {
         redoBtn.setOnClickListener(v -> { Hap.tick(v); redo(); });
         header.addView(redoBtn, new LinearLayout.LayoutParams(dp(40), dp(48)));
 
+        IconView histBtn = new IconView(this, IconView.CLOCK);
+        histBtn.setContentDescription("Note history");
+        histBtn.setOnClickListener(v -> { Hap.tick(v); openHistory(); });
+        header.addView(histBtn, new LinearLayout.LayoutParams(dp(40), dp(48)));
+
         IconView trash = new IconView(this, IconView.TRASH);
         trash.setContentDescription("Delete note");
         trash.setOnClickListener(v -> confirmDelete());
@@ -253,6 +280,7 @@ public class NoteEditorActivity extends Activity {
             busy = false;
             changed();
         }));
+        body.setLinkTapListener(this::openNoteLink);
         body.setSelectionListener((s, e) -> {
             if (!typing && !busy && !(s == e && s == expectCursor)) pending.clear();
             refreshToolbar();
@@ -272,13 +300,56 @@ public class NoteEditorActivity extends Activity {
         hg.setCornerRadius(dp(18));
         hg.setColor(Pal.accent);
         paintHint.setBackground(hg);
-        paintHint.setVisibility(View.GONE);
+        paintHint.setVisibility(View.VISIBLE);
+        helpBtn = new TextView(this);
+        helpBtn.setText("i");
+        helpBtn.setTextSize(15);
+        helpBtn.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD_ITALIC));
+        helpBtn.setGravity(Gravity.CENTER);
+        helpBtn.setTextColor(Pal.accent);
+        helpBtn.setContentDescription("What can finger mode do?");
+        GradientDrawable hb = new GradientDrawable();
+        hb.setShape(GradientDrawable.OVAL);
+        hb.setColor(Pal.raised);
+        hb.setStroke(dp(2), Pal.accent);
+        helpBtn.setBackground(hb);
+        helpBtn.setOnClickListener(v -> {
+            Hap.tick(v);
+            toggleHelp();
+        });
+        helpCard = new TextView(this);
+        helpCard.setTextSize(13.5f);
+        helpCard.setTextColor(Pal.ink);
+        helpCard.setLineSpacing(0, 1.15f);
+        helpCard.setPadding(dp(16), dp(14), dp(16), dp(14));
+        GradientDrawable hc = new GradientDrawable();
+        hc.setCornerRadius(dp(18));
+        hc.setColor(Pal.raised);
+        hc.setStroke(dp(1), Pal.chip);
+        helpCard.setBackground(hc);
+        helpCard.setText(helpText());
+        helpCard.setVisibility(View.GONE);
+        helpCard.setElevation(dp(6));
+        LinearLayout hrow = new LinearLayout(this);
+        hrow.setOrientation(LinearLayout.HORIZONTAL);
+        hrow.setGravity(Gravity.CENTER_VERTICAL);
+        hrow.addView(paintHint, new LinearLayout.LayoutParams(-2, -2));
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(36), dp(36));
+        ilp.leftMargin = dp(8);
+        hrow.addView(helpBtn, ilp);
+        paintBox = new LinearLayout(this);
+        paintBox.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
+        clp.bottomMargin = dp(8);
+        paintBox.addView(helpCard, clp);
+        paintBox.addView(hrow, new LinearLayout.LayoutParams(-2, -2));
+        paintBox.setVisibility(View.GONE);
         FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(-2, -2);
         hlp.gravity = Gravity.BOTTOM | Gravity.START;
         hlp.leftMargin = dp(16);
         hlp.rightMargin = dp(88);
         hlp.bottomMargin = dp(22);
-        area.addView(paintHint, hlp);
+        area.addView(paintBox, hlp);
         fab = new FrameLayout(this);
         fab.setContentDescription("Finger mode: pick a style, then swipe over text to apply it");
         fabIcon = new IconView(this, IconView.FINGER);
@@ -578,7 +649,10 @@ public class NoteEditorActivity extends Activity {
                         tool(CHECK_KEY, "(✓)", Typeface.BOLD, "To-do", "To-do list"),
                         tool(TOGGLE_KEY, "▸", Typeface.BOLD, "Toggle", "Toggle: hide or show the lines under it"),
                         tool(OUT_KEY, "←", Typeface.BOLD, "Out", "Move item out one level"),
-                        tool(IN_KEY, "→", Typeface.BOLD, "In", "Nest item one level in"));
+                        tool(IN_KEY, "→", Typeface.BOLD, "In", "Nest item one level in"),
+                        alignTool(ALIGN_L_KEY, 0),
+                        alignTool(ALIGN_C_KEY, 1),
+                        alignTool(ALIGN_R_KEY, 2));
             case 2:
                 return toolRow(
                         tool(TABLE_KEY, "▦", Typeface.BOLD, "Table", "Table"),
@@ -587,6 +661,7 @@ public class NoteEditorActivity extends Activity {
                         tool(RichText.CALLOUT, "▤", Typeface.BOLD, "Callout", "Callout box"),
                         tool(DIVIDER_KEY, "―", Typeface.BOLD, "Divider", "Divider line"),
                         tool(RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block", "Code block"),
+                        tool(LINK_KEY, "↗", Typeface.BOLD, "Note link", "Link to another note"),
                         tool(DATE_KEY, "◷", Typeface.BOLD, "Date", "Insert today's date"),
                         tool(TIME_KEY, "⏱", Typeface.BOLD, "Time", "Insert the time"));
             case 3: {
@@ -628,6 +703,20 @@ public class NoteEditorActivity extends Activity {
                         tool(ACT_BASE + 13, "↻", Typeface.BOLD, "Convert", "Turn the selected Markdown into formatted text"),
                         tool(ACT_BASE + 14, "?", Typeface.BOLD, "Shortcuts", "Markdown typing shortcuts"));
         }
+    }
+
+    /** Align left / centre / right button: three little lines lined up the way the text will be. */
+    private Tool alignTool(int key, int mode) {
+        Tool t = tool(key, "\u2501\u2501\u2501\u2501\n\u2501\u2501\n\u2501\u2501\u2501\u2501", Typeface.BOLD,
+                mode == 0 ? "Left" : mode == 1 ? "Centre" : "Right",
+                mode == 0 ? "Align left" : mode == 1 ? "Align centre" : "Align right");
+        t.glyph.setTextSize(8);
+        t.glyph.setSingleLine(false);
+        t.glyph.setLineSpacing(0, 0.75f);
+        t.glyph.setGravity(mode == 0 ? Gravity.START : mode == 1 ? Gravity.CENTER_HORIZONTAL : Gravity.END);
+        t.glyph.setPadding(0, dp(3), 0, dp(3));
+        t.glyph.setMinWidth(dp(26));
+        return t;
     }
 
     private static String caseGlyph(int k) {
@@ -946,6 +1035,17 @@ public class NoteEditorActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, android.content.Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_HISTORY) {
+            long hid = res == RESULT_OK && data != null ? data.getLongExtra(NoteHistoryActivity.EXTRA_NOTE, 0) : 0;
+            if (hid > 0) {
+                // The restored text is in the database: reopen the note from there, and never save this stale screen over it.
+                dirty = false;
+                deleted = true;
+                finish();
+                startActivity(new Intent(this, NoteEditorActivity.class).putExtra(EXTRA_ID, hid));
+            }
+            return;
+        }
         if (req != REQ_MD || res != RESULT_OK || data == null || data.getData() == null) return;
         try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData())) {
             out.write(Markdown.export(body.getText(), title.getText().toString()).getBytes("UTF-8"));
@@ -1400,14 +1500,34 @@ public class NoteEditorActivity extends Activity {
             refreshToolbar();
             return;
         }
-        boolean lineType = key == RichText.HEAD || key == RichText.BLOCK || key == RichText.QUOTE
-                || key == RichText.CALLOUT;
-        if (key == RichText.QUOTE || key == RichText.CALLOUT) { // quote and callout are alternatives
-            int other = key == RichText.QUOTE ? RichText.CALLOUT : RichText.QUOTE;
-            int a0 = RichText.lineStart(e, s);
-            int b0 = RichText.lineEnd(e, en);
-            if (b0 > a0) RichText.apply(e, other, a0, b0, 0, false);
+        if (key == ALIGN_L_KEY || key == ALIGN_C_KEY || key == ALIGN_R_KEY) {
+            busy = true;
+            RichText.setAlign(e, s, en, key == ALIGN_C_KEY ? 1 : key == ALIGN_R_KEY ? 2 : 0);
+            busy = false;
+            changed();
+            refreshToolbar();
+            return;
         }
+        if (key == LINK_KEY) {
+            pickNoteLink();
+            return;
+        }
+        if (key == RichText.QUOTE || key == RichText.CALLOUT || key == RichText.BLOCK) {
+            // whole-paragraph styles: switched on or off for the paragraphs touched, never "for the next text"
+            boolean on = !RichText.paragraphsHave(e, key, s, en);
+            int keepS = s;
+            int keepE = en;
+            busy = true;
+            boolean added = RichText.setParagraph(e, key, s, en, on);
+            busy = false;
+            int n2 = e.length();
+            if (added) body.setSelection(Math.min(n2, RichText.lineStart(e, Math.min(keepS, n2))));
+            else body.setSelection(Math.min(keepS, n2), Math.min(keepE, n2));
+            changed();
+            refreshToolbar();
+            return;
+        }
+        boolean lineType = key == RichText.HEAD;
         if (s == en) {
             int a = RichText.lineStart(e, s);
             int b = RichText.lineEnd(e, s);
@@ -1543,12 +1663,39 @@ public class NoteEditorActivity extends Activity {
 
     private void updatePaintHint() {
         if (!paintMode) {
-            paintHint.setVisibility(View.GONE);
+            paintBox.setVisibility(View.GONE);
+            helpCard.setVisibility(View.GONE);
             return;
         }
         paintHint.setText(brush == NO_BRUSH ? "Finger mode \u00b7 pick a style below, then swipe over text"
                 : brushName() + " \u00b7 swipe over text (swipe styled text again to undo)");
-        paintHint.setVisibility(View.VISIBLE);
+        paintBox.setVisibility(View.VISIBLE);
+    }
+
+    /** The (i) button next to the finger-mode hint opens / closes the list of what finger mode can do. */
+    private void toggleHelp() {
+        if (helpCard.getVisibility() == View.VISIBLE) {
+            helpCard.animate().alpha(0f).translationY(dp(8)).setDuration(140)
+                    .withEndAction(() -> helpCard.setVisibility(View.GONE)).start();
+            return;
+        }
+        helpCard.setAlpha(0f);
+        helpCard.setTranslationY(dp(8));
+        helpCard.setVisibility(View.VISIBLE);
+        helpCard.animate().alpha(1f).translationY(0).setDuration(160).start();
+    }
+
+    private static CharSequence helpText() {
+        return "Finger mode: pick a brush below, then swipe over text with your finger.\n\n"
+                + "Brushes you can use:\n"
+                + "\u2022 Bold, Italic, Underline, Strike\n"
+                + "\u2022 Code (inline)\n"
+                + "\u2022 Highlight, in any highlight colour\n"
+                + "\u2022 Text colour\n"
+                + "\u2022 Tx, to wipe styles back to standard\n\n"
+                + "Tap a word to style just that word. Swipe over text that already has the style to take it off.\n\n"
+                + "Not brushes (they still work as normal buttons): size, headings, lists, quote, callout, code block, "
+                + "alignment, tables and fonts. Tap the hand button again to leave finger mode.";
     }
 
     /** Does the character at this offset already carry the active brush (so the stroke erases)? */
@@ -1637,6 +1784,9 @@ public class NoteEditorActivity extends Activity {
     }
 
     private boolean isOn(int key, int s, int en) {
+        if (key == RichText.QUOTE || key == RichText.CALLOUT || key == RichText.BLOCK) {
+            return RichText.paragraphsHave(body.getText(), key, s, en);
+        }
         if (s == en && pending.containsKey(key)) return pending.get(key) != 0;
         return RichText.active(body.getText(), key, s, en);
     }
@@ -1664,6 +1814,9 @@ public class NoteEditorActivity extends Activity {
                     on = RichText.isCheck(mk);
                 } else if (key == TOGGLE_KEY) {
                     on = RichText.isToggle(mk);
+                } else if (key == ALIGN_L_KEY || key == ALIGN_C_KEY || key == ALIGN_R_KEY) {
+                    int al = RichText.alignAt(body.getText(), s);
+                    on = al == (key == ALIGN_C_KEY ? 1 : key == ALIGN_R_KEY ? 2 : 0);
                 } else if (key >= FONT_BASE && key < FONT_BASE + 100) {
                     on = font == key - FONT_BASE;
                 } else if (key >= CASE_BASE || key < 0 && key != SIZE_KEY && key != NUM_KEY
@@ -1718,6 +1871,7 @@ public class NoteEditorActivity extends Activity {
             int nl = insStart + insCount - 1;
             boolean enter = !moved && insCount >= 1 && nl < e.length() && e.charAt(nl) == '\n'
                     && e.subSequence(insStart, nl).toString().indexOf('\n') < 0;
+            boolean kept = true; // false when the Enter's line break was taken back / replaced
             if (enter) {
                 int ps = RichText.lineStart(e, nl); // the line that Enter just ended
                 boolean restEmpty = nl + 1 >= e.length() || e.charAt(nl + 1) == '\n';
@@ -1726,7 +1880,13 @@ public class NoteEditorActivity extends Activity {
                 int lvl = RichText.indentOf(e, ps);
                 boolean emptyItem = (kind != RichText.P_NONE && nl - ps == 2)
                         || (numLen > 0 && nl - ps == numLen);
-                if (kind == RichText.P_NONE && numLen == 0 && nl - ps == 3
+                if (RichText.leaveStyle(e, ps, nl)) {
+                    // Enter on an empty quote / callout / code-block line: the line becomes plain, the block ends
+                    expectCursor = Math.min(e.length(), ps);
+                    body.setSelection(expectCursor);
+                    moved = true;
+                    kept = false;
+                } else if (kind == RichText.P_NONE && numLen == 0 && nl - ps == 3
                         && e.subSequence(ps, nl).toString().equals("---")) {
                     // --- and Enter = a divider line
                     e.replace(ps, nl, String.valueOf(RichText.RULE_CHAR));
@@ -1734,6 +1894,7 @@ public class NoteEditorActivity extends Activity {
                     expectCursor = Math.min(e.length(), ps + 2);
                     body.setSelection(expectCursor);
                     moved = true;
+                    kept = false;
                 } else if (emptyItem && restEmpty && lvl > 0) {
                     // Enter on an empty nested item steps it back out one level
                     e.delete(nl, nl + 1);
@@ -1742,11 +1903,13 @@ public class NoteEditorActivity extends Activity {
                     expectCursor = Math.min(e.length(), RichText.lineEnd(e, ps));
                     body.setSelection(expectCursor);
                     moved = true;
+                    kept = false;
                 } else if (emptyItem && restEmpty) { // Enter on an empty item ends the list
                     e.delete(ps, nl + 1);
                     expectCursor = ps;
                     body.setSelection(Math.min(expectCursor, e.length()));
                     moved = true;
+                    kept = false;
                 } else if (RichText.isToggle(kind)) {
                     // Enter in a toggle opens it and starts a line inside it
                     if (kind == RichText.P_TOGGLE_CLOSED) e.replace(ps, ps + 1, "\u25BE");
@@ -1783,11 +1946,22 @@ public class NoteEditorActivity extends Activity {
                     expectCursor = Math.min(e.length(), RichText.lineEnd(e, ps));
                     body.setSelection(expectCursor);
                     moved = true;
-                } else if (lvl > 0 || RichText.indentOf(e, nl + 1 <= e.length() ? nl + 1 : nl) > 0) {
+                    kept = false;
+                } else if (lvl > 0) {
+                    // a plain indented line: the new line starts at the same level
                     RichText.setIndent(e, ps, lvl);
                     RichText.setIndent(e, nl + 1, lvl);
                 }
-                if (restEmpty) endLineStyles(e, ps, nl);
+                if (kept) {
+                    if (restEmpty) endLineStyles(e, ps, nl);
+                    // the new line keeps a quote / callout / code block / alignment of the line above
+                    if (RichText.inheritStyles(e, ps, nl)) {
+                        int q = Math.min(e.length(), nl + 1);
+                        expectCursor = q;
+                        body.setSelection(q);
+                        moved = true;
+                    }
+                }
             }
             // Backspace over the space of "• " / "☐ " removes the whole marker.
             if (!moved && insCount == 0 && insBefore == 1) {
@@ -1803,6 +1977,8 @@ public class NoteEditorActivity extends Activity {
                 }
             }
             if (!moved) expectCursor = insStart + insCount;
+            // One quote / callout / code / indent span per paragraph, whatever the typing did to them.
+            RichText.normalize(e);
             if (enter || insBefore > 0) RichText.refold(e); // lines may have joined or split under a toggle
         } finally {
             busy = false;
@@ -1828,10 +2004,13 @@ public class NoteEditorActivity extends Activity {
             expectCursor = ls + 2;
         } else if (pre.matches("#{1,3} ") || pre.equals("> ")) {
             e.delete(ls, upto);
-            int type = pre.startsWith("#") ? RichText.HEAD : RichText.QUOTE;
-            int le = RichText.lineEnd(e, ls);
-            if (le > ls) RichText.apply(e, type, ls, le, 0, true);
-            else pending.put(type, 1);
+            if (pre.startsWith("#")) {
+                int le = RichText.lineEnd(e, ls);
+                if (le > ls) RichText.apply(e, RichText.HEAD, ls, le, 0, true);
+                else pending.put(RichText.HEAD, 1);
+            } else {
+                RichText.setParagraph(e, RichText.QUOTE, ls, ls, true);
+            }
             expectCursor = ls;
         } else {
             return false;
@@ -1841,8 +2020,8 @@ public class NoteEditorActivity extends Activity {
     }
 
     /**
-     * After Enter on a line, the next line should not inherit a heading, and Enter on an empty line
-     * inside a code block leaves the block.
+     * After Enter on a line, the next line should not inherit a heading (quote, callout and code block
+     * are carried on, or left, by RichText.inheritStyles / leaveStyle).
      */
     private void endLineStyles(Editable e, int ps, int nl) {
         for (Object o : e.getSpans(ps, nl + 1, Object.class)) {
@@ -1853,11 +2032,138 @@ public class NoteEditorActivity extends Activity {
                 if (a < nl) e.setSpan(RichText.make(RichText.HEAD, 0), a, nl, Spanned.SPAN_EXCLUSIVE_INCLUSIVE);
             }
         }
-        if (nl == ps) { // second Enter on an empty line ends a code block, quote or callout
-            for (int ty : new int[]{RichText.BLOCK, RichText.QUOTE, RichText.CALLOUT}) {
-                if (RichText.active(e, ty, ps, nl + 1)) RichText.apply(e, ty, ps, nl + 1, 0, false);
-            }
+    }
+
+    // ------------------------------------------------------------ note links
+
+    private static String noteLabel(Note n) {
+        String t = n.title == null ? "" : n.title.trim();
+        if (t.isEmpty()) {
+            String body = RichText.tidy(n.plain == null ? "" : n.plain).trim();
+            int nl = body.indexOf('\n');
+            t = nl >= 0 ? body.substring(0, nl) : body;
         }
+        if (t.isEmpty()) t = "Untitled note";
+        return t.length() > 60 ? t.substring(0, 60) + "…" : t;
+    }
+
+    /** Insert > Note link: pick another note; its title (or the selected text) becomes a tappable link to it. */
+    private void pickNoteLink() {
+        flushCell();
+        commitNow();
+        final java.util.ArrayList<Note> list = new java.util.ArrayList<>();
+        for (Note n : db.notes("", 0, -1)) if (n.id != noteId) list.add(n);
+        if (list.isEmpty()) {
+            Toast.makeText(this, "No other notes to link to yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final int selS = selStart();
+        final int selE = selEnd();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(4), dp(16), dp(4));
+        final EditText q = new EditText(this);
+        q.setHint("Search notes");
+        q.setHintTextColor(Pal.muted);
+        q.setTextColor(Pal.ink);
+        q.setSingleLine(true);
+        box.addView(q, new LinearLayout.LayoutParams(-1, -2));
+        final LinearLayout rows = new LinearLayout(this);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        ScrollView sv = new ScrollView(this);
+        sv.addView(rows, new ScrollView.LayoutParams(-1, -2));
+        box.addView(sv, new LinearLayout.LayoutParams(-1, dp(300)));
+        final AlertDialog[] dlg = new AlertDialog[1];
+        final Runnable fill = () -> {
+            rows.removeAllViews();
+            String f = q.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            int shown = 0;
+            for (final Note n : list) {
+                String label = noteLabel(n);
+                if (!f.isEmpty() && !label.toLowerCase(java.util.Locale.ROOT).contains(f)
+                        && !(n.plain != null && n.plain.toLowerCase(java.util.Locale.ROOT).contains(f))) continue;
+                TextView row = new TextView(this);
+                row.setText(label);
+                row.setTextSize(16);
+                row.setTextColor(Pal.ink);
+                row.setSingleLine(true);
+                row.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setMinHeight(dp(48));
+                row.setPadding(dp(8), 0, dp(8), 0);
+                row.setOnClickListener(v -> {
+                    if (dlg[0] != null) dlg[0].dismiss();
+                    insertLink(n, selS, selE);
+                });
+                rows.addView(row, new LinearLayout.LayoutParams(-1, -2));
+                if (++shown >= 80) break;
+            }
+            if (shown == 0) {
+                TextView none = new TextView(this);
+                none.setText("No note matches");
+                none.setTextColor(Pal.muted);
+                none.setPadding(dp(8), dp(12), dp(8), dp(12));
+                rows.addView(none);
+            }
+        };
+        q.addTextChangedListener(new SimpleWatcher() {
+            @Override
+            public void afterTextChanged(Editable e) {
+                fill.run();
+            }
+        });
+        fill.run();
+        dlg[0] = new Dlg.Builder(this).setTitle("Link to a note").setView(box)
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    private void insertLink(Note n, int s, int en) {
+        Editable e = body.getText();
+        s = Math.max(0, Math.min(s, e.length()));
+        en = Math.max(s, Math.min(en, e.length()));
+        busy = true;
+        int a;
+        int b;
+        try {
+            if (en > s) { // the selected text becomes the link
+                a = s;
+                b = en;
+            } else {
+                String label = noteLabel(n);
+                e.insert(s, label);
+                a = s;
+                b = s + label.length();
+            }
+            e.setSpan(new RichText.NoteLink((int) n.id), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            e.insert(b, " "); // typing carries on after the link, not inside it
+            RichText.normalize(e);
+        } finally {
+            busy = false;
+            typing = false;
+            insCount = 0;
+        }
+        body.requestFocus();
+        body.setSelection(Math.min(e.length(), b + 1));
+        changed();
+        refreshToolbar();
+    }
+
+    /** A tap on a note link: save this note, then open the linked one. */
+    private void openNoteLink(int id) {
+        flushCell();
+        commitNow();
+        saveNow();
+        if (db.deletedAt(id) > 0) {
+            Toast.makeText(this, "That note is in the Bin", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (db.note(id) == null) {
+            Toast.makeText(this, "That note no longer exists", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent i = new Intent(this, NoteEditorActivity.class);
+        i.putExtra(EXTRA_ID, (long) id);
+        startActivity(i);
     }
 
     // ------------------------------------------------------------ saving
@@ -1868,6 +2174,8 @@ public class NoteEditorActivity extends Activity {
         if (restoring || body == null) return;
         body.removeCallbacks(commitTask);
         body.postDelayed(commitTask, 700);
+        body.removeCallbacks(autosaveTask);
+        body.postDelayed(autosaveTask, 2500);
     }
 
     private void commitNow() {
@@ -1939,15 +2247,37 @@ public class NoteEditorActivity extends Activity {
     }
 
     private void saveNow() {
+        saveNow(false);
+    }
+
+    private static final int REQ_HISTORY = 41;
+
+    /** Opens this note's earlier versions; whatever is typed is saved first so it is in the list too. */
+    private void openHistory() {
+        commitNow();
+        saveNow();
+        if (noteId <= 0) {
+            Toast.makeText(this, "Nothing saved yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        startActivityForResult(new Intent(this, NoteHistoryActivity.class)
+                .putExtra(NoteHistoryActivity.EXTRA_NOTE, noteId), REQ_HISTORY);
+    }
+
+    private void saveNow(boolean auto) {
         flushCell();
-        if (body != null) body.removeCallbacks(commitTask);
+        if (body != null) {
+            body.removeCallbacks(autosaveTask);
+            if (!auto) body.removeCallbacks(commitTask);
+        }
         if (deleted || !dirty) return;
         String t = title.getText().toString().trim();
         Editable b = body.getText();
         boolean empty = t.isEmpty() && b.toString().trim().isEmpty();
+        if (empty && auto) return; // a half-way edit (everything selected and deleted) is never auto-saved as "deleted"
         if (empty) {
             if (noteId > 0) {
-                db.deleteNote(noteId);
+                db.discardNote(noteId); // keeps what the note held in its history first
                 noteId = 0;
             }
         } else {

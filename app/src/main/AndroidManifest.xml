@@ -130,6 +130,11 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
+            android:name=".NoteHistoryActivity"
+            android:exported="false"
+            android:parentActivityName=".NotesActivity" />
+
+        <activity
             android:name=".BinActivity"
             android:exported="false"
             android:parentActivityName=".NotesActivity" />

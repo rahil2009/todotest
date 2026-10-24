@@ -193,11 +193,11 @@ public class SettingsActivity extends Activity {
                 {IconView.SCREEN, "Main screen", layoutNames[Math.min(5, Prefs.mainLayout(this))], 5,
                         "main screen layout test sections switch routine strip dock repeating one-off"},
                 {IconView.LOOKS, "Tick animation", tickSummary(), 7,
-                        "animations animation tick complete done confetti ripple sparkles fireworks bubbles sweep celebrate"},
+                        "animations animation tick complete done confetti ring fireworks sweep rain celebrate"},
                 {IconView.SWIPE_DONE, "Done haptics", Hap.NAMES[Hap.pick(this)], 8,
                         "haptics haptic vibration vibrate feedback completed done complete pixel"},
                 {IconView.NOTE, "Notebook", "Pin up to " + Prefs.maxPins(this), 6,
-                        "notebook notes pin pinned limit top"},
+                        "notebook notes pin pinned limit top history versions recover restore"},
                 {IconView.CLOCK, "Smart dates", Prefs.smartOn(this) ? "On \u00b7 " + Prefs.smartTrigger(this) : "Off", 1,
                         "smart dates natural language at symbol trigger shortcuts"},
                 {IconView.HABIT, "Habit units", units + " units", 2, "habit units ml min quick amounts"},
@@ -490,6 +490,27 @@ public class SettingsActivity extends Activity {
         row.addView(num, new LinearLayout.LayoutParams(0, -2, 1f));
         row.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
         card.addView(row);
+
+        // ---- note history
+        TextView htitle = text("Note history", 16, Pal.ink, true);
+        htitle.setPadding(0, dp(20), 0, 0);
+        card.addView(htitle);
+        TextView hsub = text("Every note keeps its earlier versions on this phone, even after you delete it. "
+                + "Open the history to bring an older version back. It is also inside each note (clock icon).",
+                13, Pal.muted, false);
+        hsub.setPadding(0, dp(2), 0, dp(10));
+        card.addView(hsub);
+        TextView hopen = text("Open note history", 15, Pal.onAccent, true);
+        hopen.setGravity(Gravity.CENTER);
+        GradientDrawable hg = new GradientDrawable();
+        hg.setCornerRadius(dp(24));
+        hg.setColor(Pal.accent);
+        hopen.setBackground(hg);
+        hopen.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivity(new Intent(this, NoteHistoryActivity.class));
+        });
+        card.addView(hopen, new LinearLayout.LayoutParams(-1, dp(48)));
 
         // ---- colour of pinned notes' previews
         TextView ctitle = text("Pinned note colour", 16, Pal.ink, true);

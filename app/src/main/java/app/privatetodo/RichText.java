@@ -51,6 +51,10 @@ final class RichText {
     static final int RULE = 15;
     /** Tinted callout paragraph. */
     static final int CALLOUT = 16;
+    /** Paragraph alignment; the arg is 1 (centre) or 2 (right). */
+    static final int ALIGN = 17;
+    /** A link to another note; the arg is that note's id. */
+    static final int LINK = 18;
     static final char RULE_CHAR = '\u2500';
     static final int MAX_INDENT = 5;
     static final int MIN_SIZE = 8;
@@ -204,11 +208,79 @@ final class RichText {
         @Override
         public void updateDrawState(TextPaint p) {
             set(p);
+            float k = NoteFonts.stroke(idx);
+            if (k > 0) { // pen / marker fonts: an outline around each glyph makes the stroke thicker
+                p.setStyle(Paint.Style.FILL_AND_STROKE);
+                p.setStrokeJoin(Paint.Join.ROUND);
+                p.setStrokeWidth(p.getTextSize() * k);
+            }
         }
     }
 
-    /** A quote: accent bar on the left, serif italic text. */
-    static final class Quote extends MetricAffectingSpan implements android.text.style.LeadingMarginSpan {
+    // ---- shared drawing helpers for the panel-like paragraph styles
+
+    private static final android.graphics.Path PANEL_PATH = new android.graphics.Path();
+    private static final android.graphics.RectF PANEL_RECT = new android.graphics.RectF();
+
+    /**
+     * One line's slice of a rounded panel: the first line has rounded top corners, the last line rounded
+     * bottom corners, the lines between are plain, so a multi-line panel reads as one piece.
+     */
+    private static void panelSlice(Canvas c, Paint p, float l, float t, float r, float b, float rad,
+                                   boolean first, boolean last, int fill, int border, float bw) {
+        float f = first ? rad : 0;
+        float g = last ? rad : 0;
+        PANEL_RECT.set(l, t, r, b);
+        PANEL_PATH.reset();
+        PANEL_PATH.addRoundRect(PANEL_RECT, new float[]{f, f, f, f, g, g, g, g}, android.graphics.Path.Direction.CW);
+        if (border != 0 && bw > 0) {
+            p.setColor(border);
+            c.drawPath(PANEL_PATH, p);
+            float fi = Math.max(0, f - bw);
+            float gi = Math.max(0, g - bw);
+            PANEL_RECT.set(l + bw, t + (first ? bw : 0), r - bw, b - (last ? bw : 0));
+            PANEL_PATH.reset();
+            PANEL_PATH.addRoundRect(PANEL_RECT, new float[]{fi, fi, fi, fi, gi, gi, gi, gi},
+                    android.graphics.Path.Direction.CW);
+        }
+        p.setColor(fill);
+        c.drawPath(PANEL_PATH, p);
+    }
+
+    /** True when this line is the first line of the paragraph run the span covers. */
+    private static boolean firstLine(CharSequence text, Object span, int lineStart) {
+        return !(text instanceof Spanned) || ((Spanned) text).getSpanStart(span) >= lineStart;
+    }
+
+    /** True when this line is the last line of the paragraph run the span covers. */
+    private static boolean lastLine(CharSequence text, Object span, int lineEnd) {
+        return !(text instanceof Spanned) || ((Spanned) text).getSpanEnd(span) <= lineEnd;
+    }
+
+    /** Extra room above the first and below the last line of a panel. */
+    private static void panelPadding(CharSequence text, Object span, int start, int end, int padPx,
+                                     Paint.FontMetricsInt fm) {
+        if (!(text instanceof Spanned)) return;
+        Spanned sp = (Spanned) text;
+        int a = sp.getSpanStart(span);
+        int b = sp.getSpanEnd(span);
+        if (a < 0 || start < a || start >= Math.max(b, a + 1)) return; // a line outside this panel
+        if (start == a) {
+            fm.ascent -= padPx;
+            fm.top -= padPx;
+        }
+        if (b <= end) {
+            fm.descent += padPx;
+            fm.bottom += padPx;
+        }
+    }
+
+    /**
+     * A quote: accent bar on the left, serif italic text, and a big faint quotation mark behind the first
+     * line. One span covers a whole run of quote paragraphs ({@link #normalize} keeps it that way).
+     */
+    static final class Quote extends MetricAffectingSpan implements LineBackgroundSpan,
+            android.text.style.LeadingMarginSpan {
         private void set(TextPaint p) {
             p.setTypeface(Typeface.create(NoteFonts.face(2), Typeface.ITALIC));
         }
@@ -225,7 +297,7 @@ final class RichText {
 
         @Override
         public int getLeadingMargin(boolean first) {
-            return Math.round(16 * density);
+            return Math.round(22 * density);
         }
 
         @Override
@@ -237,15 +309,44 @@ final class RichText {
             p.setStyle(Paint.Style.FILL);
             p.setColor(Pal.accent);
             float w = 3 * density;
-            c.drawRect(dir > 0 ? x : x - w, top, dir > 0 ? x + w : x, bottom, p);
+            PANEL_RECT.set(dir > 0 ? x : x - w, top, dir > 0 ? x + w : x, bottom);
+            c.drawRoundRect(PANEL_RECT, w / 2, w / 2, p);
             p.setColor(old);
             p.setStyle(os);
         }
+
+        @Override
+        public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
+                                   int bottom, CharSequence text, int start, int end, int lnum) {
+            if (!firstLine(text, this, start)) return;
+            int oldColor = p.getColor();
+            Paint.Style oldStyle = p.getStyle();
+            Typeface oldFace = p.getTypeface();
+            float oldSize = p.getTextSize();
+            boolean oldFake = p.isFakeBoldText();
+            p.setStyle(Paint.Style.FILL);
+            p.setFakeBoldText(false);
+            p.setTypeface(NoteFonts.face(2));
+            p.setTextSize(64 * density);
+            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x38000000 : 0x30000000));
+            c.drawText("“", left + 6 * density, top + 50 * density, p);
+            p.setTextSize(oldSize);
+            p.setTypeface(oldFace);
+            p.setFakeBoldText(oldFake);
+            p.setColor(oldColor);
+            p.setStyle(oldStyle);
+        }
     }
 
-    /** A callout: tinted panel with an accent edge. */
-    static final class Callout extends MetricAffectingSpan
-            implements LineBackgroundSpan, android.text.style.LeadingMarginSpan {
+    /**
+     * A callout: a dark rounded panel with a purple icon tile and a light bulb at the left, then the
+     * text. One span covers a whole run of callout paragraphs.
+     */
+    static final class Callout extends MetricAffectingSpan implements LineBackgroundSpan,
+            android.text.style.LeadingMarginSpan, android.text.style.LineHeightSpan {
+        static final int TILE = 0xFFB9A8FF;
+        static final int TILE_INK = 0xFF1E1B30;
+
         @Override
         public void updateMeasureState(TextPaint p) {
         }
@@ -256,7 +357,7 @@ final class RichText {
 
         @Override
         public int getLeadingMargin(boolean first) {
-            return Math.round(16 * density);
+            return Math.round(52 * density);
         }
 
         @Override
@@ -266,17 +367,81 @@ final class RichText {
         }
 
         @Override
+        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
+                                 Paint.FontMetricsInt fm) {
+            panelPadding(text, this, start, end, Math.round(9 * density), fm);
+        }
+
+        @Override
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
-            int old = p.getColor();
-            Paint.Style os = p.getStyle();
+            int oldColor = p.getColor();
+            Paint.Style oldStyle = p.getStyle();
+            float oldW = p.getStrokeWidth();
+            boolean first = firstLine(text, this, start);
+            boolean last = lastLine(text, this, end);
             p.setStyle(Paint.Style.FILL);
-            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x2E000000 : 0x26000000));
-            c.drawRect(left, top, right, bottom, p);
-            p.setColor(Pal.accent);
-            c.drawRect(left, top, left + 4 * density, bottom, p);
-            p.setColor(old);
-            p.setStyle(os);
+            int fill = Pal.dark ? 0xFF1F2127 : 0xFFEEEBF9;
+            int edge = Pal.dark ? 0xFF2E323B : 0xFFD8D2EE;
+            float pl = left - 8 * density;
+            float pr = right + 8 * density;
+            panelSlice(c, p, pl, top, pr, bottom, 16 * density, first, last, fill, edge, Math.max(1f, density));
+            if (first) {
+                float pad = 9 * density;
+                float lineH = (bottom - top) - pad - (last ? pad : 0);
+                float size = 30 * density;
+                float tx = pl + 11 * density;
+                float ty = top + pad + Math.max(0, (lineH - size) / 2f);
+                PANEL_RECT.set(tx, ty, tx + size, ty + size);
+                p.setColor(TILE);
+                c.drawRoundRect(PANEL_RECT, 9 * density, 9 * density, p);
+                bulb(c, p, tx + size / 2f, ty + size / 2f, density);
+            }
+            p.setStrokeWidth(oldW);
+            p.setColor(oldColor);
+            p.setStyle(oldStyle);
+        }
+
+        /** A small light bulb drawn with strokes, centred on (cx, cy). */
+        private static void bulb(Canvas c, Paint p, float cx, float cy, float d) {
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeJoin(Paint.Join.ROUND);
+            p.setStrokeWidth(1.7f * d);
+            p.setColor(TILE_INK);
+            c.drawCircle(cx, cy - 2.2f * d, 5.2f * d, p);
+            c.drawLine(cx - 2.6f * d, cy + 3.2f * d, cx - 2.6f * d, cy + 5.4f * d, p);
+            c.drawLine(cx + 2.6f * d, cy + 3.2f * d, cx + 2.6f * d, cy + 5.4f * d, p);
+            c.drawLine(cx - 2.6f * d, cy + 5.4f * d, cx + 2.6f * d, cy + 5.4f * d, p);
+            c.drawLine(cx - 1.4f * d, cy + 7.6f * d, cx + 1.4f * d, cy + 7.6f * d, p);
+            p.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    /** Paragraph alignment: arg 1 = centred, 2 = right (0 = left, no span). */
+    static final class Align extends android.text.style.AlignmentSpan.Standard {
+        final int mode;
+
+        Align(int mode) {
+            super(mode == 1 ? android.text.Layout.Alignment.ALIGN_CENTER
+                    : mode == 2 ? android.text.Layout.Alignment.ALIGN_OPPOSITE
+                    : android.text.Layout.Alignment.ALIGN_NORMAL);
+            this.mode = mode;
+        }
+    }
+
+    /** A link to another note: the text is accent coloured and underlined; the arg is the note's id. */
+    static final class NoteLink extends CharacterStyle implements UpdateAppearance {
+        final int noteId;
+
+        NoteLink(int noteId) {
+            this.noteId = noteId;
+        }
+
+        @Override
+        public void updateDrawState(TextPaint tp) {
+            tp.setUnderlineText(true);
+            if (tp.bgColor == 0) tp.setColor(Pal.dark ? 0xFFA9B4FF : 0xFF3B4BD6);
         }
     }
 
@@ -342,42 +507,31 @@ final class RichText {
         }
     }
 
-    /** Terminal-style code block: black panel with a border, indented light monospace text, accent bar. */
+    /**
+     * Code block: near-black rounded panel with a thin border and light JetBrains Mono text. One span covers
+     * the whole block ({@link #normalize} keeps it that way), so it reads as one piece.
+     */
     static final class Block extends MetricAffectingSpan implements LineBackgroundSpan,
             android.text.style.LeadingMarginSpan, android.text.style.LineHeightSpan {
-        static final int BG = 0xFF000000;
-        static final int FG = 0xFFE6EDF3;
+        static final int BG = 0xFF0B0B0A;
+        static final int EDGE = 0xFF2A2A25;
+        static final int FG = 0xFFE4E1D6;
 
         @Override
         public void updateMeasureState(TextPaint p) {
-            p.setTypeface(Typeface.MONOSPACE);
+            p.setTypeface(NoteFonts.face(11));
         }
 
         @Override
         public void updateDrawState(TextPaint p) {
-            p.setTypeface(Typeface.MONOSPACE);
+            p.setTypeface(NoteFonts.face(11));
             p.setColor(FG);
         }
 
-        /** Breathing room above the first line and below the last line of the block. */
         @Override
         public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
                                  Paint.FontMetricsInt fm) {
-            if (!(text instanceof Spanned)) return;
-            Spanned sp = (Spanned) text;
-            int pad = Math.round(8 * density);
-            int a = sp.getSpanStart(this);
-            int b = sp.getSpanEnd(this);
-            // only lines that really belong to this block; lines before/after never match
-            if (a < 0 || start < a || start >= Math.max(b, a + 1)) return;
-            if (start == a) {
-                fm.ascent -= pad;
-                fm.top -= pad;
-            }
-            if (end >= b) {
-                fm.descent += pad;
-                fm.bottom += pad;
-            }
+            panelPadding(text, this, start, end, Math.round(10 * density), fm);
         }
 
         @Override
@@ -394,26 +548,13 @@ final class RichText {
         @Override
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
-            int old = p.getColor();
-            Paint.Style os = p.getStyle();
-            float sw = p.getStrokeWidth();
+            int oldColor = p.getColor();
+            Paint.Style oldStyle = p.getStyle();
             p.setStyle(Paint.Style.FILL);
-            p.setColor(BG);
-            c.drawRect(left, top, right, bottom, p);
-            // border so the panel stands out in dark mode too
-            p.setColor(Pal.dark ? 0xFF4A5753 : 0xFF000000);
-            float t = 1.5f * density;
-            c.drawRect(right - t, top, right, bottom, p);
-            if (text instanceof Spanned) {
-                Spanned sp = (Spanned) text;
-                if (sp.getSpanStart(this) >= start) c.drawRect(left, top, right, top + t, p);
-                if (sp.getSpanEnd(this) <= end + 1) c.drawRect(left, bottom - t, right, bottom, p);
-            }
-            p.setColor(Pal.accent);
-            c.drawRect(left, top, left + 4 * density, bottom, p);
-            p.setColor(old);
-            p.setStyle(os);
-            p.setStrokeWidth(sw);
+            panelSlice(c, p, left - 6 * density, top, right + 6 * density, bottom, 14 * density,
+                    firstLine(text, this, start), lastLine(text, this, end), BG, EDGE, Math.max(1f, density));
+            p.setColor(oldColor);
+            p.setStyle(oldStyle);
         }
     }
 
@@ -888,6 +1029,10 @@ final class RichText {
                 return new Rule();
             case CALLOUT:
                 return new Callout();
+            case ALIGN:
+                return new Align(arg);
+            case LINK:
+                return new NoteLink(arg);
             default:
                 return new Block();
         }
@@ -912,6 +1057,8 @@ final class RichText {
         if (o instanceof Hide) return HIDE;
         if (o instanceof Rule) return RULE;
         if (o instanceof Callout) return CALLOUT;
+        if (o instanceof Align) return ALIGN;
+        if (o instanceof NoteLink) return LINK;
         return -1;
     }
 
@@ -921,6 +1068,8 @@ final class RichText {
         if (o instanceof Fg) return ((Fg) o).color;
         if (o instanceof Indent) return ((Indent) o).level;
         if (o instanceof Fnt) return ((Fnt) o).idx;
+        if (o instanceof Align) return ((Align) o).mode;
+        if (o instanceof NoteLink) return ((NoteLink) o).noteId;
         return o instanceof Hl ? ((Hl) o).color : 0;
     }
 
@@ -947,6 +1096,349 @@ final class RichText {
             if (on) e.setSpan(make(type, arg), s, en, FLAGS);
         }
         if (type == BLOCK && !on) apply(e, CODE, s, en, 0, false); // notes saved earlier had inline code inside blocks
+    }
+
+    // ------------------------------------------------------------------ paragraph styles
+    //
+    // Quote, callout, code block, alignment and nesting style whole paragraphs. Android adds up the margins
+    // and backgrounds of every such span on a line, so a paragraph must carry exactly ONE span of each kind.
+    // Typing and deleting split and grow spans in many small ways; normalize() puts them back into the one
+    // canonical shape after every edit: a style is read from the first character of each paragraph, and one
+    // span is written per run of neighbouring paragraphs with the same value.
+
+    private static final int[] CHAR_TYPES = {BOLD, ITALIC, UNDER, STRIKE, HILITE, CODE, HEAD, SIZE, FG, FONT};
+    private static final int[] PARA_TYPES = {BLOCK, CALLOUT, QUOTE, ALIGN, INDENT};
+
+    private static boolean isMargin(int type) {
+        return type == ALIGN || type == INDENT;
+    }
+
+    /** Smallest paragraph index whose start is at or after {@code pos}. */
+    private static int firstParaAtOrAfter(int[] st, int count, int pos) {
+        int lo = 0;
+        int hi = count;
+        while (lo < hi) {
+            int mid = (lo + hi) >>> 1;
+            if (st[mid] < pos) lo = mid + 1;
+            else hi = mid;
+        }
+        return lo;
+    }
+
+    /** Puts every style span into its canonical shape (see above). Text is never touched. */
+    @SuppressWarnings("unchecked")
+    static void normalize(Editable e) {
+        int n = e.length();
+        Object[] all = e.getSpans(0, n, Object.class);
+        java.util.ArrayList<Object>[] by = new java.util.ArrayList[LINK + 1];
+        for (Object o : all) {
+            int t = typeOf(o);
+            if (t < 0 || t > LINK) continue;
+            if (by[t] == null) by[t] = new java.util.ArrayList<>();
+            by[t].add(o);
+        }
+        for (int t : CHAR_TYPES) mergeChars(e, t, by[t]);
+
+        int count = 1;
+        for (int i = 0; i < n; i++) if (e.charAt(i) == '\n') count++;
+        int[] st = new int[count];
+        int[] en = new int[count];
+        int k = 0;
+        int from = 0;
+        for (int i = 0; i <= n; i++) {
+            if (i == n || e.charAt(i) == '\n') {
+                st[k] = from;
+                en[k] = i;
+                k++;
+                from = i + 1;
+            }
+        }
+        int[][] val = new int[PARA_TYPES.length][];
+        for (int j = 0; j < PARA_TYPES.length; j++) val[j] = paraValues(e, PARA_TYPES[j], by[PARA_TYPES[j]], st, count, n);
+        int[] blk = val[0];
+        int[] cal = val[1];
+        int[] quo = val[2];
+        for (int p = 0; p < count; p++) { // a paragraph is a code block, or a callout, or a quote
+            if (blk[p] != 0) {
+                cal[p] = 0;
+                quo[p] = 0;
+            } else if (cal[p] != 0) {
+                quo[p] = 0;
+            }
+        }
+        for (int j = 0; j < PARA_TYPES.length; j++) rebuildParas(e, PARA_TYPES[j], by[PARA_TYPES[j]], st, en, val[j], n);
+    }
+
+    /** Merges touching spans of one character style with the same value into single spans. */
+    private static void mergeChars(Editable e, int type, java.util.List<Object> spans) {
+        if (spans == null || spans.size() < 2) return;
+        java.util.ArrayList<int[]> iv = new java.util.ArrayList<>();
+        for (Object o : spans) {
+            int a = e.getSpanStart(o);
+            int b = e.getSpanEnd(o);
+            if (a < 0 || a >= b) continue;
+            iv.add(new int[]{a, b, argOf(o)});
+        }
+        iv.sort((x, y) -> x[0] != y[0] ? x[0] - y[0] : x[1] - y[1]);
+        java.util.ArrayList<int[]> out = new java.util.ArrayList<>();
+        for (int[] r : iv) {
+            if (!out.isEmpty()) {
+                int[] last = out.get(out.size() - 1);
+                if (r[0] <= last[1] && r[2] == last[2]) {
+                    last[1] = Math.max(last[1], r[1]);
+                    continue;
+                }
+            }
+            out.add(new int[]{r[0], r[1], r[2]});
+        }
+        if (out.size() == spans.size()) return;
+        for (Object o : spans) e.removeSpan(o);
+        for (int[] r : out) e.setSpan(make(type, r[2]), r[0], r[1], FLAGS);
+    }
+
+    /** The value of one paragraph style for every paragraph (0 = none), read at each paragraph's first character. */
+    private static int[] paraValues(Editable e, int type, java.util.List<Object> spans, int[] st, int count, int n) {
+        int[] val = new int[count];
+        if (spans == null || spans.isEmpty()) return val;
+        boolean margin = isMargin(type);
+        java.util.ArrayList<int[]> iv = new java.util.ArrayList<>();
+        for (Object o : spans) {
+            int a = e.getSpanStart(o);
+            int b = e.getSpanEnd(o);
+            if (a < 0 || a >= b) continue;
+            int arg = margin ? argOf(o) : 1;
+            if (arg > 0) iv.add(new int[]{a, b, arg});
+        }
+        iv.sort((x, y) -> x[0] != y[0] ? x[0] - y[0] : x[2] - y[2]); // the span that starts last wins
+        for (int[] r : iv) {
+            int p = firstParaAtOrAfter(st, count, r[0]);
+            for (; p < count && st[p] < r[1] && st[p] < n; p++) val[p] = r[2];
+            // a margin span that reaches the end of the text carries over to an empty last line
+            if (margin && n > 0 && r[1] == n && r[0] < n && st[count - 1] == n) val[count - 1] = r[2];
+        }
+        return val;
+    }
+
+    /** Rewrites the spans of one paragraph style as one span per run of paragraphs with the same value. */
+    private static void rebuildParas(Editable e, int type, java.util.List<Object> spans, int[] st, int[] en,
+                                     int[] val, int n) {
+        boolean margin = isMargin(type);
+        int count = st.length;
+        java.util.ArrayList<int[]> runs = new java.util.ArrayList<>();
+        for (int p = 0; p < count; p++) {
+            if (val[p] == 0) continue;
+            int q = p;
+            while (q + 1 < count && val[q + 1] == val[p]) q++;
+            int s0 = st[p];
+            int e0;
+            if (st[q] >= n) e0 = n; // empty last paragraph: the span reaches the end of the text
+            else if (en[q] == st[q]) e0 = en[q] + 1; // empty paragraph: its own line break carries the style
+            else e0 = en[q];
+            if (e0 <= s0) { // only an empty last paragraph: cover the line break before it
+                if (n == 0) {
+                    p = q;
+                    continue;
+                }
+                s0 = n - 1;
+                e0 = n;
+            }
+            runs.add(new int[]{s0, e0, val[p]});
+            p = q;
+        }
+        java.util.ArrayList<int[]> have = new java.util.ArrayList<>();
+        if (spans != null) {
+            for (Object o : spans) {
+                int a = e.getSpanStart(o);
+                int b = e.getSpanEnd(o);
+                have.add(new int[]{a, b, margin ? argOf(o) : 1});
+            }
+        }
+        boolean same = have.size() == runs.size();
+        if (same) {
+            have.sort((x, y) -> x[0] - y[0]);
+            for (int i = 0; i < runs.size() && same; i++) {
+                int[] x = have.get(i);
+                int[] y = runs.get(i);
+                if (x[0] != y[0] || x[1] != y[1] || x[2] != y[2]) same = false;
+            }
+        }
+        if (same) return;
+        if (spans != null) for (Object o : spans) e.removeSpan(o);
+        for (int[] r : runs) e.setSpan(make(type, margin ? r[2] : 0), r[0], r[1], FLAGS);
+    }
+
+    /**
+     * The value of a paragraph style for the paragraph starting at {@code ps}: -1 = not set, otherwise 0
+     * (quote, callout, code block) or the level / mode (nesting, alignment).
+     */
+    static int paraArg(Spanned e, int type, int ps) {
+        int n = e.length();
+        int best = -1;
+        int bestStart = -1;
+        if (ps >= n) { // the empty last line: only margin styles carry over to it
+            if (!isMargin(type) || n == 0) return -1;
+            for (Object o : e.getSpans(n, n, Object.class)) {
+                if (typeOf(o) != type) continue;
+                int a = e.getSpanStart(o);
+                if (e.getSpanEnd(o) == n && a < n && a >= bestStart) {
+                    bestStart = a;
+                    best = argOf(o);
+                }
+            }
+            return best;
+        }
+        for (Object o : e.getSpans(ps, ps + 1, Object.class)) {
+            if (typeOf(o) != type) continue;
+            int a = e.getSpanStart(o);
+            if (a <= ps && e.getSpanEnd(o) > ps && a >= bestStart) {
+                bestStart = a;
+                best = isMargin(type) ? argOf(o) : 0;
+            }
+        }
+        return best;
+    }
+
+    /** Sets (arg &gt; 0) or clears (arg 0) a margin style on the one paragraph starting at {@code ps}. */
+    private static void setParaSpan(Editable e, int type, int ps, int arg) {
+        int n = e.length();
+        int pe = lineEnd(e, ps);
+        int stop = pe < n ? pe + 1 : pe;
+        if (stop <= ps) { // the empty last paragraph: use the line break before it so the span touches the end
+            if (ps == 0) return;
+            for (Object o : e.getSpans(ps, ps, Object.class)) {
+                if (typeOf(o) != type) continue;
+                int a = e.getSpanStart(o);
+                int b = e.getSpanEnd(o);
+                if (b != ps) continue;
+                int keep = argOf(o);
+                e.removeSpan(o);
+                if (a < ps - 1) e.setSpan(make(type, keep), a, ps - 1, FLAGS);
+            }
+            if (arg > 0) e.setSpan(make(type, arg), ps - 1, ps, FLAGS);
+            return;
+        }
+        for (Object o : e.getSpans(ps, stop, Object.class)) {
+            if (typeOf(o) != type) continue;
+            int a = e.getSpanStart(o);
+            int b = e.getSpanEnd(o);
+            int keep = argOf(o);
+            e.removeSpan(o);
+            if (a < ps) e.setSpan(make(type, keep), a, ps, FLAGS); // the parts on other paragraphs stay
+            if (b > stop) e.setSpan(make(type, keep), stop, b, FLAGS);
+        }
+        if (arg > 0) e.setSpan(make(type, arg), ps, stop, FLAGS);
+    }
+
+    /** Paragraph alignment (0 left, 1 centre, 2 right) of the paragraph at {@code pos}. */
+    static int alignAt(Spanned e, int pos) {
+        return Math.max(0, paraArg(e, ALIGN, lineStart(e, pos)));
+    }
+
+    /** Aligns every paragraph touched by [s, en). */
+    static void setAlign(Editable e, int s, int en, int mode) {
+        int a = lineStart(e, s);
+        int hi = en > s && en > 0 && en <= e.length() && e.charAt(en - 1) == '\n' ? en - 1 : en;
+        int lastStart = lineStart(e, hi);
+        int p = a;
+        while (true) {
+            setParaSpan(e, ALIGN, p, mode);
+            if (p >= lastStart) break;
+            p = lineEnd(e, p) + 1;
+            if (p > e.length()) break;
+        }
+        normalize(e);
+    }
+
+    /** True when every paragraph touched by [s, en) has the style (quote, callout, code block). */
+    static boolean paragraphsHave(Spanned e, int type, int s, int en) {
+        int a = lineStart(e, s);
+        int hi = en > s && en > 0 && en <= e.length() && e.charAt(en - 1) == '\n' ? en - 1 : en;
+        int lastStart = lineStart(e, hi);
+        int p = a;
+        while (true) {
+            if (paraArg(e, type, p) < 0) return false;
+            if (p >= lastStart) return true;
+            p = lineEnd(e, p) + 1;
+            if (p > e.length()) return false;
+        }
+    }
+
+    /**
+     * Turns quote / callout / code block on or off for the paragraphs touched by [s, en). An empty last
+     * paragraph gets a line break of its own to carry the style; true is returned when that was added.
+     */
+    static boolean setParagraph(Editable e, int type, int s, int en, boolean on) {
+        boolean added = false;
+        int n = e.length();
+        int a = lineStart(e, s);
+        int hi = en > s && en > 0 && en <= n && e.charAt(en - 1) == '\n' ? en - 1 : en;
+        int lastStart = lineStart(e, hi);
+        if (on && lastStart >= n) {
+            e.insert(n, "\n");
+            n = e.length();
+            added = true;
+        }
+        int b = lineEnd(e, lastStart);
+        int end = Math.min(n, b == lastStart ? b + 1 : b);
+        if (end > a) {
+            if (on) {
+                for (int other : new int[]{QUOTE, CALLOUT, BLOCK}) {
+                    if (other != type) apply(e, other, a, end, 0, false);
+                }
+            }
+            apply(e, type, a, end, 0, on);
+        }
+        normalize(e);
+        return added;
+    }
+
+    /**
+     * Enter pressed on an empty quote / callout / code-block line: take the line break back and make the
+     * line plain, so a second Enter leaves the block. Returns true when it did that.
+     */
+    static boolean leaveStyle(Editable e, int ps, int nl) {
+        if (nl != ps) return false;
+        int q = nl + 1;
+        boolean styled = false;
+        for (int ty : new int[]{BLOCK, CALLOUT, QUOTE}) {
+            if (paraArg(e, ty, ps) >= 0 || paraArg(e, ty, q) >= 0) styled = true;
+        }
+        if (!styled) return false;
+        e.delete(nl, nl + 1);
+        int end = Math.min(e.length(), ps + 1);
+        if (end > ps) {
+            for (int ty : new int[]{BLOCK, CALLOUT, QUOTE}) apply(e, ty, ps, end, 0, false);
+        }
+        normalize(e);
+        return true;
+    }
+
+    /**
+     * Enter pressed at the end of a styled paragraph: the new paragraph keeps the quote / callout / code
+     * block / alignment. True is returned when a line break was added at the end of the text to hold it.
+     */
+    static boolean inheritStyles(Editable e, int ps, int nl) {
+        if (nl <= ps) return false;
+        int q = nl + 1;
+        boolean added = false;
+        for (int ty : new int[]{BLOCK, CALLOUT, QUOTE}) {
+            if (paraArg(e, ty, ps) < 0 || paraArg(e, ty, q) >= 0) continue;
+            if (q >= e.length()) {
+                e.insert(q, "\n");
+                added = true;
+            }
+            int end = lineEnd(e, q);
+            if (end == q) end = q + 1;
+            apply(e, ty, q, Math.min(e.length(), end), 0, true);
+        }
+        int m = paraArg(e, ALIGN, ps);
+        if (m > 0 && q < e.length() && paraArg(e, ALIGN, q) < 0) {
+            int end = lineEnd(e, q);
+            if (end == q) end = q + 1;
+            apply(e, ALIGN, q, Math.min(e.length(), end), m, true);
+        }
+        normalize(e);
+        return added;
     }
 
     /** The custom size (sp) of the text in [s, en), or the character before the cursor if s == en; 0 = none, -1 = mixed. */
@@ -1144,29 +1636,12 @@ final class RichText {
     // ---- nesting
 
     static int indentOf(Spanned e, int ls) {
-        int lvl = 0;
-        int le = lineEnd(e, ls);
-        int qEnd = Math.min(e.length(), Math.max(le, ls + 1));
-        for (Indent o : e.getSpans(ls, qEnd, Indent.class)) {
-            if (e.getSpanEnd(o) > ls) lvl = Math.max(lvl, o.level);
-        }
-        return lvl;
+        return Math.max(0, paraArg(e, INDENT, ls));
     }
 
     /** Sets the nesting level of the line starting at {@code ls}. */
     static void setIndent(Editable e, int ls, int level) {
-        int le = lineEnd(e, ls);
-        int stop = Math.min(e.length(), le + 1);
-        for (Indent o : e.getSpans(ls, Math.max(stop, ls), Indent.class)) {
-            int a = e.getSpanStart(o);
-            int b = e.getSpanEnd(o);
-            e.removeSpan(o);
-            // keep the parts of a multi-line span that lie on other lines
-            if (a < ls) e.setSpan(new Indent(o.level), a, ls, FLAGS);
-            if (b > stop) e.setSpan(new Indent(o.level), stop, b, FLAGS);
-        }
-        level = Math.max(0, Math.min(MAX_INDENT, level));
-        if (level > 0 && stop > ls) e.setSpan(new Indent(level), ls, stop, FLAGS);
+        setParaSpan(e, INDENT, ls, Math.max(0, Math.min(MAX_INDENT, level)));
     }
 
     // ---- numbered lists ("1. ", "2. " ...)
@@ -1270,14 +1745,17 @@ final class RichText {
     static String toJson(CharSequence text) {
         try {
             JSONObject o = new JSONObject();
-            o.put("t", text.toString());
+            String all = text.toString();
+            int end = all.length(); // blank lines left at the very end (made while styling) are not saved
+            while (end >= 2 && all.charAt(end - 1) == '\n' && all.charAt(end - 2) == '\n') end--;
+            o.put("t", all.substring(0, end));
             JSONArray arr = new JSONArray();
             if (text instanceof Spanned) {
                 Spanned sp = (Spanned) text;
                 for (Object s : sp.getSpans(0, sp.length(), Object.class)) {
                     int type = typeOf(s);
                     int a = sp.getSpanStart(s);
-                    int b = sp.getSpanEnd(s);
+                    int b = Math.min(end, sp.getSpanEnd(s));
                     if (type < 0 || a >= b) continue;
                     arr.put(new JSONArray().put(type).put(a).put(b).put(argOf(s)));
                 }
@@ -1329,11 +1807,13 @@ final class RichText {
                     continue;
                 }
                 if (a < b) out.setSpan(make(r.getInt(0), r.optInt(3)), a, b,
-                        r.getInt(0) == HIDE || r.getInt(0) == RULE ? Spanned.SPAN_EXCLUSIVE_EXCLUSIVE : FLAGS);
+                        r.getInt(0) == HIDE || r.getInt(0) == RULE || r.getInt(0) == LINK
+                                ? Spanned.SPAN_EXCLUSIVE_EXCLUSIVE : FLAGS);
             }
             for (Object blk : out.getSpans(0, out.length(), Block.class)) { // old notes: drop code-in-block
                 apply(out, CODE, out.getSpanStart(blk), out.getSpanEnd(blk), 0, false);
             }
+            normalize(out); // heals notes saved with stacked / split paragraph spans
         } catch (JSONException ex) {
             out.clear();
             out.append(json);

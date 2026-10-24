@@ -22,32 +22,41 @@ import java.util.Random;
 final class TickFx {
     private TickFx() { }
 
-    static final String[] NAMES = {"Off", "Pop", "Ripple", "Confetti", "Sparkles", "Check draw", "Ring burst",
-            "Fireworks", "Row sweep", "Confetti rain", "Bubbles"};
+    static final String[] NAMES = {"Off", "Confetti", "Ring burst", "Fireworks", "Row sweep", "Confetti rain"};
 
     static final String[] DESCS = {"No animation when you tick a task.",
-            "A round badge pops out of the tick.",
-            "Three rings spread out from the tick.",
             "A burst of confetti from the tick.",
-            "Little stars twinkle around the tick.",
-            "A big tick is drawn with a soft glow.",
             "One ring and a ring of sparks.",
             "Three small fireworks above the tick.",
             "A bright band sweeps across the row.",
-            "Confetti falls down the whole screen.",
-            "Bubbles float up from the tick."};
+            "Confetti falls down the whole screen."};
+
+    /** Which drawing each listed style uses (the numbers the drawing code switches on). */
+    private static final int[] RENDER = {0, 3, 6, 7, 8, 9};
 
     private static final int[] PARTY = {0xFFFFC107, 0xFFEF5350, 0xFF42A5F5, 0xFFAB47BC, 0xFF66BB6A, 0xFFFF7043};
-    private static final int[] MS = {0, 650, 900, 1100, 950, 850, 800, 1250, 750, 1700, 1250};
+    private static final int[] MS = {0, 0, 0, 1100, 0, 0, 800, 1250, 750, 1700};
+
+    /** Old numbering (before Pop, Ripple, Sparkles, Check draw and Bubbles were removed) -> the current list. */
+    private static final int[] FROM_OLD = {0, 1, 1, 1, 1, 1, 2, 3, 4, 5, 1};
 
     static int style(Context c) {
-        return Math.max(0, Math.min(NAMES.length - 1, c.getApplicationContext()
-                .getSharedPreferences("settings", Context.MODE_PRIVATE).getInt("tick_fx", 1)));
+        android.content.SharedPreferences sp = c.getApplicationContext()
+                .getSharedPreferences("settings", Context.MODE_PRIVATE);
+        int v;
+        if (sp.contains("tick_fx2")) {
+            v = sp.getInt("tick_fx2", 1);
+        } else {
+            int old = sp.getInt("tick_fx", 3);
+            v = FROM_OLD[Math.max(0, Math.min(FROM_OLD.length - 1, old))];
+            sp.edit().putInt("tick_fx2", v).apply();
+        }
+        return Math.max(0, Math.min(NAMES.length - 1, v));
     }
 
     static void setStyle(Context c, int s) {
         c.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE)
-                .edit().putInt("tick_fx", s).apply();
+                .edit().putInt("tick_fx2", s).apply();
     }
 
     /** Plays the chosen style on {@code anchor} (the tick circle); {@code row} is the whole task row, if known. */
@@ -70,7 +79,7 @@ final class TickFx {
             row.getLocationInWindow(l);
             rr = new RectF(l[0], l[1], l[0] + row.getWidth(), l[1] + row.getHeight());
         }
-        FxView v = new FxView(a, style, cx, cy, rr, decor.getWidth(), decor.getHeight());
+        FxView v = new FxView(a, RENDER[style], cx, cy, rr, decor.getWidth(), decor.getHeight());
         v.setClickable(false);
         v.setFocusable(false);
         decor.addView(v, new ViewGroup.LayoutParams(-1, -1));
@@ -141,16 +150,11 @@ final class TickFx {
             p.reset();
             p.setAntiAlias(true);
             switch (style) {
-                case 1: pop(c, pr); break;
-                case 2: ripple(c, pr); break;
                 case 3: confetti(c, t); break;
-                case 4: sparkles(c, pr); break;
-                case 5: checkDraw(c, pr); break;
                 case 6: ringBurst(c, pr); break;
                 case 7: fireworks(c, pr); break;
                 case 8: sweep(c, pr); break;
-                case 9: rain(c, t); break;
-                default: bubbles(c, pr); break;
+                default: rain(c, t); break;
             }
             postInvalidateOnAnimation();
         }
@@ -165,33 +169,6 @@ final class TickFx {
             path.moveTo(x - r * 0.45f, y + r * 0.02f);
             path.lineTo(x - r * 0.1f, y + r * 0.38f);
             path.lineTo(x + r * 0.48f, y - r * 0.34f);
-        }
-
-        // 1
-        private void pop(Canvas c, float pr) {
-            float r = 14 * d + 26 * d * ease(pr);
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(a(Pal.accent, 0.9f * (1 - pr)));
-            c.drawCircle(cx, cy, r, p);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeCap(Paint.Cap.ROUND);
-            p.setStrokeJoin(Paint.Join.ROUND);
-            p.setStrokeWidth(3.5f * d);
-            p.setColor(a(Pal.onAccent, 1 - pr * pr));
-            tickPath(cx, cy, r * (0.9f + 0.4f * (float) Math.sin(Math.PI * Math.min(1f, pr * 1.4f))));
-            c.drawPath(path, p);
-        }
-
-        // 2
-        private void ripple(Canvas c, float pr) {
-            p.setStyle(Paint.Style.STROKE);
-            for (int k = 0; k < 3; k++) {
-                float q = Math.max(0, Math.min(1, (pr - k * 0.18f) / 0.64f));
-                if (q <= 0) continue;
-                p.setStrokeWidth((1 + 3 * (1 - q)) * d);
-                p.setColor(a(Pal.accent, 0.8f * (1 - q)));
-                c.drawCircle(cx, cy, 10 * d + 74 * d * ease(q), p);
-            }
         }
 
         // 3
@@ -211,50 +188,6 @@ final class TickFx {
                 c.drawRect(x - s, y - s * 0.55f, x + s, y + s * 0.55f, p);
                 c.restore();
             }
-        }
-
-        // 4
-        private void star(Canvas c, float x, float y, float r) {
-            path.reset();
-            path.moveTo(x, y - r);
-            path.quadTo(x, y, x + r, y);
-            path.quadTo(x, y, x, y + r);
-            path.quadTo(x, y, x - r, y);
-            path.quadTo(x, y, x, y - r);
-            path.close();
-            c.drawPath(path, p);
-        }
-
-        private void sparkles(Canvas c, float pr) {
-            p.setStyle(Paint.Style.FILL);
-            for (int i = 0; i < 10; i++) {
-                float start = dly[i] * 0.5f;
-                float q = Math.max(0, Math.min(1, (pr - start) / 0.5f));
-                if (q <= 0 || q >= 1) continue;
-                float th = (float) (ang[i] * Math.PI * 2);
-                float rad = (22 + 42 * spd[i]) * d;
-                float s = (5 + 9 * siz[i]) * d * (float) Math.sin(Math.PI * q);
-                p.setColor(a(i % 3 == 0 ? Pal.accent : i % 3 == 1 ? 0xFFFFC107 : 0xFFFFFFFF, 1f));
-                star(c, cx + (float) Math.cos(th) * rad, cy + (float) Math.sin(th) * rad, s);
-            }
-        }
-
-        // 5
-        private void checkDraw(Canvas c, float pr) {
-            float fade = pr < 0.75f ? 1f : 1 - (pr - 0.75f) / 0.25f;
-            p.setStyle(Paint.Style.FILL);
-            p.setColor(a(Pal.accent, 0.22f * fade));
-            c.drawCircle(cx, cy, 52 * d * (0.7f + 0.3f * ease(pr * 1.5f)), p);
-            tickPath(cx, cy, 46 * d);
-            PathMeasure pm = new PathMeasure(path, false);
-            Path seg = new Path();
-            pm.getSegment(0, pm.getLength() * ease(Math.min(1f, pr / 0.55f)), seg, true);
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeCap(Paint.Cap.ROUND);
-            p.setStrokeJoin(Paint.Join.ROUND);
-            p.setStrokeWidth(9 * d);
-            p.setColor(a(Pal.accent, fade));
-            c.drawPath(seg, p);
         }
 
         // 6
@@ -339,23 +272,5 @@ final class TickFx {
             }
         }
 
-        // 10
-        private void bubbles(Canvas c, float pr) {
-            p.setStyle(Paint.Style.STROKE);
-            for (int i = 0; i < 12; i++) {
-                float start = dly[i] * 0.4f;
-                float q = Math.max(0, Math.min(1, (pr - start) / 0.6f));
-                if (q <= 0) continue;
-                float x = cx + (ang[i] - 0.5f) * 56 * d + (float) Math.sin(q * 6 + i) * 6 * d;
-                float y = cy - (40 + 110 * spd[i]) * d * ease(q);
-                float r = (3 + 6 * siz[i]) * d * (0.6f + 0.6f * q);
-                p.setStrokeWidth(1.8f * d);
-                p.setColor(a(Pal.accent, 0.9f * (1 - q)));
-                c.drawCircle(x, y, r, p);
-                p.setStrokeWidth(1.4f * d);
-                p.setColor(a(0xFFFFFF, 0.8f * (1 - q)));
-                c.drawArc(x - r * 0.6f, y - r * 0.6f, x + r * 0.6f, y + r * 0.6f, 200, 60, false, p);
-            }
-        }
     }
 }
