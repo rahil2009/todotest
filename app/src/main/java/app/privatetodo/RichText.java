@@ -66,7 +66,7 @@ final class RichText {
     static final int[] HL_COLORS = {0xFFFFE066, 0xFFA8E6A1, 0xFF9FD3FF, 0xFFFFB3C7, 0xFFFFC48A};
     /** Text colours that read on both the light and the dark page. */
     static final int[] FG_COLORS = {0xFFE5484D, 0xFFF76B15, 0xFFD9A400, 0xFF30A46C, 0xFF12A5A0,
-            0xFF3E8BFF, 0xFF8E4EC6, 0xFFE93D82, 0xFF8B8D98};
+            0xFF3E8BFF, 0xFF1E40AF, 0xFF8E4EC6, 0xFFE93D82, 0xFF8B8D98};
 
     /** Typing continues a span that ends right where the cursor is, like any text editor. */
     private static final int FLAGS = Spanned.SPAN_EXCLUSIVE_INCLUSIVE;
@@ -226,6 +226,36 @@ final class RichText {
      * One line's slice of a rounded panel: the first line has rounded top corners, the last line rounded
      * bottom corners, the lines between are plain, so a multi-line panel reads as one piece.
      */
+    /** How far a callout / code panel reaches out past the text column on each side (px). */
+    static int panelExt() {
+        return Math.round(14 * density);
+    }
+
+    static boolean isPanel(Object o) {
+        return o instanceof Callout || o instanceof Block;
+    }
+
+    /**
+     * Draws the rounded panel behind a callout or code block into {@code r} (view coordinates). The editor
+     * calls this before the text is drawn: TextView clips everything drawn by spans to its text column, which
+     * is what used to chop the panels at the left and right.
+     */
+    static void paintPanel(Canvas c, Paint p, Object span, android.graphics.RectF r) {
+        p.setStyle(Paint.Style.FILL);
+        if (span instanceof Callout) {
+            p.setColor(Pal.dark ? 0xFF1E1B30 : 0xFFEEEBF9);
+            c.drawRoundRect(r, 18 * density, 18 * density, p);
+        } else {
+            float rad = 14 * density;
+            p.setColor(Block.EDGE);
+            c.drawRoundRect(r, rad, rad, p);
+            float bw = Math.max(1f, density);
+            PANEL_RECT.set(r.left + bw, r.top + bw, r.right - bw, r.bottom - bw);
+            p.setColor(Block.BG);
+            c.drawRoundRect(PANEL_RECT, rad - bw, rad - bw, p);
+        }
+    }
+
     private static void panelSlice(Canvas c, Paint p, float l, float t, float r, float b, float rad,
                                    boolean first, boolean last, int fill, int border, float bw) {
         float f = first ? rad : 0;
@@ -319,6 +349,11 @@ final class RichText {
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
             if (!firstLine(text, this, start)) return;
+            // The big quotation mark is a placeholder: it shows while the quote is still empty and goes away
+            // with the first character typed, so it never sits behind (or leaks into) the words.
+            for (int i = start; i < end && i < text.length(); i++) {
+                if (!Character.isWhitespace(text.charAt(i))) return;
+            }
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             Typeface oldFace = p.getTypeface();
@@ -326,10 +361,10 @@ final class RichText {
             boolean oldFake = p.isFakeBoldText();
             p.setStyle(Paint.Style.FILL);
             p.setFakeBoldText(false);
-            p.setTypeface(NoteFonts.face(2));
+            p.setTypeface(NoteFonts.face(5)); // Gloock: the high-contrast display serif behind most web pull-quotes
             p.setTextSize(64 * density);
-            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x38000000 : 0x30000000));
-            c.drawText("“", left + 6 * density, top + 50 * density, p);
+            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0xB0000000 : 0xA0000000));
+            c.drawText("\u201C", left + 6 * density, top + 47 * density, p);
             p.setTextSize(oldSize);
             p.setTypeface(oldFace);
             p.setFakeBoldText(oldFake);
@@ -345,7 +380,7 @@ final class RichText {
     static final class Callout extends MetricAffectingSpan implements LineBackgroundSpan,
             android.text.style.LeadingMarginSpan, android.text.style.LineHeightSpan {
         static final int TILE = 0xFFB9A8FF;
-        static final int TILE_INK = 0xFF1E1B30;
+        static final int TILE_INK = 0xFF0E0F12;
 
         @Override
         public void updateMeasureState(TextPaint p) {
@@ -355,9 +390,10 @@ final class RichText {
         public void updateDrawState(TextPaint p) {
         }
 
+        /** The icon tile (36dp) and the gap after it (12dp); the panel itself is drawn by the editor, see {@link #paintPanel}. */
         @Override
         public int getLeadingMargin(boolean first) {
-            return Math.round(52 * density);
+            return Math.round(48 * density);
         }
 
         @Override
@@ -369,34 +405,25 @@ final class RichText {
         @Override
         public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
                                  Paint.FontMetricsInt fm) {
-            panelPadding(text, this, start, end, Math.round(9 * density), fm);
+            panelPadding(text, this, start, end, Math.round(14 * density), fm);
         }
 
+        /** Only the icon tile is drawn here (the panel behind it is drawn unclipped by the editor). */
         @Override
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
+            if (!firstLine(text, this, start)) return;
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             float oldW = p.getStrokeWidth();
-            boolean first = firstLine(text, this, start);
-            boolean last = lastLine(text, this, end);
             p.setStyle(Paint.Style.FILL);
-            int fill = Pal.dark ? 0xFF1F2127 : 0xFFEEEBF9;
-            int edge = Pal.dark ? 0xFF2E323B : 0xFFD8D2EE;
-            float pl = left - 8 * density;
-            float pr = right + 8 * density;
-            panelSlice(c, p, pl, top, pr, bottom, 16 * density, first, last, fill, edge, Math.max(1f, density));
-            if (first) {
-                float pad = 9 * density;
-                float lineH = (bottom - top) - pad - (last ? pad : 0);
-                float size = 30 * density;
-                float tx = pl + 11 * density;
-                float ty = top + pad + Math.max(0, (lineH - size) / 2f);
-                PANEL_RECT.set(tx, ty, tx + size, ty + size);
-                p.setColor(TILE);
-                c.drawRoundRect(PANEL_RECT, 9 * density, 9 * density, p);
-                bulb(c, p, tx + size / 2f, ty + size / 2f, density);
-            }
+            float size = 36 * density;
+            float tx = left;
+            float ty = top + 14 * density;
+            PANEL_RECT.set(tx, ty, tx + size, ty + size);
+            p.setColor(TILE);
+            c.drawRoundRect(PANEL_RECT, 12 * density, 12 * density, p);
+            bulb(c, p, tx + size / 2f, ty + size / 2f, density * 1.12f);
             p.setStrokeWidth(oldW);
             p.setColor(oldColor);
             p.setStyle(oldStyle);
@@ -415,95 +442,6 @@ final class RichText {
             c.drawLine(cx - 2.6f * d, cy + 5.4f * d, cx + 2.6f * d, cy + 5.4f * d, p);
             c.drawLine(cx - 1.4f * d, cy + 7.6f * d, cx + 1.4f * d, cy + 7.6f * d, p);
             p.setStyle(Paint.Style.FILL);
-        }
-    }
-
-    /** Paragraph alignment: arg 1 = centred, 2 = right (0 = left, no span). */
-    static final class Align extends android.text.style.AlignmentSpan.Standard {
-        final int mode;
-
-        Align(int mode) {
-            super(mode == 1 ? android.text.Layout.Alignment.ALIGN_CENTER
-                    : mode == 2 ? android.text.Layout.Alignment.ALIGN_OPPOSITE
-                    : android.text.Layout.Alignment.ALIGN_NORMAL);
-            this.mode = mode;
-        }
-    }
-
-    /** A link to another note: the text is accent coloured and underlined; the arg is the note's id. */
-    static final class NoteLink extends CharacterStyle implements UpdateAppearance {
-        final int noteId;
-
-        NoteLink(int noteId) {
-            this.noteId = noteId;
-        }
-
-        @Override
-        public void updateDrawState(TextPaint tp) {
-            tp.setUnderlineText(true);
-            if (tp.bgColor == 0) tp.setColor(Pal.dark ? 0xFFA9B4FF : 0xFF3B4BD6);
-        }
-    }
-
-    /** Whole paragraphs folded away under a collapsed toggle: invisible and zero height. */
-    static final class Hide extends MetricAffectingSpan implements android.text.style.LineHeightSpan {
-        @Override
-        public void updateMeasureState(TextPaint p) {
-            p.setTextSize(1f);
-        }
-
-        @Override
-        public void updateDrawState(TextPaint p) {
-            p.setTextSize(1f);
-            p.setColor(0);
-            p.bgColor = 0;
-        }
-
-        @Override
-        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
-                                 Paint.FontMetricsInt fm) {
-            fm.ascent = 0;
-            fm.descent = 0;
-            fm.top = 0;
-            fm.bottom = 0;
-        }
-    }
-
-    static boolean hiddenAt(CharSequence text, int start, int end) {
-        return text instanceof Spanned && ((Spanned) text).getSpans(start, Math.max(end, start + 1), Hide.class).length > 0;
-    }
-
-    /** A thin horizontal rule standing in for one placeholder character. */
-    static final class Rule extends android.text.style.ReplacementSpan {
-        @Override
-        public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
-            if (fm != null) {
-                int h = Math.round(p.getTextSize() * 0.9f);
-                fm.ascent = -h;
-                fm.top = -h;
-                fm.descent = 0;
-                fm.bottom = 0;
-            }
-            return tableWidth > 0 ? tableWidth : Math.round(300 * density);
-        }
-
-        @Override
-        public void draw(Canvas c, CharSequence text, int start, int end, float x, int top, int y,
-                         int bottom, Paint p) {
-            if (hiddenAt(text, start, end)) return;
-            int old = p.getColor();
-            Paint.Style os = p.getStyle();
-            float sw = p.getStrokeWidth();
-            p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(Math.max(1.5f, 1.5f * density));
-            p.setStrokeCap(Paint.Cap.ROUND);
-            p.setColor(Pal.dark ? 0xFF4A5753 : 0xFF9AA5A1);
-            float w = tableWidth > 0 ? tableWidth : 300 * density;
-            float cy = y - p.getTextSize() * 0.4f;
-            c.drawLine(x + 2 * density, cy, x + w - 2 * density, cy, p);
-            p.setColor(old);
-            p.setStyle(os);
-            p.setStrokeWidth(sw);
         }
     }
 
@@ -531,12 +469,12 @@ final class RichText {
         @Override
         public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
                                  Paint.FontMetricsInt fm) {
-            panelPadding(text, this, start, end, Math.round(10 * density), fm);
+            panelPadding(text, this, start, end, Math.round(12 * density), fm);
         }
 
         @Override
         public int getLeadingMargin(boolean first) {
-            return Math.round(14 * density);
+            return 0; // the panel pokes out PANEL_EXT on each side, so the text already sits inside it
         }
 
         @Override
@@ -545,16 +483,10 @@ final class RichText {
                                       android.text.Layout layout) {
         }
 
+        /** The panel is drawn unclipped by the editor, see {@link #paintPanel}. */
         @Override
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
-            int oldColor = p.getColor();
-            Paint.Style oldStyle = p.getStyle();
-            p.setStyle(Paint.Style.FILL);
-            panelSlice(c, p, left - 6 * density, top, right + 6 * density, bottom, 14 * density,
-                    firstLine(text, this, start), lastLine(text, this, end), BG, EDGE, Math.max(1f, density));
-            p.setColor(oldColor);
-            p.setStyle(oldStyle);
         }
     }
 
@@ -698,11 +630,12 @@ final class RichText {
         }
 
         void addCol(int at) {
-            at = Math.max(0, Math.min(cols(), at));
+            final int n = cols(); // fixed first: cols() reads row 0, which is rebuilt in the first pass
+            at = Math.max(0, Math.min(n, at));
             for (int r = 0; r < rows(); r++) {
-                String[] row = new String[cols() + 1];
+                String[] row = new String[n + 1];
                 for (int k = 0, o = 0; k < row.length; k++) {
-                    row[k] = k == at ? (r == 0 ? "Column " + (cols() + 1) : "") : cells[r][o++];
+                    row[k] = k == at ? (r == 0 ? "Column " + (n + 1) : "") : cells[r][o++];
                 }
                 cells[r] = row;
             }
@@ -717,10 +650,11 @@ final class RichText {
         }
 
         boolean delCol(int at) {
-            if (cols() <= 2 || at < 0 || at >= cols()) return false;
+            final int n = cols();
+            if (n <= 2 || at < 0 || at >= n) return false;
             for (int r = 0; r < rows(); r++) {
-                String[] row = new String[cols() - 1];
-                for (int k = 0, o = 0; k < cols(); k++) if (k != at) row[o++] = cells[r][k];
+                String[] row = new String[n - 1];
+                for (int k = 0, o = 0; k < n; k++) if (k != at) row[o++] = cells[r][k];
                 cells[r] = row;
             }
             return true;

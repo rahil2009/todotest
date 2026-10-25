@@ -69,6 +69,13 @@ public class NoteEditorActivity extends Activity {
     private boolean strokeErase;
     private FrameLayout fab;
     private IconView fabIcon;
+    private View headerView;
+    private LinearLayout dateRow;
+    private TextView readTitle;
+    private View toolbarView;
+    private FrameLayout readClose;
+    private boolean reading;
+    private final Runnable sleepAgain = () -> getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     private TextView paintHint;
     private LinearLayout paintBox;
     private TextView helpCard;
@@ -224,12 +231,29 @@ public class NoteEditorActivity extends Activity {
         trash.setOnClickListener(v -> confirmDelete());
         header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
         root.addView(header);
+        headerView = header;
 
         dateLabel = new TextView(this);
         dateLabel.setTextSize(13);
         dateLabel.setTextColor(Pal.muted);
-        dateLabel.setPadding(dp(64), 0, dp(16), dp(4));
-        root.addView(dateLabel);
+        dateLabel.setPadding(dp(64), 0, dp(8), dp(4));
+        dateRow = new LinearLayout(this);
+        dateRow.setOrientation(LinearLayout.HORIZONTAL);
+        dateRow.setGravity(Gravity.CENTER_VERTICAL);
+        dateRow.addView(dateLabel, new LinearLayout.LayoutParams(0, -2, 1f));
+        IconView readBtn = new IconView(this, IconView.FULLSCREEN);
+        readBtn.setContentDescription("Full screen reading");
+        readBtn.setOnClickListener(v -> { Hap.tick(v); enterReading(); });
+        dateRow.addView(readBtn, new LinearLayout.LayoutParams(dp(44), dp(32)));
+        root.addView(dateRow);
+
+        readTitle = new TextView(this);
+        readTitle.setTextSize(24);
+        readTitle.setTypeface(Typeface.DEFAULT_BOLD);
+        readTitle.setTextColor(Pal.ink);
+        readTitle.setPadding(dp(24), dp(40), dp(72), dp(4));
+        readTitle.setVisibility(View.GONE);
+        root.addView(readTitle);
 
         body = new RichEditText(this);
         body.setTag("keepfont");
@@ -251,7 +275,7 @@ public class NoteEditorActivity extends Activity {
         body.setBackground(null);
         body.setGravity(Gravity.TOP | Gravity.START);
         body.setMinHeight(dp(420));
-        body.setPadding(dp(20), dp(8), dp(20), dp(24));
+        body.setPadding(dp(24), dp(8), dp(24), dp(24));
         body.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         body.addTextChangedListener(new SimpleWatcher() {
@@ -324,27 +348,27 @@ public class NoteEditorActivity extends Activity {
         helpCard.setPadding(dp(16), dp(14), dp(16), dp(14));
         GradientDrawable hc = new GradientDrawable();
         hc.setCornerRadius(dp(18));
-        hc.setColor(Pal.raised);
-        hc.setStroke(dp(1), Pal.chip);
+        hc.setColor(Pal.raised | 0xFF000000); // fully solid: no see-through shade behind the text
+        hc.setStroke(dp(1), Pal.accent);
         helpCard.setBackground(hc);
         helpCard.setText(helpText());
         helpCard.setVisibility(View.GONE);
-        helpCard.setElevation(dp(6));
         LinearLayout hrow = new LinearLayout(this);
         hrow.setOrientation(LinearLayout.HORIZONTAL);
         hrow.setGravity(Gravity.CENTER_VERTICAL);
-        hrow.addView(paintHint, new LinearLayout.LayoutParams(-2, -2));
+        hrow.addView(paintHint, new LinearLayout.LayoutParams(0, -2, 1f)); // wraps instead of pushing the i off screen
         LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(dp(36), dp(36));
         ilp.leftMargin = dp(8);
+        ilp.gravity = Gravity.CENTER_VERTICAL;
         hrow.addView(helpBtn, ilp);
         paintBox = new LinearLayout(this);
         paintBox.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-2, -2);
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2);
         clp.bottomMargin = dp(8);
         paintBox.addView(helpCard, clp);
-        paintBox.addView(hrow, new LinearLayout.LayoutParams(-2, -2));
+        paintBox.addView(hrow, new LinearLayout.LayoutParams(-1, -2));
         paintBox.setVisibility(View.GONE);
-        FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(-2, -2);
+        FrameLayout.LayoutParams hlp = new FrameLayout.LayoutParams(-1, -2);
         hlp.gravity = Gravity.BOTTOM | Gravity.START;
         hlp.leftMargin = dp(16);
         hlp.rightMargin = dp(88);
@@ -370,7 +394,29 @@ public class NoteEditorActivity extends Activity {
 
         buildCellEdit(area);
         root.addView(buildTableBar());
-        root.addView(buildToolbar());
+        toolbarView = buildToolbar();
+        root.addView(toolbarView);
+
+        // the floating X of full screen reading
+        readClose = new FrameLayout(this);
+        readClose.setContentDescription("Close full screen reading");
+        IconView xi = new IconView(this, IconView.CLOSE_X);
+        xi.setClickable(false);
+        readClose.addView(xi, new FrameLayout.LayoutParams(dp(48), dp(48)));
+        GradientDrawable xg = new GradientDrawable();
+        xg.setShape(GradientDrawable.OVAL);
+        xg.setColor(Pal.raised | 0xFF000000);
+        xg.setStroke(dp(1), Pal.chip);
+        readClose.setBackground(xg);
+        readClose.setElevation(dp(4));
+        readClose.setClickable(true);
+        readClose.setOnClickListener(v -> { Hap.tick(v); exitReading(); });
+        readClose.setVisibility(View.GONE);
+        FrameLayout.LayoutParams xlp = new FrameLayout.LayoutParams(dp(48), dp(48));
+        xlp.gravity = Gravity.TOP | Gravity.END;
+        xlp.topMargin = dp(16);
+        xlp.rightMargin = dp(16);
+        area.addView(readClose, xlp);
         return root;
     }
 
@@ -414,6 +460,162 @@ public class NoteEditorActivity extends Activity {
     }
 
     /** Aa: pick any size (8 to 72) for the selected text, or for what you type next when nothing is selected. */
+    private final java.util.ArrayList<TextView> sizeChips = new java.util.ArrayList<>();
+    private static final int[] SIZE_STEPS = {12, 15, 18, 21, 24, 27, 30, 35, 40};
+
+    /** The size buttons open as a layer of their own in the toolbar (like the colour tab): one tap, no popup. */
+    private void showSizeLayer() {
+        showTab(0); // keeps the Text tab lit; tap it again to come back to the normal row
+        toolHost.removeAllViews();
+        sizeChips.clear();
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.HORIZONTAL);
+        wrap.setGravity(Gravity.CENTER_VERTICAL);
+        wrap.setPadding(dp(8), dp(6), dp(8), dp(2));
+        TextView back = sizeChip("\u2039");
+        back.setContentDescription("Back to text tools");
+        back.setOnClickListener(v -> { Hap.tick(v); showTab(0); });
+        wrap.addView(back, new LinearLayout.LayoutParams(dp(40), dp(46)));
+        HorizontalScrollView hs = new HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        for (final int q : SIZE_STEPS) {
+            TextView c = sizeChip(String.valueOf(q));
+            c.setTag(q);
+            c.setOnClickListener(v -> {
+                Hap.tick(v);
+                int cur = currentSize();
+                setTextSize(cur == q ? 0 : q, selStart(), selEnd()); // tap the lit one again for normal size
+                paintSizeChips();
+            });
+            sizeChips.add(c);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48), dp(46));
+            lp.leftMargin = dp(6);
+            row.addView(c, lp);
+        }
+        hs.addView(row);
+        wrap.addView(hs, new LinearLayout.LayoutParams(0, -2, 1f));
+        wrap.addView(customSize(), new LinearLayout.LayoutParams(dp(78), dp(46)));
+        Fonts.apply(wrap);
+        toolHost.addView(wrap, new FrameLayout.LayoutParams(-1, -2));
+        paintSizeChips();
+    }
+
+    private TextView sizeChip(String label) {
+        TextView c = new TextView(this);
+        c.setText(label);
+        c.setTextSize(15);
+        c.setTypeface(Typeface.DEFAULT_BOLD);
+        c.setGravity(Gravity.CENTER);
+        c.setTextColor(Pal.ink);
+        GradientDrawable cg = new GradientDrawable();
+        cg.setCornerRadius(dp(22));
+        cg.setColor(Pal.chip);
+        c.setBackground(cg);
+        return c;
+    }
+
+    /** The custom size at the far right: a tap applies the number shown, a double tap lets you type another. */
+    private View customSize() {
+        final FrameLayout holder = new FrameLayout(this);
+        final TextView chip = sizeChip("Aa\u22EF");
+        chip.setContentDescription("Custom size: double tap to type a number");
+        final int[] custom = {getSharedPreferences("settings", MODE_PRIVATE).getInt("custom_size", 0)};
+        if (custom[0] > 0) chip.setText(String.valueOf(custom[0]));
+        chip.setTag(-1);
+        sizeChips.add(chip);
+        final android.view.GestureDetector gd = new android.view.GestureDetector(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    @Override public boolean onDown(android.view.MotionEvent e) { return true; }
+
+                    @Override public boolean onSingleTapConfirmed(android.view.MotionEvent e) {
+                        Hap.tick(chip);
+                        if (custom[0] > 0) {
+                            int cur = currentSize();
+                            setTextSize(cur == custom[0] ? 0 : custom[0], selStart(), selEnd());
+                            paintSizeChips();
+                        } else {
+                            Toast.makeText(NoteEditorActivity.this, "Double tap to type a size", Toast.LENGTH_SHORT).show();
+                        }
+                        return true;
+                    }
+
+                    @Override public boolean onDoubleTap(android.view.MotionEvent e) {
+                        Hap.confirm(chip);
+                        final int selS = selStart();
+                        final int selE = selEnd();
+                        final EditText in = new EditText(NoteEditorActivity.this);
+                        in.setInputType(InputType.TYPE_CLASS_NUMBER);
+                        in.setGravity(Gravity.CENTER);
+                        in.setTextSize(16);
+                        in.setTypeface(Typeface.DEFAULT_BOLD);
+                        in.setTextColor(Pal.ink);
+                        in.setHint(RichText.MIN_SIZE + "\u2013" + RichText.MAX_SIZE);
+                        in.setHintTextColor(Pal.muted);
+                        in.setSingleLine(true);
+                        in.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+                        GradientDrawable ig = new GradientDrawable();
+                        ig.setCornerRadius(dp(22));
+                        ig.setColor(Pal.chip);
+                        ig.setStroke(dp(2), Pal.accent);
+                        in.setBackground(ig);
+                        in.setPadding(dp(4), 0, dp(4), 0);
+                        holder.removeAllViews();
+                        holder.addView(in, new FrameLayout.LayoutParams(-1, -1));
+                        in.setOnEditorActionListener((tv, action, ev) -> {
+                            int n = parseSize(in, 0);
+                            if (n > 0) {
+                                custom[0] = n;
+                                getSharedPreferences("settings", MODE_PRIVATE).edit().putInt("custom_size", n).apply();
+                                chip.setText(String.valueOf(n));
+                                setTextSize(n, selS, selE);
+                            }
+                            android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager)
+                                    getSystemService(INPUT_METHOD_SERVICE);
+                            if (im != null) im.hideSoftInputFromWindow(in.getWindowToken(), 0);
+                            holder.removeAllViews();
+                            holder.addView(chip, new FrameLayout.LayoutParams(-1, -1));
+                            paintSizeChips();
+                            return true;
+                        });
+                        in.requestFocus();
+                        android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager)
+                                getSystemService(INPUT_METHOD_SERVICE);
+                        if (im != null) im.showSoftInput(in, 0);
+                        return true;
+                    }
+                });
+        chip.setOnTouchListener((v, ev) -> gd.onTouchEvent(ev));
+        holder.addView(chip, new FrameLayout.LayoutParams(-1, -1));
+        holder.setPadding(dp(6), 0, 0, 0);
+        return holder;
+    }
+
+    private int currentSize() {
+        int s = selStart();
+        int en = selEnd();
+        int cur = RichText.sizeAt(body.getText(), s, en);
+        if (s == en && pending.containsKey(RichText.SIZE)) cur = pending.get(RichText.SIZE);
+        return cur;
+    }
+
+    private void paintSizeChips() {
+        if (sizeChips.isEmpty()) return;
+        int cur = currentSize();
+        for (TextView c : sizeChips) {
+            int tag = (Integer) c.getTag();
+            int val = tag == -1 ? getSharedPreferences("settings", MODE_PRIVATE).getInt("custom_size", 0) : tag;
+            boolean on = cur > 0 && val == cur;
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(22));
+            g.setColor(on ? Pal.accent : Pal.chip);
+            c.setBackground(g);
+            c.setTextColor(on ? Pal.onAccent : Pal.ink);
+        }
+    }
+
     private void pickSize() {
         final int s = selStart();
         final int en = selEnd();
@@ -615,6 +817,7 @@ public class NoteEditorActivity extends Activity {
         buttons.clear();
         fgSwatches.clear();
         hlSwatches.clear();
+        sizeChips.clear();
         toolHost.removeAllViews();
         View v = buildTab(i);
         if (i != 5) Fonts.apply(v);
@@ -639,7 +842,7 @@ public class NoteEditorActivity extends Activity {
                         tool(RichText.ITALIC, "I", Typeface.ITALIC, "Italic", "Italic"),
                         tool(RichText.UNDER, "U", Typeface.NORMAL, "Underline", "Underline"),
                         tool(RichText.STRIKE, "S", Typeface.NORMAL, "Strike", "Strikethrough"),
-                        tool(RichText.CODE, "`", Typeface.NORMAL, "Code", "Inline code"),
+                        tool(RichText.CODE, "{ }", Typeface.NORMAL, "Code", "Inline code"),
                         tool(RichText.HEAD, "H", Typeface.BOLD, "Heading", "Heading"),
                         tool(CLEAR_KEY, "Tx", Typeface.BOLD, "Clear", "Back to standard text (clear styles)"));
             case 1:
@@ -660,7 +863,7 @@ public class NoteEditorActivity extends Activity {
                         tool(RichText.QUOTE, "“", Typeface.BOLD, "Quote", "Quote"),
                         tool(RichText.CALLOUT, "▤", Typeface.BOLD, "Callout", "Callout box"),
                         tool(DIVIDER_KEY, "―", Typeface.BOLD, "Divider", "Divider line"),
-                        tool(RichText.BLOCK, "{ }", Typeface.NORMAL, "Code block", "Code block"),
+                        tool(RichText.BLOCK, "</>", Typeface.BOLD, "Code block", "Code block"),
                         tool(LINK_KEY, "↗", Typeface.BOLD, "Note link", "Link to another note"),
                         tool(DATE_KEY, "◷", Typeface.BOLD, "Date", "Insert today's date"),
                         tool(TIME_KEY, "⏱", Typeface.BOLD, "Time", "Insert the time"));
@@ -676,16 +879,18 @@ public class NoteEditorActivity extends Activity {
             case 4:
                 return colorTab();
             case 5: {
-                Tool[] t = new Tool[NoteFonts.count()];
-                for (int k = 0; k < t.length; k++) {
-                    t[k] = tool(FONT_BASE + k, "Ag", Typeface.NORMAL, k == 0 ? "Default" : NoteFonts.NAMES[k],
+                java.util.List<Tool> fl = new java.util.ArrayList<>();
+                for (int k = 0; k < NoteFonts.count(); k++) {
+                    if (!NoteFonts.shown(k)) continue;
+                    Tool ft = tool(FONT_BASE + k, "Ag", Typeface.NORMAL, k == 0 ? "Default" : NoteFonts.NAMES[k],
                             NoteFonts.NOTES[k]);
-                    t[k].glyph.setTypeface(NoteFonts.face(k));
-                    t[k].glyph.setTag("keepfont");
-                    t[k].glyph.setTextSize(22);
-                    t[k].box.setMinimumWidth(dp(74));
+                    ft.glyph.setTypeface(NoteFonts.face(k));
+                    ft.glyph.setTag("keepfont");
+                    ft.glyph.setTextSize(22);
+                    ft.box.setMinimumWidth(dp(74));
+                    fl.add(ft);
                 }
-                return toolRow(t);
+                return toolRow(fl.toArray(new Tool[0]));
             }
             case 6:
                 return toolRow(
@@ -768,7 +973,14 @@ public class NoteEditorActivity extends Activity {
         t.glyph.setSingleLine(true);
         if (key == RichText.UNDER) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
         if (key == RichText.STRIKE) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
-        if (key == RichText.CODE || key == RichText.BLOCK) t.glyph.setTypeface(Typeface.MONOSPACE);
+        if (key == RichText.CODE || key == RichText.BLOCK) t.glyph.setTypeface(Typeface.MONOSPACE, key == RichText.BLOCK ? Typeface.BOLD : Typeface.NORMAL);
+        if (key == RichText.QUOTE) { // a big display-serif opening quotation mark, like the pull-quotes on the web
+            t.glyph.setTypeface(NoteFonts.face(5));
+            t.glyph.setTag("keepfont");
+            t.glyph.setTextSize(30);
+            t.glyph.setPadding(0, dp(6), 0, 0);
+            t.glyph.setIncludeFontPadding(false);
+        }
         t.label = new TextView(this);
         t.label.setText(label);
         t.label.setTextSize(10.5f);
@@ -778,7 +990,7 @@ public class NoteEditorActivity extends Activity {
         t.box.addView(t.label, new LinearLayout.LayoutParams(-2, -2));
         t.box.setOnClickListener(v -> {
             Hap.tick(v);
-            if (key == SIZE_KEY) pickSize();
+            if (key == SIZE_KEY) showSizeLayer();
             else onTool(key);
         });
         buttons.put(key, t);
@@ -812,11 +1024,101 @@ public class NoteEditorActivity extends Activity {
         dots.setOrientation(LinearLayout.HORIZONTAL);
         dots.setGravity(Gravity.CENTER_VERTICAL);
         for (final int color : colors) dots.addView(swatch(color, false, text), swatchLp());
+        final String ckey = text ? "custom_fg" : "custom_hl";
+        int saved = getSharedPreferences("settings", MODE_PRIVATE).getInt(ckey, 0);
+        if (saved != 0) dots.addView(swatch(saved, false, text), swatchLp()); // the last colour picked below
+        TextView more = new TextView(this);
+        more.setText("+");
+        more.setGravity(Gravity.CENTER);
+        more.setTextColor(0xFFFFFFFF);
+        more.setTextSize(18);
+        more.setTypeface(Typeface.DEFAULT_BOLD);
+        more.setContentDescription("Pick any colour");
+        GradientDrawable rg = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{
+                0xFFE5484D, 0xFFF5D90A, 0xFF30A46C, 0xFF3E8BFF, 0xFF8E4EC6});
+        rg.setShape(GradientDrawable.OVAL);
+        more.setBackground(rg);
+        more.setOnClickListener(v -> { Hap.tick(v); pickColor(text); });
+        dots.addView(more, swatchLp());
         dots.addView(swatch(Pal.chip, true, text), swatchLp()); // none / default
         hs.addView(dots);
         row.addView(hs, new LinearLayout.LayoutParams(0, -2, 1f));
         row.setMinimumHeight(dp(44));
         return row;
+    }
+
+    /** Any colour: a saturation / brightness square, a hue bar and a hex box. The pick is applied and kept as a swatch. */
+    private void pickColor(final boolean text) {
+        final String ckey = text ? "custom_fg" : "custom_hl";
+        int start = getSharedPreferences("settings", MODE_PRIVATE).getInt(ckey, text ? 0xFF1E40AF : 0xFFFFE066);
+        if (start == 0) start = 0xFF1E40AF;
+        final int[] pick = {start};
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(8), dp(16), 0);
+        final ColorPickerView cp = new ColorPickerView(this);
+        cp.setColor(start);
+        box.addView(cp, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout line = new LinearLayout(this);
+        line.setOrientation(LinearLayout.HORIZONTAL);
+        line.setGravity(Gravity.CENTER_VERTICAL);
+        final View preview = new View(this);
+        final EditText hex = new EditText(this);
+        hex.setSingleLine(true);
+        hex.setTextSize(16);
+        hex.setTypeface(Typeface.MONOSPACE);
+        hex.setTextColor(Pal.ink);
+        hex.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(7)});
+        final boolean[] fromPicker = {false};
+        final Runnable paint = () -> {
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            g.setColor(pick[0]);
+            g.setStroke(dp(1), Pal.chip);
+            preview.setBackground(g);
+            fromPicker[0] = true;
+            hex.setText(String.format("#%06X", pick[0] & 0xFFFFFF));
+            fromPicker[0] = false;
+        };
+        cp.setListener(c -> { pick[0] = c; paint.run(); });
+        hex.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override public void onTextChanged(CharSequence a, int b, int c, int d) { }
+            @Override public void afterTextChanged(Editable ed) {
+                if (fromPicker[0]) return;
+                String t = ed.toString().trim();
+                if (!t.startsWith("#")) t = "#" + t;
+                if (t.length() != 7) return;
+                try {
+                    int c = 0xFF000000 | Integer.parseInt(t.substring(1), 16);
+                    pick[0] = c;
+                    cp.setColor(c);
+                    GradientDrawable g = new GradientDrawable();
+                    g.setShape(GradientDrawable.OVAL);
+                    g.setColor(c);
+                    g.setStroke(dp(1), Pal.chip);
+                    preview.setBackground(g);
+                } catch (NumberFormatException ex) {
+                    // keep the last good colour
+                }
+            }
+        });
+        paint.run();
+        line.addView(preview, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        LinearLayout.LayoutParams hlp2 = new LinearLayout.LayoutParams(0, -2, 1f);
+        hlp2.leftMargin = dp(12);
+        line.addView(hex, hlp2);
+        box.addView(line, new LinearLayout.LayoutParams(-1, -2));
+        new Dlg.Builder(this)
+                .setTitle(text ? "Text colour" : "Highlight colour")
+                .setView(box)
+                .setPositiveButton("Apply", (d, w) -> {
+                    getSharedPreferences("settings", MODE_PRIVATE).edit().putInt(ckey, pick[0]).apply();
+                    if (text) textColor(pick[0]); else highlight(pick[0]);
+                    showTab(curTab); // the new swatch appears in the row
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private LinearLayout.LayoutParams swatchLp() {
@@ -1102,7 +1404,7 @@ public class NoteEditorActivity extends Activity {
     }
 
     private void onTableTap(RichText.Tbl t, int r, int c, boolean onTick) {
-        if (paintMode) return;
+        if (paintMode || reading) return;
         if (onTick) {
             flushCell();
             commitNow();
@@ -1358,8 +1660,84 @@ public class NoteEditorActivity extends Activity {
         body.post(() -> openCell(t, rr, cc));
     }
 
+    // ------------------------------------------------------------ full screen reading
+
+    private static final long READ_AWAKE_MS = 2 * 60 * 1000L;
+
+    /** Hides every bar and the keyboard so the note fills the screen; the X (or Back) brings the editor back. */
+    private void enterReading() {
+        if (reading) return;
+        if (cellOpen) closeCell(true);
+        commitNow();
+        saveNow();
+        reading = true;
+        if (paintMode) setPaintMode(false);
+        android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager)
+                getSystemService(INPUT_METHOD_SERVICE);
+        if (im != null) im.hideSoftInputFromWindow(body.getWindowToken(), 0);
+        body.clearFocus();
+        body.setFocusable(false);
+        body.setCursorVisible(false);
+        body.setShowSoftInputOnFocus(false);
+        headerView.setVisibility(View.GONE);
+        dateRow.setVisibility(View.GONE);
+        toolbarView.setVisibility(View.GONE);
+        tableBarView.setVisibility(View.GONE);
+        fab.setVisibility(View.GONE);
+        paintBox.setVisibility(View.GONE);
+        String t = title.getText().toString().trim();
+        readTitle.setText(t);
+        readTitle.setVisibility(t.isEmpty() ? View.GONE : View.VISIBLE);
+        readClose.setVisibility(View.VISIBLE);
+        body.setPadding(dp(24), dp(t.isEmpty() ? 40 : 12), dp(24), dp(48));
+        body.setLineSpacing(0, 1.3f);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_FULLSCREEN
+                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        keepAwakeFor();
+    }
+
+    private void exitReading() {
+        if (!reading) return;
+        reading = false;
+        body.removeCallbacks(sleepAgain);
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_VISIBLE);
+        headerView.setVisibility(View.VISIBLE);
+        dateRow.setVisibility(View.VISIBLE);
+        toolbarView.setVisibility(View.VISIBLE);
+        fab.setVisibility(View.VISIBLE);
+        readTitle.setVisibility(View.GONE);
+        readClose.setVisibility(View.GONE);
+        body.setPadding(dp(24), dp(8), dp(24), dp(24));
+        body.setLineSpacing(0, 1.15f);
+        body.setFocusable(true);
+        body.setFocusableInTouchMode(true);
+        body.setCursorVisible(true);
+        body.setShowSoftInputOnFocus(true);
+        refreshToolbar();
+    }
+
+    /** Keeps the screen on while you read, and lets it sleep again after two minutes without a touch. */
+    private void keepAwakeFor() {
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        body.removeCallbacks(sleepAgain);
+        body.postDelayed(sleepAgain, READ_AWAKE_MS);
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (reading && ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) keepAwakeFor();
+        return super.dispatchTouchEvent(ev);
+    }
+
     @Override
     public void onBackPressed() {
+        if (reading) {
+            exitReading();
+            return;
+        }
         if (cellOpen) {
             closeCell(true);
             return;

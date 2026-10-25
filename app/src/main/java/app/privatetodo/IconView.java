@@ -36,6 +36,8 @@ final class IconView extends View {
     static final int MORE = 25;
     static final int SCREEN = 26;
     static final int FINGER = 27;
+    static final int FULLSCREEN = 28;
+    static final int CLOSE_X = 29;
 
     private final int kind;
     private boolean on;
@@ -329,6 +331,27 @@ final class IconView extends View {
                 paint.setColor(Pal.accent);
                 canvas.drawCircle(cx, cy + 7 * d, 1.1f * d, paint);
                 break;
+            case FULLSCREEN: { // four corner brackets
+                stroke(2f, tint != 0 ? tint : Pal.muted);
+                float a = 8 * d;
+                float l = 5 * d;
+                for (int sx = -1; sx <= 1; sx += 2) {
+                    for (int sy = -1; sy <= 1; sy += 2) {
+                        float x = cx + sx * a;
+                        float y = cy + sy * a;
+                        canvas.drawLine(x, y, x - sx * l, y, paint);
+                        canvas.drawLine(x, y, x, y - sy * l, paint);
+                    }
+                }
+                break;
+            }
+            case CLOSE_X: {
+                stroke(2.6f, tint != 0 ? tint : Pal.ink);
+                float a = 6 * d;
+                canvas.drawLine(cx - a, cy - a, cx + a, cy + a, paint);
+                canvas.drawLine(cx - a, cy + a, cx + a, cy - a, paint);
+                break;
+            }
             case FINGER: { // a pointing hand, filled (tint) so it reads on a round button
                 paint.setStyle(Paint.Style.FILL);
                 paint.setColor(tint != 0 ? tint : Pal.ink);

@@ -23,6 +23,8 @@ import java.util.Map;
 final class WaterDrawable extends Drawable {
     private static final Map<Long, Float> SHOWN = new HashMap<>();
     private static final int BUBBLES = 9;
+    /** The water is always blue, whatever colour the habit itself has. */
+    static final int BLUE = 0xFF2F9BFF;
 
     private final float d;
     private final float radius;
@@ -41,7 +43,7 @@ final class WaterDrawable extends Drawable {
     WaterDrawable(float density, float radiusDp, int color, long habitId, float level) {
         this.d = density;
         this.radius = radiusDp * density;
-        this.rgb = color & 0xFFFFFF;
+        this.rgb = BLUE & 0xFFFFFF; // the habit's own colour is ignored: water is blue
         this.to = Math.max(0f, Math.min(1f, level));
         Float prev = SHOWN.get(habitId);
         this.from = prev == null ? 0f : prev;

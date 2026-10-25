@@ -360,6 +360,7 @@ final class Reminders {
     }
 
     static void rescheduleAll(Context ctx) {
+        WaterAlert.scheduleAll(ctx); // water reminders are re-armed with everything else
         normalise(ctx);
         TaskDb db = new TaskDb(ctx);
         try {

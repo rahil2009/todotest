@@ -430,7 +430,44 @@ final class RichEditText extends EditText {
         } else if (p.getStyle() != android.graphics.Paint.Style.FILL) {
             p.setStyle(android.graphics.Paint.Style.FILL);
         }
+        drawPanels(canvas);
         super.onDraw(canvas);
+    }
+
+    private final android.graphics.Paint panelPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+    private final android.graphics.RectF panelRect = new android.graphics.RectF();
+
+    /**
+     * Callout and code panels are drawn here, before TextView clips to its text column and draws the text.
+     * They reach PANEL_EXT past the column on each side, which a span's own drawBackground cannot do.
+     */
+    private void drawPanels(android.graphics.Canvas c) {
+        android.text.Layout lay = getLayout();
+        CharSequence t = getText();
+        if (lay == null || !(t instanceof android.text.Spanned) || t.length() == 0) return;
+        android.text.Spanned sp = (android.text.Spanned) t;
+        android.graphics.Rect clip = c.getClipBounds();
+        int pt = getTotalPaddingTop();
+        int vTop = Math.max(0, clip.top - pt);
+        int vBot = clip.bottom - pt;
+        if (vBot < 0) return;
+        int from = lay.getLineStart(lay.getLineForVertical(vTop));
+        int to = lay.getLineEnd(lay.getLineForVertical(Math.max(vTop, vBot)));
+        int ext = RichText.panelExt();
+        float left = getCompoundPaddingLeft() - ext;
+        float right = getWidth() - getCompoundPaddingRight() + ext;
+        Object[][] groups = {sp.getSpans(from, to, RichText.Callout.class), sp.getSpans(from, to, RichText.Block.class)};
+        for (Object[] group : groups) {
+            for (Object span : group) {
+                int s = sp.getSpanStart(span);
+                int e = sp.getSpanEnd(span);
+                if (s < 0 || e <= s) continue;
+                int l0 = lay.getLineForOffset(s);
+                int l1 = lay.getLineForOffset(Math.max(s, e - 1));
+                panelRect.set(left, pt + lay.getLineTop(l0), right, pt + lay.getLineBottom(l1));
+                RichText.paintPanel(c, panelPaint, span, panelRect);
+            }
+        }
     }
 
     @Override

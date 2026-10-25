@@ -165,7 +165,26 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
-        <!-- Full-screen alarm shown over the lock screen. -->
+        <!-- Full-screen alarms shown over the lock screen: water reminders, then task alarms. -->
+        <activity
+            android:name=".WaterAlarmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=""
+            android:theme="@style/AppThemeDark" />
+
+        <receiver
+            android:name=".WaterReceiver"
+            android:exported="false" />
+
+        <service
+            android:name=".WaterRingService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <activity
             android:name=".AlarmActivity"
             android:exported="false"

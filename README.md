@@ -271,6 +271,23 @@ Everything the in-page design edits had changed, now in the app:
 - **Callout** is a dark rounded panel with a purple icon tile (lightbulb), like the reference. **Quote** shows a large faint quotation mark behind the text the moment you turn it on. **Code block** is a dark rounded panel in JetBrains Mono with a thin border, no wrapping surprises.
 - **Alignment**: left, centre, right (Lists tab). **Note links** (Insert tab, the arrow icon): pick a note and a tappable link is inserted; tap it to open that note.
 - **Finger mode** has an "i" button that opens a short list of what is allowed.
-- **Fonts**: three more handwriting styles, **Calligra** (derived from the free Calligra Type 1 font, notice in `assets/font-licenses`), **Brush pen** and **Marker** (the latter two are heavier strokes of the bundled handwriting font).
+- **Fonts**: a heavy **Marker** hand was added (Calligra and Brush pen were tried and removed again in v3.37).
 - **Tick animations**: now Off, Confetti, Ring burst, Fireworks, Row sweep, Confetti rain. Pop, Ripple, Sparkles, Check draw and Bubbles are gone; your old choice is carried over.
 - **Water** (Drink water habit) is live again: three rolling wave layers, a shining surface line, bubbles, and a slosh when the level rises. Pure vector drawing, no image.
+
+## v3.37
+
+- **Removed** the Calligra and Brush pen fonts (text that used them shows in the app font; Marker stays).
+- **Tables**: adding or removing a column no longer crashes (the column count was re-read mid-update).
+- **Finger mode**: the "i" button is no longer cropped by the finger button (the hint wraps instead), and its help card is solid, with no dark shade.
+- **Full screen reading**: the expand icon next to the date hides every bar and the keyboard, shows the title and note large, and gives a floating **X** (Back also exits). The screen stays awake while you read and sleeps again after 2 minutes without a touch. You can still tick to-dos and follow note links; tables are not editable while reading.
+- **Quote**: the big quotation mark is now a placeholder in a high-contrast display serif, shown only while the quote is still empty; it disappears with the first character typed, and the left bar and italic remain.
+- **Colour**: a dark blue text colour, and a **+** swatch that opens a colour picker (square, hue bar, hex box). The picked colour is kept as a swatch, for text and for highlights.
+- **Size**: Aa now opens a layer in the toolbar instead of a popup: 12, 15, 18, 21, 24, 27, 30, 35, 40, with a custom size at the far right (tap to use it, double tap to type a number). Tap the lit size again for normal size; the arrow goes back.
+- **Icons**: code block is `</>` (inline code is `{ }`), quote is a large serif quotation mark.
+- **Water reminders** (Settings > Water reminders, off until you switch it on): full-screen, alarm-style alert (same animation and sound as alarms) at 8:00, 11:00, 14:00, 17:00 and 19:00 by default; add, change or remove times (up to 8). The alarm sound rings 5 times by default (1 to 10). The alert shows today's progress with one-tap "I drank 250 ml" and the habit's other amounts, snooze (10 / 20 / 30 / 60 min) and Dismiss; the upper volume button silences it. It stays quiet once the goal is reached. Test it with the button on that page.
+- **Water animation** is always blue, whatever colour the habit has.
+
+## v3.38
+
+- **Callout fixed**: the panel was chopped at the left and right because TextView clips everything a span draws to the text column. The editor now draws callout and code-block panels itself, before the text, so they reach 14dp past the column on each side and keep their rounded corners. The callout matches the design board exactly: dark violet panel (#1E1B30; light mode a pale violet), no border, 18dp corners, a 36dp lavender icon tile with a lightbulb, 14dp padding. The code block panel uses the same mechanism. The note text margin is now 24dp so the panels sit clear of the screen edge.

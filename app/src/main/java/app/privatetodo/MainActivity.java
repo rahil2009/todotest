@@ -155,6 +155,7 @@ public class MainActivity extends Activity {
             return;
         }
         Reminders.normalise(this); // every series sits on its current round
+        WaterAlert.scheduleAll(this); // water reminders survive a force-stop: opening the app re-arms them
         // Picks up Done / Snooze taken from a notification or the alarm screen.
         refresh();
     }

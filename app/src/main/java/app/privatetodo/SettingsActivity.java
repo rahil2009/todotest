@@ -83,7 +83,7 @@ public class SettingsActivity extends Activity {
         col.setPadding(dp(16), dp(12), dp(16), dp(32));
         scroll.addView(col, new ScrollView.LayoutParams(-1, -2));
 
-        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Tick animation", "Haptics"};
+        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Tick animation", "Haptics", "Water reminders"};
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -106,6 +106,8 @@ public class SettingsActivity extends Activity {
             col.addView(tickCard());
         } else if (page == 8) {
             col.addView(hapticCard());
+        } else if (page == 9) {
+            col.addView(waterCard());
         } else if (page == 3) {
             col.addView(alertCard());
         } else if (page == 4) {
@@ -196,6 +198,9 @@ public class SettingsActivity extends Activity {
                         "animations animation tick complete done confetti ring fireworks sweep rain celebrate"},
                 {IconView.SWIPE_DONE, "Done haptics", Hap.NAMES[Hap.pick(this)], 8,
                         "haptics haptic vibration vibrate feedback completed done complete pixel"},
+                {IconView.HABIT, "Water reminders", WaterAlert.enabled(this)
+                        ? WaterAlert.times(this).size() + " a day \u00b7 rings " + WaterAlert.rings(this) + "\u00d7" : "Off", 9,
+                        "water drink habit reminder alert full screen alarm hydrate rings times"},
                 {IconView.NOTE, "Notebook", "Pin up to " + Prefs.maxPins(this), 6,
                         "notebook notes pin pinned limit top history versions recover restore"},
                 {IconView.CLOCK, "Smart dates", Prefs.smartOn(this) ? "On \u00b7 " + Prefs.smartTrigger(this) : "Off", 1,
@@ -578,6 +583,7 @@ public class SettingsActivity extends Activity {
         final Runnable fpaint = () -> {
             int cur = NoteFonts.noteDefault(this);
             for (int i = 0; i < nf; i++) {
+                if (chips[i] == null) continue;
                 GradientDrawable g = new GradientDrawable();
                 g.setCornerRadius(dp(20));
                 g.setColor(i == cur ? Pal.sel : Pal.chip);
@@ -588,6 +594,7 @@ public class SettingsActivity extends Activity {
         };
         FlowLayout fl = new FlowLayout(this, dp(8), dp(8));
         for (int i = 0; i < nf; i++) {
+            if (!NoteFonts.shown(i)) continue;
             final int idx = i;
             TextView c = text(NoteFonts.NAMES[i], 15, Pal.ink, false);
             c.setTypeface(NoteFonts.face(i));
@@ -606,6 +613,143 @@ public class SettingsActivity extends Activity {
         sample.setPadding(0, dp(12), 0, dp(4));
         card.addView(sample);
         fpaint.run();
+        return card;
+    }
+
+    /** Water reminders: full-screen alarm-style alerts for the Drink water habit. */
+    private LinearLayout waterCard() {
+        final LinearLayout card = card();
+        card.addView(toggleRow("Water reminders",
+                "A full-screen alert like an alarm at the times below, with one-tap buttons to log a drink. "
+                        + "It stays quiet once today's water goal is reached.",
+                WaterAlert.enabled(this), on -> {
+                    WaterAlert.setEnabled(this, on);
+                    if (on) Toast.makeText(this, "Water reminders on", Toast.LENGTH_SHORT).show();
+                }));
+
+        TextView ttitle = text("Times", 16, Pal.ink, true);
+        ttitle.setPadding(0, dp(16), 0, dp(4));
+        card.addView(ttitle);
+        final LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        card.addView(box);
+        final Runnable[] fill = new Runnable[1];
+        fill[0] = () -> {
+            box.removeAllViews();
+            final java.util.List<Integer> times = WaterAlert.times(this);
+            for (int i = 0; i < times.size(); i++) {
+                final int minutes = times.get(i);
+                LinearLayout row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                GradientDrawable rg = new GradientDrawable();
+                rg.setCornerRadius(dp(16));
+                rg.setColor(Pal.bg);
+                row.setBackground(rg);
+                row.setMinimumHeight(dp(52));
+                TextView when = text(WaterAlert.clock(this, minutes), 18, Pal.ink, true);
+                when.setPadding(dp(16), 0, 0, 0);
+                row.addView(when, new LinearLayout.LayoutParams(0, -2, 1f));
+                TextView change = text("Change", 13, Pal.accent, true);
+                change.setGravity(Gravity.CENTER);
+                change.setPadding(dp(12), 0, dp(12), 0);
+                row.addView(change, new LinearLayout.LayoutParams(-2, dp(44)));
+                TextView del = text("\u2715", 16, Pal.muted, true);
+                del.setGravity(Gravity.CENTER);
+                del.setContentDescription("Remove this time");
+                row.addView(del, new LinearLayout.LayoutParams(dp(48), dp(44)));
+                View.OnClickListener edit = v -> {
+                    Hap.tick(v);
+                    new android.app.TimePickerDialog(this, (tp, h, m) -> {
+                        java.util.List<Integer> now = WaterAlert.times(this);
+                        now.remove(Integer.valueOf(minutes));
+                        now.add(h * 60 + m);
+                        WaterAlert.setTimes(this, now);
+                        fill[0].run();
+                    }, minutes / 60, minutes % 60, android.text.format.DateFormat.is24HourFormat(this)).show();
+                };
+                when.setOnClickListener(edit);
+                change.setOnClickListener(edit);
+                del.setOnClickListener(v -> {
+                    Hap.tick(v);
+                    java.util.List<Integer> now = WaterAlert.times(this);
+                    now.remove(Integer.valueOf(minutes));
+                    WaterAlert.setTimes(this, now);
+                    fill[0].run();
+                });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+                lp.bottomMargin = dp(6);
+                box.addView(row, lp);
+            }
+            if (times.size() < WaterAlert.MAX_TIMES) {
+                TextView add = text("+ Add a time", 15, Pal.accent, true);
+                add.setGravity(Gravity.CENTER);
+                GradientDrawable ag = new GradientDrawable();
+                ag.setCornerRadius(dp(26));
+                ag.setColor(Pal.chip);
+                add.setBackground(ag);
+                add.setOnClickListener(v -> {
+                    Hap.tick(v);
+                    new android.app.TimePickerDialog(this, (tp, h, m) -> {
+                        java.util.List<Integer> now = WaterAlert.times(this);
+                        now.add(h * 60 + m);
+                        WaterAlert.setTimes(this, now);
+                        fill[0].run();
+                    }, 12, 0, android.text.format.DateFormat.is24HourFormat(this)).show();
+                });
+                box.addView(add, new LinearLayout.LayoutParams(-1, dp(48)));
+            }
+            Fonts.apply(box);
+        };
+        fill[0].run();
+
+        TextView rtitle = text("Rings per reminder", 16, Pal.ink, true);
+        rtitle.setPadding(0, dp(18), 0, 0);
+        card.addView(rtitle);
+        TextView rsub = text("How many times the alarm sound plays at each time (1 to 10). "
+                + "The screen stays until you log a drink, snooze or dismiss.", 13, Pal.muted, false);
+        rsub.setPadding(0, dp(2), 0, dp(8));
+        card.addView(rsub);
+        LinearLayout rrow = new LinearLayout(this);
+        rrow.setOrientation(LinearLayout.HORIZONTAL);
+        rrow.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView num = text(String.valueOf(WaterAlert.rings(this)), 28, Pal.ink, true);
+        num.setGravity(Gravity.CENTER);
+        final TextView minus = pinStep("\u2212");
+        final TextView plus = pinStep("+");
+        View.OnClickListener step = v -> {
+            Hap.tick(v);
+            int n = WaterAlert.rings(this) + (v == plus ? 1 : -1);
+            WaterAlert.setRings(this, n);
+            num.setText(String.valueOf(WaterAlert.rings(this)));
+        };
+        minus.setOnClickListener(step);
+        plus.setOnClickListener(step);
+        rrow.addView(minus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        rrow.addView(num, new LinearLayout.LayoutParams(0, -2, 1f));
+        rrow.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        card.addView(rrow);
+
+        TextView test = text("Test it now", 16, Pal.onAccent, true);
+        test.setGravity(Gravity.CENTER);
+        GradientDrawable tg = new GradientDrawable();
+        tg.setCornerRadius(dp(26));
+        tg.setColor(Pal.accent);
+        test.setBackground(tg);
+        test.setOnClickListener(v -> {
+            Hap.confirm(v);
+            WaterAlert.fire(this, true);
+        });
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(52));
+        tlp.topMargin = dp(18);
+        card.addView(test, tlp);
+
+        TextView note = text("Uses your Drink water habit (any habit named water or counted in ml, l, oz, glasses or cups). "
+                + "The sound, its volume and the alert animation are the ones chosen for alarms in Settings. "
+                + "If nothing rings, allow notifications and full-screen alerts for this app in your phone's settings.",
+                12, Pal.muted, false);
+        note.setPadding(0, dp(12), 0, dp(6));
+        card.addView(note);
         return card;
     }
 
