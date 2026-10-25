@@ -445,6 +445,95 @@ final class RichText {
         }
     }
 
+    /** Whole paragraphs folded away under a collapsed toggle: invisible and zero height. */
+    static final class Hide extends MetricAffectingSpan implements android.text.style.LineHeightSpan {
+        @Override
+        public void updateMeasureState(TextPaint p) {
+            p.setTextSize(1f);
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+            p.setTextSize(1f);
+            p.setColor(0);
+            p.bgColor = 0;
+        }
+
+        @Override
+        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
+                                 Paint.FontMetricsInt fm) {
+            fm.ascent = 0;
+            fm.descent = 0;
+            fm.top = 0;
+            fm.bottom = 0;
+        }
+    }
+
+    static boolean hiddenAt(CharSequence text, int start, int end) {
+        return text instanceof Spanned && ((Spanned) text).getSpans(start, Math.max(end, start + 1), Hide.class).length > 0;
+    }
+
+    /** A thin horizontal rule standing in for one placeholder character. */
+    static final class Rule extends android.text.style.ReplacementSpan {
+        @Override
+        public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            if (fm != null) {
+                int h = Math.round(p.getTextSize() * 0.9f);
+                fm.ascent = -h;
+                fm.top = -h;
+                fm.descent = 0;
+                fm.bottom = 0;
+            }
+            return tableWidth > 0 ? tableWidth : Math.round(300 * density);
+        }
+
+        @Override
+        public void draw(Canvas c, CharSequence text, int start, int end, float x, int top, int y,
+                         int bottom, Paint p) {
+            if (hiddenAt(text, start, end)) return;
+            int old = p.getColor();
+            Paint.Style os = p.getStyle();
+            float sw = p.getStrokeWidth();
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(1.5f, 1.5f * density));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setColor(Pal.dark ? 0xFF4A5753 : 0xFF9AA5A1);
+            float w = tableWidth > 0 ? tableWidth : 300 * density;
+            float cy = y - p.getTextSize() * 0.4f;
+            c.drawLine(x + 2 * density, cy, x + w - 2 * density, cy, p);
+            p.setColor(old);
+            p.setStyle(os);
+            p.setStrokeWidth(sw);
+        }
+    }
+
+    /** Paragraph alignment: arg 1 = centred, 2 = right (0 = left, no span). */
+    static final class Align extends android.text.style.AlignmentSpan.Standard {
+        final int mode;
+
+        Align(int mode) {
+            super(mode == 1 ? android.text.Layout.Alignment.ALIGN_CENTER
+                    : mode == 2 ? android.text.Layout.Alignment.ALIGN_OPPOSITE
+                    : android.text.Layout.Alignment.ALIGN_NORMAL);
+            this.mode = mode;
+        }
+    }
+
+    /** A link to another note: the text is accent coloured and underlined; the arg is the note's id. */
+    static final class NoteLink extends CharacterStyle implements UpdateAppearance {
+        final int noteId;
+
+        NoteLink(int noteId) {
+            this.noteId = noteId;
+        }
+
+        @Override
+        public void updateDrawState(TextPaint tp) {
+            tp.setUnderlineText(true);
+            if (tp.bgColor == 0) tp.setColor(Pal.dark ? 0xFFA9B4FF : 0xFF3B4BD6);
+        }
+    }
+
     /**
      * Code block: near-black rounded panel with a thin border and light JetBrains Mono text. One span covers
      * the whole block ({@link #normalize} keeps it that way), so it reads as one piece.

@@ -199,8 +199,8 @@ public class SettingsActivity extends Activity {
                 {IconView.SWIPE_DONE, "Done haptics", Hap.NAMES[Hap.pick(this)], 8,
                         "haptics haptic vibration vibrate feedback completed done complete pixel"},
                 {IconView.HABIT, "Water reminders", WaterAlert.enabled(this)
-                        ? WaterAlert.times(this).size() + " a day \u00b7 rings " + WaterAlert.rings(this) + "\u00d7" : "Off", 9,
-                        "water drink habit reminder alert full screen alarm hydrate rings times"},
+                        ? WaterAlert.times(this).size() + " reminders a day" : "Off", 9,
+                        "water drink habit reminder alert full screen alarm hydrate times per day how many"},
                 {IconView.NOTE, "Notebook", "Pin up to " + Prefs.maxPins(this), 6,
                         "notebook notes pin pinned limit top history versions recover restore"},
                 {IconView.CLOCK, "Smart dates", Prefs.smartOn(this) ? "On \u00b7 " + Prefs.smartTrigger(this) : "Off", 1,
@@ -634,9 +634,11 @@ public class SettingsActivity extends Activity {
         box.setOrientation(LinearLayout.VERTICAL);
         card.addView(box);
         final Runnable[] fill = new Runnable[1];
+        final TextView[] numRef = new TextView[1];
         fill[0] = () -> {
             box.removeAllViews();
             final java.util.List<Integer> times = WaterAlert.times(this);
+            if (numRef[0] != null) numRef[0].setText(String.valueOf(Math.max(1, times.size())));
             for (int i = 0; i < times.size(); i++) {
                 final int minutes = times.get(i);
                 LinearLayout row = new LinearLayout(this);
@@ -703,25 +705,27 @@ public class SettingsActivity extends Activity {
         };
         fill[0].run();
 
-        TextView rtitle = text("Rings per reminder", 16, Pal.ink, true);
+        TextView rtitle = text("Reminders per day", 16, Pal.ink, true);
         rtitle.setPadding(0, dp(18), 0, 0);
         card.addView(rtitle);
-        TextView rsub = text("How many times the alarm sound plays at each time (1 to 10). "
-                + "The screen stays until you log a drink, snooze or dismiss.", 13, Pal.muted, false);
+        TextView rsub = text("How many times a day it reminds you (1 to 8), spread over the day. "
+                + "Changing this re-spreads the times above; you can still edit any time by hand. "
+                + "The sound plays a few times and the screen stays until you log a drink, snooze or dismiss.",
+                13, Pal.muted, false);
         rsub.setPadding(0, dp(2), 0, dp(8));
         card.addView(rsub);
         LinearLayout rrow = new LinearLayout(this);
         rrow.setOrientation(LinearLayout.HORIZONTAL);
         rrow.setGravity(Gravity.CENTER_VERTICAL);
-        final TextView num = text(String.valueOf(WaterAlert.rings(this)), 28, Pal.ink, true);
+        final TextView num = text(String.valueOf(WaterAlert.perDay(this)), 28, Pal.ink, true);
         num.setGravity(Gravity.CENTER);
+        numRef[0] = num;
         final TextView minus = pinStep("\u2212");
         final TextView plus = pinStep("+");
         View.OnClickListener step = v -> {
             Hap.tick(v);
-            int n = WaterAlert.rings(this) + (v == plus ? 1 : -1);
-            WaterAlert.setRings(this, n);
-            num.setText(String.valueOf(WaterAlert.rings(this)));
+            WaterAlert.setPerDay(this, WaterAlert.perDay(this) + (v == plus ? 1 : -1));
+            fill[0].run();
         };
         minus.setOnClickListener(step);
         plus.setOnClickListener(step);

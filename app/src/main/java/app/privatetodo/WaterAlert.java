@@ -17,7 +17,7 @@ import java.util.TreeSet;
 /**
  * Water reminders: full-screen, alarm-style alerts at the times you choose (Settings > Water reminders).
  * Everything is local: AlarmManager wakes {@link WaterReceiver}, {@link WaterRingService} rings the alarm sound
- * your chosen number of times, and {@link WaterAlarmActivity} is the screen. Skipped once today's goal is met.
+ * a few times, and {@link WaterAlarmActivity} is the screen. Skipped once today's goal is met.
  */
 final class WaterAlert {
     private WaterAlert() { }
@@ -45,12 +45,32 @@ final class WaterAlert {
         scheduleAll(c);
     }
 
-    static int rings(Context c) {
-        return Math.max(1, Math.min(10, sp(c).getInt("water_rings", 5)));
+    /** How many times the alarm sound plays at each reminder; the screen then stays until you answer. */
+    static final int PLAYS = 3;
+
+    /** Reminders per day (1 to 8) = how many times are set. */
+    static int perDay(Context c) {
+        return Math.max(1, Math.min(MAX_TIMES, times(c).size()));
     }
 
-    static void setRings(Context c, int n) {
-        sp(c).edit().putInt("water_rings", Math.max(1, Math.min(10, n))).apply();
+    /** Evenly spread day plans (minutes after midnight) for 1 to 8 reminders a day. */
+    private static final int[][] PLANS = {
+            {720},
+            {540, 1080},
+            {540, 840, 1140},
+            {480, 720, 960, 1140},
+            {480, 660, 840, 1020, 1140},
+            {480, 600, 750, 900, 1020, 1140},
+            {480, 600, 720, 840, 960, 1080, 1200},
+            {480, 600, 720, 840, 960, 1080, 1170, 1260},
+    };
+
+    /** Sets the number of reminders a day and spreads them over the day (replaces custom times). */
+    static void setPerDay(Context c, int n) {
+        n = Math.max(1, Math.min(MAX_TIMES, n));
+        java.util.ArrayList<Integer> list = new java.util.ArrayList<>();
+        for (int v : PLANS[n - 1]) list.add(v);
+        setTimes(c, list);
     }
 
     /** The daily times as minutes after midnight, earliest first. */

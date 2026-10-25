@@ -58,7 +58,7 @@ public class WaterRingService extends Service {
                             .setUsage(android.media.AudioAttributes.USAGE_ALARM).build());
         }
         token++;
-        ring(WaterAlert.rings(this), token);
+        ring(WaterAlert.PLAYS, token);
         return START_NOT_STICKY;
     }
 

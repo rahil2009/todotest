@@ -1703,7 +1703,7 @@ public class NoteEditorActivity extends Activity {
         reading = false;
         body.removeCallbacks(sleepAgain);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_VISIBLE);
+        getWindow().getDecorView().setSystemUiVisibility(0);
         headerView.setVisibility(View.VISIBLE);
         dateRow.setVisibility(View.VISIBLE);
         toolbarView.setVisibility(View.VISIBLE);
