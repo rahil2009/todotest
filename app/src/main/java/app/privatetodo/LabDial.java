@@ -24,7 +24,10 @@ import android.view.animation.DecelerateInterpolator;
 final class LabDial extends View {
     static final String[] NAMES = {
             "Solid pill", "Barrel", "Neon", "Big number", "Ruler",
-            "Cards", "Gradient", "Flip tiles", "Curve", "Lens"};
+            "Cards", "Gradient", "Flip tiles", "Curve", "Lens",
+            "Aurora", "Orbit", "Hologram", "Retro LCD", "Odometer", "Bubbles", "Spotlight", "Glass", "Gauge",
+            "Keycaps", "Wave", "Film strip", "Neon tube", "Candy", "Terminal", "Blueprint", "Sunset",
+            "Card fan", "Sonar", "Liquid"};
     static final String[] NOTES = {
             "A solid accent bar holds the chosen time. Strongest contrast.",
             "A rounded drum: rows squash and fade as they turn away.",
@@ -35,7 +38,27 @@ final class LabDial extends View {
             "The chosen time is painted with an accent gradient.",
             "Split-flap tiles like an old departure board.",
             "Numbers bend along an arc, a dot marks the chosen one.",
-            "A round lens circles the chosen number."};
+            "A round lens circles the chosen number.",
+            "Dark sky with drifting aurora light and a glowing time.",
+            "Rings and a tiny satellite orbit the chosen number.",
+            "Cyan hologram with scan lines and colour fringing.",
+            "Green LCD with ghost segments, like an old watch.",
+            "Mechanical odometer: tens and units roll on separate reels.",
+            "Number bubbles; the chosen one swells and fills with colour.",
+            "A spotlight: only the chosen time is lit.",
+            "Frosted glass over a colour gradient.",
+            "A ring fills up as the value goes up.",
+            "Real keycaps; the chosen one is pressed down.",
+            "The column ripples like a wave, the chosen one rides the crest.",
+            "Film strip with sprocket holes that roll with the dial.",
+            "Glowing neon tube lettering on a dark wall.",
+            "Soft candy pills, each a different colour.",
+            "Green phosphor terminal with a block cursor.",
+            "Blueprint paper with dimension brackets.",
+            "Sunset gradient with a low sun.",
+            "Cards fanned like a hand, the chosen one on top.",
+            "Sonar rings ripple out as you turn.",
+            "A tube of liquid that sloshes and fills with the value."};
 
     private static final int ROWS = 5;
     private static final float FRICTION = 1.9f;
@@ -99,6 +122,39 @@ final class LabDial extends View {
         setFocusable(false);
     }
 
+    // ---- read access for LabLooks
+    float dens() {
+        return d;
+    }
+
+    float rowH() {
+        return rowH;
+    }
+
+    float cx0(int i) {
+        return cols[i].x0;
+    }
+
+    float cx1(int i) {
+        return cols[i].x1;
+    }
+
+    float cpos(int i) {
+        return cols[i].pos;
+    }
+
+    int cn(int i) {
+        return cols[i].count;
+    }
+
+    boolean cwrap(int i) {
+        return cols[i].wrap;
+    }
+
+    String clabel(int i, int idx) {
+        return cols[i].labels[idx];
+    }
+
     void setOnChange(Runnable r) {
         onChange = r;
     }
@@ -128,6 +184,11 @@ final class LabDial extends View {
             cols[i].x0 = x;
             x += avail * fr[i];
             cols[i].x1 = x;
+        }
+
+        if (style >= 10) {
+            LabLooks.draw(this, c, style);
+            return;
         }
 
         // panel behind everything

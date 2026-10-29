@@ -25,6 +25,7 @@ public class LabActivity extends Activity {
     private TextView summary;
     private TextView tabDial;
     private TextView tabSwipe;
+    private TextView tabTick;
     private SharedPreferences sp;
 
     @Override
@@ -81,15 +82,21 @@ public class LabActivity extends Activity {
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabDial = tab("Time dials");
-        tabSwipe = tab("Slide to delete");
+        tabSwipe = tab("Delete");
+        tabTick = tab("Done");
         tabDial.setOnClickListener(v -> pick(0));
         tabSwipe.setOnClickListener(v -> pick(1));
+        tabTick.setOnClickListener(v -> pick(2));
         LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        a.rightMargin = dp(6);
+        a.rightMargin = dp(4);
+        LinearLayout.LayoutParams m = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        m.leftMargin = dp(4);
+        m.rightMargin = dp(4);
         LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        b.leftMargin = dp(6);
+        b.leftMargin = dp(4);
         tabs.addView(tabDial, a);
-        tabs.addView(tabSwipe, b);
+        tabs.addView(tabSwipe, m);
+        tabs.addView(tabTick, b);
         col.addView(tabs);
 
         summary = text("", 14, Pal.accent, true);
@@ -126,10 +133,11 @@ public class LabActivity extends Activity {
     private void fill() {
         styleTab(tabDial, tab == 0);
         styleTab(tabSwipe, tab == 1);
+        styleTab(tabTick, tab == 2);
         list.removeAllViews();
-        String[] names = tab == 0 ? LabDial.NAMES : LabSwipe.NAMES;
-        String[] notes = tab == 0 ? LabDial.NOTES : LabSwipe.NOTES;
-        String prefix = tab == 0 ? "dial_" : "swipe_";
+        String[] names = names();
+        String[] notes = tab == 0 ? LabDial.NOTES : tab == 1 ? LabSwipe.NOTES : LabTick.NOTES;
+        String prefix = prefix();
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
             LinearLayout card = new LinearLayout(this);
@@ -145,7 +153,7 @@ public class LabActivity extends Activity {
             top.setGravity(Gravity.CENTER_VERTICAL);
             LinearLayout names2 = new LinearLayout(this);
             names2.setOrientation(LinearLayout.VERTICAL);
-            names2.addView(text((tab == 0 ? "Dial " : "Slide ") + (i + 1) + " · " + names[i], 17, Pal.ink, true));
+            names2.addView(text((tab == 0 ? "Dial " : tab == 1 ? "Delete " : "Done ") + (i + 1) + " · " + names[i], 17, Pal.ink, true));
             TextView note = text(notes[i], 13, Pal.muted, false);
             note.setPadding(0, dp(2), dp(8), 0);
             names2.addView(note);
@@ -174,6 +182,13 @@ public class LabActivity extends Activity {
                 box.addView(dial, new LinearLayout.LayoutParams(-1, -2));
                 box.addView(live);
                 demo = box;
+            } else if (tab == 2) {
+                final LabTick tk = new LabTick(this, i);
+                GradientDrawable pg = new GradientDrawable();
+                pg.setColor(Pal.bg);
+                pg.setCornerRadius(dp(18));
+                tk.setBackground(pg);
+                demo = tk;
             } else {
                 final LabSwipe sw = new LabSwipe(this, i);
                 GradientDrawable pg = new GradientDrawable();
@@ -207,19 +222,26 @@ public class LabActivity extends Activity {
         k.setTextColor(on ? Pal.onAccent : Pal.ink);
     }
 
+    private String[] names() {
+        return tab == 0 ? LabDial.NAMES : tab == 1 ? LabSwipe.NAMES : LabTick.NAMES;
+    }
+
+    private String prefix() {
+        return tab == 0 ? "dial_" : tab == 1 ? "swipe_" : "tick_";
+    }
+
     private void updateSummary() {
-        String prefix = tab == 0 ? "dial_" : "swipe_";
+        String prefix = prefix();
         StringBuilder sb = new StringBuilder();
-        int n = tab == 0 ? LabDial.NAMES.length : LabSwipe.NAMES.length;
+        int n = names().length;
         for (int i = 0; i < n; i++) {
             if (sp.getBoolean(prefix + i, false)) {
                 if (sb.length() > 0) sb.append(", ");
                 sb.append(i + 1);
             }
         }
-        summary.setText(sb.length() == 0
-                ? "Kept: none yet"
-                : "Kept " + (tab == 0 ? "dials" : "slides") + ": " + sb);
+        String what = tab == 0 ? "dials" : tab == 1 ? "delete animations" : "done animations";
+        summary.setText(sb.length() == 0 ? "Kept: none yet" : "Kept " + what + ": " + sb);
     }
 
     private TextView text(String s, int sp, int color, boolean bold) {

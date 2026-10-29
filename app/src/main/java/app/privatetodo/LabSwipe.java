@@ -24,7 +24,10 @@ import java.util.Random;
 final class LabSwipe extends View {
     static final String[] NAMES = {
             "Trash lid", "Shred", "Into the bin", "Poof", "Elastic",
-            "Circle wipe", "Dust", "Paper drop", "Strike out", "Motion trail"};
+            "Circle wipe", "Dust", "Paper drop", "Strike out", "Motion trail",
+            "Black hole", "Explode", "Fire", "Glitch", "Shatter", "Zip", "Rocket", "Slice", "Flip away", "Genie",
+            "Melt", "Bubbles", "Lightning", "Confetti", "Stamp", "Eraser", "Spin out", "Dominoes", "Pixelate",
+            "Portal"};
     static final String[] NOTES = {
             "Red slab, the bin lid opens as you pull; the row zips off and the gap closes.",
             "On release the task is cut into strips that fall away.",
@@ -35,8 +38,33 @@ final class LabSwipe extends View {
             "The task crumbles into pixels that blow away.",
             "The task tips over like a card and falls off the screen.",
             "The colour warms from amber to red, the title is struck out, then it slides away.",
-            "The task streaks off with a ghost trail behind it."};
-    private static final int[] DURATION = {800, 1000, 900, 900, 900, 900, 1100, 900, 1000, 900};
+            "The task streaks off with a ghost trail behind it.",
+            "The task spirals into a black hole, stars get pulled in with it.",
+            "Boom: the task blows apart into chunks with a flash.",
+            "The task burns away from the edge, leaving embers and ash.",
+            "Screen glitch: slices tear sideways, colours split, then static.",
+            "The task cracks like glass and the shards fall.",
+            "A zipper closes the task into a line that shoots away.",
+            "The task shakes, then blasts off upward with a flame.",
+            "A sword slash cuts it in two and the halves fall apart.",
+            "The task flips over like a page and is gone.",
+            "The task is sucked into the bin like the Mac genie effect.",
+            "The task melts and drips into a puddle.",
+            "The task turns into soap bubbles that float up and pop.",
+            "Lightning strikes the task, it flashes white and vanishes.",
+            "The task bursts into confetti.",
+            "A big red DELETED stamp slams on, then the task slides away.",
+            "An eraser wipes the task away and leaves crumbs.",
+            "The task spins away like a thrown disc.",
+            "The task is cut into blocks that topple like dominoes.",
+            "The task turns into big pixels, then dissolves.",
+            "The task is swallowed by a glowing portal."};
+    private static final int[] DURATION = {800, 1000, 900, 900, 900, 900, 1100, 900, 1000, 900,
+            1200, 1100, 1300, 1100, 1200, 1000, 1200, 1100, 1000, 1000, 1200, 1300, 1200, 1100, 1300, 1100, 1100,
+            1200, 1200, 1200};
+    private static final int[] BG = {0xFF12082B, 0xFFB71C1C, 0xFF4E1B0B, 0xFF0B1B2B, 0xFF37474F, 0xFF455A64,
+            0xFF0D1B4C, 0xFF212121, 0xFF6A1B9A, 0xFF004D40, 0xFF5D4037, 0xFF0277BD, 0xFF1A1A2E, 0xFFAD1457,
+            0xFFD64545, 0xFFE57373, 0xFF283593, 0xFF37474F, 0xFF263238, 0xFF311B92};
 
     private static final int RED = 0xFFD64545;
     private static final int DEEP = 0xFFB3261E;
@@ -51,32 +79,33 @@ final class LabSwipe extends View {
     private static final int RESTORE = 3;
 
     private final int style;
-    private final float d;
+    final float d;
     private final int slop;
-    private final float rh; // row height
+    final float rh; // row height
     private final float pad;
-    private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+    final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bmpPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private final RectF rf = new RectF();
+    final RectF rf = new RectF();
     private final Rect src = new Rect();
     private final Path path = new Path();
     private final Typeface regular;
     private final Typeface bold;
-    private final float[] rnd = new float[96];
+    final float[] rnd = new float[96];
 
     private int phase = IDLE;
     private float dx; // drag, 0 or negative
-    private float cdx; // where the drag was when the animation started
+    float cdx; // where the drag was when the animation started
     private float t; // commit progress 0..1
     private float rt; // restore progress 0..1
     private float downX;
     private float downY;
     private boolean swiping;
     private boolean armed;
-    private Bitmap snap;
+    Bitmap snap;
+    Bitmap[] mos;
     private ValueAnimator anim;
     private Runnable pending;
-    private float rw;
+    float rw;
     private int deleted;
     private Runnable onDeleted;
 
@@ -133,7 +162,7 @@ final class LabSwipe extends View {
 
     // ------------------------------------------------------------------ the test task row
 
-    private void drawRow(Canvas c, int alpha, float strike) {
+    void drawRow(Canvas c, int alpha, float strike) {
         p.setStyle(Paint.Style.FILL);
         p.setColor(Pal.card);
         p.setAlpha(alpha);
@@ -192,7 +221,7 @@ final class LabSwipe extends View {
         p.setAlpha(255);
     }
 
-    private void drawTrash(Canvas c, float cx, float cy, float s, float lid, int color) {
+    void drawTrash(Canvas c, float cx, float cy, float s, float lid, int color) {
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setStrokeJoin(Paint.Join.ROUND);
@@ -228,7 +257,7 @@ final class LabSwipe extends View {
     // ------------------------------------------------------------------ the area revealed behind the row
 
     /** p: how far the row is pulled (0..1). lid / isc: bin lid opening and icon scale. */
-    private void drawReveal(Canvas c, float pr, float lid, float isc) {
+    void drawReveal(Canvas c, float pr, float lid, float isc) {
         float ix = rw - 38 * d;
         float iy = rh / 2f;
         int bg;
@@ -256,7 +285,7 @@ final class LabSwipe extends View {
                 bg = blend(AMBER, RED, ease(pr));
                 break;
             default:
-                bg = RED;
+                bg = style >= 10 ? BG[style - 10] : RED;
                 break;
         }
         p.setColor(bg);
@@ -347,7 +376,7 @@ final class LabSwipe extends View {
         c.restore();
     }
 
-    private void collapse(Canvas c, float hs) {
+    void collapse(Canvas c, float hs) {
         c.translate(0, rh / 2f);
         c.scale(1f, Math.max(0.001f, hs));
         c.translate(0, -rh / 2f);
@@ -533,7 +562,7 @@ final class LabSwipe extends View {
                 drawRow(c, (int) (255 * (1f - 0.42f * s)), s);
                 break;
             }
-            default: { // 9: motion trail
+            case 9: { // motion trail
                 float u = clamp01(t / 0.55f);
                 float v = clamp01((t - 0.55f) / 0.45f);
                 float hs = 1f - ease(v) + 0.07f * (float) Math.sin(v * Math.PI * 3) * (1f - v);
@@ -550,6 +579,9 @@ final class LabSwipe extends View {
                 }
                 break;
             }
+            default:
+                LabBurn.draw(this, c, style - 10, t);
+                break;
         }
         c.restore();
     }
@@ -616,8 +648,9 @@ final class LabSwipe extends View {
         phase = COMMIT;
         deleted++;
         if (onDeleted != null) onDeleted.run();
-        if (style == 1 || style == 6) { // these two cut the row up, so draw it once into a bitmap
+        if (style == 1 || style == 6 || style >= 10) { // these cut the row up, so draw it once into a bitmap
             if (snap != null) snap.recycle();
+            mos = null;
             snap = Bitmap.createBitmap(Math.max(1, Math.round(rw)), Math.max(1, Math.round(rh)),
                     Bitmap.Config.ARGB_8888);
             drawRow(new Canvas(snap), 255, 0);

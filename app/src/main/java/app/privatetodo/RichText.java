@@ -442,6 +442,10 @@ final class RichText {
      */
     static final class Callout extends MetricAffectingSpan implements LineBackgroundSpan,
             android.text.style.LeadingMarginSpan, android.text.style.LineHeightSpan {
+        static int pad() {
+            return Math.round(14 * density);
+        }
+
         static final int TILE = 0xFFB9A8FF;
         static final int TILE_INK = 0xFF0E0F12;
 

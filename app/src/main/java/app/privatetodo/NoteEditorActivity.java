@@ -305,7 +305,17 @@ public class NoteEditorActivity extends Activity {
             changed();
         }));
         body.setLinkTapListener(this::openNoteLink);
-        body.setCounterListener(this::onCounterTap);
+        body.setCounterListener(new RichEditText.CounterListener() {
+            @Override
+            public void onCounter(RichText.Counter c, int zone, int mult) {
+                onCounterTap(c, zone, mult);
+            }
+
+            @Override
+            public void onTableCounter(RichText.Tbl t, int row, int col, int zone, int mult) {
+                NoteEditorActivity.this.onTableCounter(t, row, col, zone, mult);
+            }
+        });
         body.setSelectionListener((s, e) -> {
             if (!typing && !busy && !(s == e && s == expectCursor)) pending.clear();
             refreshToolbar();
@@ -1271,20 +1281,32 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
-    /** A tap on a counter: minus and plus move it by its step, the number opens the editor. */
-    private void onCounterTap(RichText.Counter c, int zone) {
+    /** A tap (or a hold: mult grows) on a counter: minus and plus move it by its step, the number opens the editor. */
+    private void onCounterTap(RichText.Counter c, int zone, int mult) {
         Editable e = body.getText();
         if (e.getSpanStart(c) < 0) return;
         if (zone == 1) {
-            counterDialog(c);
+            if (!reading) counterDialog(c); // while reading only - and + work
             return;
         }
-        long v = RichText.counterValue(e, c) + (zone == 2 ? c.step : -c.step);
+        long v = RichText.counterValue(e, c) + (zone == 2 ? 1L : -1L) * c.step * mult;
         commitNow();
         busy = true;
         RichText.setCounter(e, c, v, c.step);
         busy = false;
         changed();
+    }
+
+    /** The same for a counter inside a table cell. */
+    private void onTableCounter(RichText.Tbl t, int r, int c, int zone, int mult) {
+        if (r == 0 || r >= t.rows() || c >= t.cols()) return;
+        long[] cv = RichText.Tbl.counterOf(t.cells[r][c]);
+        if (cv == null) return;
+        commitNow();
+        t.cells[r][c] = RichText.Tbl.counterCell(cv[0] + (zone == 2 ? 1L : -1L) * cv[1] * mult, cv[1]);
+        RichText.refresh(body.getText(), t);
+        changed();
+        body.invalidate();
     }
 
     private EditText counterField(LinearLayout box, String label, String hint, String value, boolean signed) {
@@ -1630,22 +1652,19 @@ public class NoteEditorActivity extends Activity {
     }
 
     private void onTableTap(RichText.Tbl t, int r, int c, boolean onTick) {
-        if (paintMode || reading) return;
+        if (paintMode) return;
         long[] cv = r == 0 ? null : RichText.Tbl.counterOf(t.cells[r][c]);
         if (cv != null) { // a counter cell: - and + step it, the number opens its editor
             if (cellOpen) flushCell();
             int zone = body.lastTableZone();
             if (zone == 0 || zone == 2) {
-                commitNow();
-                t.cells[r][c] = RichText.Tbl.counterCell(cv[0] + (zone == 2 ? cv[1] : -cv[1]), cv[1]);
-                RichText.refresh(body.getText(), t);
-                changed();
-                body.invalidate();
-            } else {
+                onTableCounter(t, r, c, zone, 1);
+            } else if (!reading) {
                 tableCounterDialog(t, r, c);
             }
             return;
         }
+        if (reading) return; // reading: only the - and + of a counter respond
         if (onTick) {
             flushCell();
             commitNow();

@@ -319,3 +319,13 @@ v3.42 (test only, not wired into the app):
 - New files: LabActivity, LabDial, LabSwipe. The real dials and swipe-to-delete are untouched.
 
 v3.42 build fix: restored RichText.firstLine and RichText.panelPadding (used by Quote, Callout and the code block), which had gone missing and broke the Actions build.
+
+v3.43:
+- **Counters**: hold - or + and it repeats, slowly at first and then faster; after a few seconds it steps by 5 and then by 25 so big numbers are quick to reach. Works in table-cell counters too.
+- **Read mode**: the - and + of counters (inline and in tables) now work in full-screen reading. Tapping the number does nothing there.
+- **Callout**: the text cursor inside a callout is now the height of the text, like in a code block (Android 10 and newer).
+- **Design lab** (Settings > Design lab), now three tabs:
+  - **Time dials**: 30 looks (20 new: Aurora, Orbit, Hologram, Retro LCD, Odometer, Bubbles, Spotlight, Glass, Gauge, Keycaps, Wave, Film strip, Neon tube, Candy, Terminal, Blueprint, Sunset, Card fan, Sonar, Liquid).
+  - **Delete**: 30 slide-left animations (20 new: Black hole, Explode, Fire, Glitch, Shatter, Zip, Rocket, Slice, Flip away, Genie, Melt, Bubbles, Lightning, Confetti, Stamp, Eraser, Spin out, Dominoes, Pixelate, Portal).
+  - **Done**: 30 slide-right (complete) animations. The task goes ticked and dimmed, then comes back so you can retry.
+  - Tap Keep on the ones you like. Nothing in the lab changes real tasks.

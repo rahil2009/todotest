@@ -193,6 +193,13 @@ final class RichEditText extends EditText {
                 if (ls == a) top = RichText.Block.topPad();
                 if (z <= le) bot = RichText.Block.botPad();
             }
+            for (RichText.Callout b : sp.getSpans(ls, Math.max(ls, Math.min(t.length(), ls + 1)), RichText.Callout.class)) {
+                int a2 = sp.getSpanStart(b);
+                int z2 = sp.getSpanEnd(b);
+                if (a2 < 0 || ls < a2 || ls >= Math.max(z2, a2 + 1)) continue;
+                if (ls == a2) top = RichText.Callout.pad();
+                if (z2 <= le) bot = RichText.Callout.pad();
+            }
         }
         caret.set(color, top, bot);
     }
@@ -308,8 +315,76 @@ final class RichEditText extends EditText {
     private boolean hitMoved;
 
     interface CounterListener {
-        /** zone: 0 = minus, 1 = the number, 2 = plus. */
-        void onCounter(RichText.Counter c, int zone);
+        /** zone: 0 = minus, 1 = the number, 2 = plus. mult: 1 for a tap, more while the button is held. */
+        void onCounter(RichText.Counter c, int zone, int mult);
+
+        /** The same for a counter inside a table cell (zone 0 or 2 only while held). */
+        void onTableCounter(RichText.Tbl t, int row, int col, int zone, int mult);
+    }
+
+    // ---- holding - or + : repeats, slow at first and then faster and faster
+    private boolean holdFired;
+    private int holdCount;
+    private int holdStart = -1;
+    private int holdZone;
+    private boolean holdTable;
+    private long holdHaptic;
+    private final Runnable holdRun = new Runnable() {
+        @Override
+        public void run() {
+            holdStep();
+        }
+    };
+
+    private void holdBegin(int start, int zone, boolean table) {
+        removeCallbacks(holdRun);
+        holdFired = false;
+        holdCount = 0;
+        holdStart = start;
+        holdZone = zone;
+        holdTable = table;
+        postDelayed(holdRun, 380);
+    }
+
+    private void holdEnd() {
+        removeCallbacks(holdRun);
+        holdStart = -1;
+        holdTable = false;
+    }
+
+    private void holdStep() {
+        if (counterL == null) return;
+        int mult = holdCount < 40 ? 1 : holdCount < 80 ? 5 : 25;
+        boolean ok = false;
+        if (holdTable) {
+            if (tblDown != null) {
+                counterL.onTableCounter(tblDown, tblR, tblC, holdZone, mult);
+                ok = true;
+            }
+        } else if (holdStart >= 0 && getText() instanceof android.text.Spanned) {
+            android.text.Spanned sp = (android.text.Spanned) getText();
+            int e = Math.min(sp.length(), holdStart + 1);
+            for (RichText.Counter k : sp.getSpans(holdStart, e, RichText.Counter.class)) {
+                if (sp.getSpanStart(k) == holdStart) {
+                    counterL.onCounter(k, holdZone, mult);
+                    ok = true;
+                    break;
+                }
+            }
+        }
+        if (!ok) {
+            holdEnd();
+            return;
+        }
+        holdFired = true;
+        holdCount++;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - holdHaptic > 40) {
+            holdHaptic = now;
+            performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+        }
+        long delay = Math.max(28L, Math.round(300 * Math.pow(0.9, holdCount)));
+        postDelayed(holdRun, delay);
     }
 
     private CounterListener counterL;
@@ -567,29 +642,41 @@ final class RichEditText extends EditText {
             hitMoved = false;
             hitBlock = null;
             hitCounter = null;
+            holdEnd();
+            holdFired = false;
             hitBlock = headButtonAt(e.getX(), e.getY());
             if (hitBlock == null) hitCounter = counterAt(e.getX(), e.getY());
+            if (hitCounter != null && hitButton != 1 && counterL != null) {
+                holdBegin(((android.text.Spanned) getText()).getSpanStart(hitCounter), hitButton, false);
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+            }
             if (hitBlock != null || hitCounter != null) return true;
         } else if (hitBlock != null || hitCounter != null) {
             int slopC = ViewConfiguration.get(getContext()).getScaledTouchSlop();
-            if (Math.abs(e.getX() - downX) >= slopC || Math.abs(e.getY() - downY) >= slopC) hitMoved = true;
+            if (Math.abs(e.getX() - downX) >= slopC || Math.abs(e.getY() - downY) >= slopC) {
+                hitMoved = true;
+                if (!holdFired) holdEnd(); // a drag is a scroll, not a hold
+            }
             if (actC == MotionEvent.ACTION_UP) {
                 RichText.Block b = hitBlock;
                 RichText.Counter k = hitCounter;
                 hitBlock = null;
                 hitCounter = null;
-                if (!hitMoved) {
+                boolean held = holdFired;
+                holdEnd();
+                if (!hitMoved && !held) {
                     performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
                     if (b != null) {
                         if (hitButton == 0) copyCode(b);
                         else pasteCode(b);
                     } else if (counterL != null) {
-                        counterL.onCounter(k, hitButton);
+                        counterL.onCounter(k, hitButton, 1);
                     }
                 }
             } else if (actC == MotionEvent.ACTION_CANCEL) {
                 hitBlock = null;
                 hitCounter = null;
+                holdEnd();
             }
             return true;
         }
@@ -601,15 +688,28 @@ final class RichEditText extends EditText {
                 downX = e.getX();
                 downY = e.getY();
                 tblDown = null;
-                if (tableDown(e.getX(), e.getY())) return true;
+                if (tableDown(e.getX(), e.getY())) {
+                    if ((tblZone == 0 || tblZone == 2) && tblR > 0 && counterL != null
+                            && RichText.Tbl.counterOf(tblDown.cells[tblR][tblC]) != null) {
+                        holdBegin(-1, tblZone, true);
+                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                    return true;
+                }
             } else if (tblDown != null) {
                 int slop0 = ViewConfiguration.get(getContext()).getScaledTouchSlop();
-                if (Math.abs(e.getX() - downX) >= slop0 || Math.abs(e.getY() - downY) >= slop0) tblMoved = true;
+                if (Math.abs(e.getX() - downX) >= slop0 || Math.abs(e.getY() - downY) >= slop0) {
+                    tblMoved = true;
+                    if (!holdFired) holdEnd();
+                }
                 if (act0 == MotionEvent.ACTION_UP) {
                     RichText.Tbl t = tblDown;
+                    boolean held = holdFired;
+                    holdEnd();
                     tblDown = null;
-                    if (!tblMoved) tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
+                    if (!tblMoved && !held) tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
                 } else if (act0 == MotionEvent.ACTION_CANCEL) {
+                    holdEnd();
                     tblDown = null;
                 }
                 return true;
