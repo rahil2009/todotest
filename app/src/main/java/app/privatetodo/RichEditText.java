@@ -104,9 +104,97 @@ final class RichEditText extends EditText {
             @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
             @Override public void afterTextChanged(Editable e) {
                 syncCircles(e);
+                RichText.healCounters(e);
                 RichText.highlight(e);
             }
         });
+        initCaret();
+    }
+
+    /** The text cursor: normal in the text, but trimmed to the text's own height inside a code block. */
+    private static final class Caret extends android.graphics.drawable.Drawable {
+        private final Paint paint = new Paint();
+        private final int width;
+        int top;
+        int bottom;
+
+        Caret(int width) {
+            this.width = width;
+        }
+
+        void set(int color, int top, int bottom) {
+            paint.setColor(color);
+            this.top = top;
+            this.bottom = bottom;
+        }
+
+        @Override
+        public void draw(Canvas c) {
+            android.graphics.Rect b = getBounds();
+            float t = b.top + top;
+            float bt = b.bottom - bottom;
+            if (bt - t < 2) {
+                t = b.top;
+                bt = b.bottom;
+            }
+            c.drawRect(b.left, t, b.left + width, bt, paint);
+        }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return width;
+        }
+
+        @Override
+        public void setAlpha(int a) {
+            paint.setAlpha(a);
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter cf) {
+            paint.setColorFilter(cf);
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
+        }
+    }
+
+    private Caret caret;
+
+    private void initCaret() {
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            caret = new Caret(Math.round(2 * getResources().getDisplayMetrics().density));
+            caret.set(Pal.accent, 0, 0);
+            setTextCursorDrawable(caret);
+        }
+    }
+
+    /** Before drawing: in a code block the cursor must skip the header room above the first line and the room below the last. */
+    private void updateCaret() {
+        if (caret == null) return;
+        android.text.Layout lay = getLayout();
+        CharSequence t = getText();
+        int top = 0;
+        int bot = 0;
+        int color = Pal.accent;
+        if (lay != null && t instanceof android.text.Spanned && t.length() > 0) {
+            int sel = Math.max(0, Math.min(t.length(), getSelectionStart()));
+            int line = lay.getLineForOffset(sel);
+            int ls = lay.getLineStart(line);
+            int le = lay.getLineEnd(line);
+            android.text.Spanned sp = (android.text.Spanned) t;
+            for (RichText.Block b : sp.getSpans(ls, Math.max(ls, Math.min(t.length(), ls + 1)), RichText.Block.class)) {
+                int a = sp.getSpanStart(b);
+                int z = sp.getSpanEnd(b);
+                if (a < 0 || ls < a || ls >= Math.max(z, a + 1)) continue;
+                color = 0xFFE6E6E6;
+                if (ls == a) top = RichText.Block.topPad();
+                if (z <= le) bot = RichText.Block.botPad();
+            }
+        }
+        caret.set(color, top, bot);
     }
 
     /** Puts a CircleSpan over the box character of every to-do line (and removes stale ones). */
@@ -149,6 +237,12 @@ final class RichEditText extends EditText {
     private int tblC;
     private boolean tblTick;
     private boolean tblMoved;
+    private int tblZone = -1;
+
+    /** For the table tap being delivered: -1 not a counter cell, else 0 minus, 1 the number, 2 plus. */
+    int lastTableZone() {
+        return tblZone;
+    }
     private float tblLeft;
     private float tblTop;
 
@@ -179,6 +273,7 @@ final class RichEditText extends EditText {
         tblR = rc[0];
         tblC = rc[1];
         tblTick = t.onTick(xl, yl, getPaint());
+        tblZone = t.counterZone(xl, yl, getPaint());
         tblLeft = getTotalPaddingLeft() - getScrollX();
         tblTop = lineTop + getTotalPaddingTop() - getScrollY();
         tblMoved = false;
@@ -207,24 +302,69 @@ final class RichEditText extends EditText {
         linkListener = l;
     }
 
-    private RichText.Block copyBlock;
-    private boolean copyMoved;
+    private RichText.Block hitBlock;
+    private RichText.Counter hitCounter;
+    private int hitButton; // header: 0 = Copy, 1 = Paste; counter: 0 = minus, 1 = the number, 2 = plus
+    private boolean hitMoved;
 
-    /** The code block whose header "Copy" button is under this point, or null. */
-    private RichText.Block copyZoneAt(float x, float y) {
+    interface CounterListener {
+        /** zone: 0 = minus, 1 = the number, 2 = plus. */
+        void onCounter(RichText.Counter c, int zone);
+    }
+
+    private CounterListener counterL;
+
+    void setCounterListener(CounterListener l) {
+        counterL = l;
+    }
+
+    /** The code block whose header Copy / Paste button is under this point, or null (sets hitButton). */
+    private RichText.Block headButtonAt(float x, float y) {
         android.text.Layout l = getLayout();
         CharSequence t = getText();
         if (l == null || !(t instanceof android.text.Spanned) || t.length() == 0) return null;
-        float d = getResources().getDisplayMetrics().density;
         float yl = y - getTotalPaddingTop() + getScrollY();
         if (yl < 0 || yl > l.getHeight()) return null;
         int line = l.getLineForVertical((int) yl);
         int ls = l.getLineStart(line);
-        if (x < getWidth() - getCompoundPaddingRight() - 90 * d) return null;
         if (yl > l.getLineTop(line) + RichText.Block.headPx()) return null;
+        float right = getWidth() - getCompoundPaddingRight();
+        float copyL = right - RichText.Block.copyW();
+        float pasteR = copyL - RichText.Block.btnGap();
+        float pasteL = pasteR - RichText.Block.pasteW();
+        int which;
+        if (x >= copyL - 4 && x <= right + 4) which = 0;
+        else if (x >= pasteL - 4 && x <= pasteR + 4) which = 1;
+        else return null;
         android.text.Spanned sp = (android.text.Spanned) t;
         for (RichText.Block b : sp.getSpans(ls, Math.min(t.length(), ls + 1), RichText.Block.class)) {
-            if (sp.getSpanStart(b) == ls) return b;
+            if (sp.getSpanStart(b) == ls) {
+                hitButton = which;
+                return b;
+            }
+        }
+        return null;
+    }
+
+    /** The counter under this point (sets hitButton to the part: minus, number or plus), or null. */
+    private RichText.Counter counterAt(float x, float y) {
+        android.text.Layout l = getLayout();
+        CharSequence t = getText();
+        if (l == null || !(t instanceof android.text.Spanned) || t.length() == 0) return null;
+        float yl = y - getTotalPaddingTop() + getScrollY();
+        if (yl < 0 || yl > l.getHeight()) return null;
+        int line = l.getLineForVertical((int) yl);
+        int ls = l.getLineStart(line);
+        int le = l.getLineEnd(line);
+        android.text.Spanned sp = (android.text.Spanned) t;
+        for (RichText.Counter k : sp.getSpans(ls, le, RichText.Counter.class)) {
+            int s = sp.getSpanStart(k);
+            if (s < ls || l.getLineForOffset(s) != line || RichText.hiddenAt(t, s, s + 1)) continue;
+            float sx = getTotalPaddingLeft() + l.getPrimaryHorizontal(s) - getScrollX();
+            if (x < sx - 4 || x > sx + k.width + 4) continue;
+            float zone = Math.min(k.width / 3f, getTextSize() * 1.9f);
+            hitButton = x - sx < zone ? 0 : x - sx > k.width - zone ? 2 : 1;
+            return k;
         }
         return null;
     }
@@ -239,7 +379,54 @@ final class RichEditText extends EditText {
         android.content.ClipboardManager cm = (android.content.ClipboardManager)
                 getContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("code", code));
-        android.widget.Toast.makeText(getContext(), "Code copied", android.widget.Toast.LENGTH_SHORT).show();
+        RichText.copiedSpan = b;
+        RichText.copiedUntil = android.os.SystemClock.uptimeMillis() + 1600;
+        invalidate();
+        postDelayed(this::invalidate, 1700);
+    }
+
+    /** Pastes the clipboard (as plain text) into the block: over the selection if it is inside, else at the end. */
+    private void pasteCode(RichText.Block b) {
+        android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                getContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+        CharSequence clip = null;
+        if (cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip() != null && cm.getPrimaryClip().getItemCount() > 0) {
+            clip = cm.getPrimaryClip().getItemAt(0).coerceToText(getContext());
+        }
+        if (clip == null || clip.length() == 0) {
+            android.widget.Toast.makeText(getContext(), "Nothing to paste", android.widget.Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Editable e = getText();
+        int a = e.getSpanStart(b);
+        int z = e.getSpanEnd(b);
+        if (a < 0 || z <= a) return;
+        int selS = getSelectionStart();
+        int selE = getSelectionEnd();
+        int s;
+        int en;
+        if (hasFocus() && selS >= a && selE <= z && selS <= selE) {
+            s = selS;
+            en = selE;
+        } else {
+            s = z;
+            if (s > a && e.charAt(s - 1) == '\n') s--;
+            en = s;
+            boolean blank = e.subSequence(a, z).toString().trim().isEmpty();
+            if (blank) {
+                s = a;
+                en = z;
+                if (en > s && e.charAt(en - 1) == '\n') en--;
+            }
+        }
+        String text = clip.toString().replace("\r\n", "\n");
+        while (text.endsWith("\n")) text = text.substring(0, text.length() - 1);
+        int flags = e.getSpanFlags(b);
+        e.replace(s, en, text);
+        int newEnd = Math.max(s + text.length(), e.getSpanEnd(b));
+        e.setSpan(b, a, Math.max(newEnd, a + 1), flags);
+        setSelection(Math.min(e.length(), s + text.length()));
+        android.widget.Toast.makeText(getContext(), "Pasted", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     /** The note id of the link under this point, or -1. */
@@ -371,23 +558,38 @@ final class RichEditText extends EditText {
             return true;
         }
         if (paintL != null) return paintTouch(e);
-        // The Copy button in a code block's header: a tap copies the code, no cursor or keyboard.
+        // The buttons in a code block's header (Paste, Copy) and the - / + of a counter are ours too:
+        // a tap does the job with no cursor move and no keyboard.
         int actC = e.getActionMasked();
         if (actC == MotionEvent.ACTION_DOWN) {
-            copyBlock = copyZoneAt(e.getX(), e.getY());
-            copyMoved = false;
             downX = e.getX();
             downY = e.getY();
-            if (copyBlock != null) return true;
-        } else if (copyBlock != null) {
+            hitMoved = false;
+            hitBlock = null;
+            hitCounter = null;
+            hitBlock = headButtonAt(e.getX(), e.getY());
+            if (hitBlock == null) hitCounter = counterAt(e.getX(), e.getY());
+            if (hitBlock != null || hitCounter != null) return true;
+        } else if (hitBlock != null || hitCounter != null) {
             int slopC = ViewConfiguration.get(getContext()).getScaledTouchSlop();
-            if (Math.abs(e.getX() - downX) >= slopC || Math.abs(e.getY() - downY) >= slopC) copyMoved = true;
+            if (Math.abs(e.getX() - downX) >= slopC || Math.abs(e.getY() - downY) >= slopC) hitMoved = true;
             if (actC == MotionEvent.ACTION_UP) {
-                RichText.Block b = copyBlock;
-                copyBlock = null;
-                if (!copyMoved) copyCode(b);
+                RichText.Block b = hitBlock;
+                RichText.Counter k = hitCounter;
+                hitBlock = null;
+                hitCounter = null;
+                if (!hitMoved) {
+                    performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP);
+                    if (b != null) {
+                        if (hitButton == 0) copyCode(b);
+                        else pasteCode(b);
+                    } else if (counterL != null) {
+                        counterL.onCounter(k, hitButton);
+                    }
+                }
             } else if (actC == MotionEvent.ACTION_CANCEL) {
-                copyBlock = null;
+                hitBlock = null;
+                hitCounter = null;
             }
             return true;
         }
@@ -487,6 +689,7 @@ final class RichEditText extends EditText {
             p.setStyle(android.graphics.Paint.Style.FILL);
         }
         drawPanels(canvas);
+        updateCaret();
         super.onDraw(canvas);
     }
 

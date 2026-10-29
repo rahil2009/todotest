@@ -301,3 +301,19 @@ v3.39:
 - **Fonts**: import your own .ttf or .otf (Settings > Notebook > Note font > Import a font, or the Font tab > Import font). Press and hold an imported font in Settings to remove it. Imported fonts stay on the phone and are not part of backups.
 - **Water reminders**: Settings order is now toggle, Reminders per day, Water animation, Test, then Times last. New "Water animation" switch: the live water from the Drink water habit rises behind the full-screen alert. The alert also has a Custom button to type any amount.
 
+v3.40:
+- **Code block** now looks like a proper code card: a lighter header with the language on the left and Paste and Copy buttons on the right (Copy turns into a green "Copied" tick for a moment), a near-black body, and colours for keywords (red), strings (green), numbers (orange), comments (grey), names being assigned and calls (blue) and types (purple). Paste puts the clipboard text (plain) over the selection inside the block, or at its end.
+- **Cursor** in a code block is now the height of the text, not of the header and padding (Android 10 and newer).
+- **Counter** (Insert tab > Counter, the "plus-minus" tool): a number with - and + buttons that you can put anywhere in a note, such as "Tables moved: [-] 20 [+]". Tap - or + to move it by its step; tap the number to set its value or step, or to add or subtract an amount in one go (for example -9). The number is ordinary text under the buttons, so it still shows in search, previews and exports; edit the digits by hand and, if they stop being a number, the buttons go away and it stays plain text.
+
+
+v3.41:
+- **Counter in a table**: open a table, tap a body cell, then the "± Counter" chip in the table bar. The cell becomes a small - 20 + counter. Tap - or + to step it, tap the number to set the value or step (or add / subtract an amount), and use "Back to text" in that dialog to turn it into a plain cell again. The header row stays text. The cell is stored as "± 20" (or "± 20 ×5" with a step), so it still shows in search and exports.
+- Canvas: new boards for the counter (interactive, in a note and in a table), the code block, and the counter dialogs.
+
+v3.42 (test only, not wired into the app):
+- **Settings > Design lab** (tile near the bottom). Two tabs:
+  - **Time dials**: ten looks for the swipe-to-rotate time dial (Solid pill, Barrel, Neon, Big number, Ruler, Cards, Gradient, Flip tiles, Curve, Lens). Each is a working hour / minute / AM-PM dial with the same glide and tick feel as the real one, and shows the time you land on.
+  - **Slide to delete**: ten animations (Trash lid, Shred, Into the bin, Poof, Elastic, Circle wipe, Dust, Paper drop, Strike out, Motion trail). Slide the test task left past the threshold; nothing is deleted, the task comes back after a moment.
+  - Tap **Keep** on the ones you like; the list at the top shows your picks. Picks are stored on the phone only (prefs file "lab").
+- New files: LabActivity, LabDial, LabSwipe. The real dials and swipe-to-delete are untouched.

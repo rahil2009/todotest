@@ -55,6 +55,8 @@ final class RichText {
     static final int ALIGN = 17;
     /** A link to another note; the arg is that note's id. */
     static final int LINK = 18;
+    /** A number with - and + buttons; the span covers the digits themselves, the arg is the step. */
+    static final int COUNTER = 19;
     static final char RULE_CHAR = '\u2500';
     static final int MAX_INDENT = 5;
     static final int MIN_SIZE = 8;
@@ -246,7 +248,7 @@ final class RichText {
             p.setColor(Pal.dark ? 0xFF1E1B30 : 0xFFEEEBF9);
             c.drawRoundRect(r, 18 * density, 18 * density, p);
         } else {
-            float rad = 14 * density;
+            float rad = 12 * density;
             p.setColor(Block.EDGE);
             c.drawRoundRect(r, rad, rad, p);
             float bw = Math.max(1f, density);
@@ -257,95 +259,89 @@ final class RichText {
         }
     }
 
-    /** The code panel's header: window dots, the language, and a Copy button on the right. */
+    /** Set when a block's Copy button was pressed: the button shows "Copied" until this time. */
+    static Object copiedSpan;
+    static long copiedUntil;
+
+    /** The code panel's header: the language on the left, Paste and Copy buttons on the right. */
     private static void paintBlockHead(Canvas c, Paint p, Block b, android.graphics.RectF r, float bw) {
         float head = Block.headPx();
         float pad = panelExt();
-        p.setColor(0xFF1D1D19);
-        PANEL_RECT.set(r.left + bw, r.top + bw, r.right - bw, r.top + head);
-        float rad = 14 * density - bw;
+        float rad = 12 * density - bw;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(Block.HEAD_BG);
         c.save();
+        PANEL_RECT.set(r.left + bw, r.top + bw, r.right - bw, r.top + head);
         c.clipRect(PANEL_RECT);
         PANEL_RECT.set(r.left + bw, r.top + bw, r.right - bw, r.top + head + rad * 2);
         c.drawRoundRect(PANEL_RECT, rad, rad, p);
         c.restore();
-        p.setColor(Block.EDGE);
-        c.drawRect(r.left + bw, r.top + head, r.right - bw, r.top + head + bw, p);
         float cy = r.top + head / 2f;
-        float dot = 4.5f * density;
-        int[] cols = {0xFFFF5F57, 0xFFFEBC2E, 0xFF28C840};
-        float x = r.left + pad;
-        for (int col : cols) {
-            p.setColor(col);
-            c.drawCircle(x + dot, cy, dot, p);
-            x += dot * 2 + 6 * density;
-        }
-        p.setTypeface(NoteFonts.face(11));
-        p.setTextSize(11.5f * density);
+        p.setTypeface(NoteFonts.face(0));
         p.setFakeBoldText(false);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(12.5f * density);
         Paint.FontMetrics fm = p.getFontMetrics();
-        float base = cy - (fm.ascent + fm.descent) / 2f;
-        p.setColor(0xFF8A877B);
+        p.setColor(0xFFB4B4B4);
+        c.drawText(b.lang, r.left + pad, cy - (fm.ascent + fm.descent) / 2f, p);
+
+        float bh = 28 * density;
+        float right = r.right - pad;
+        boolean done = copiedSpan == b && android.os.SystemClock.uptimeMillis() < copiedUntil;
+        pill(c, p, right - Block.copyW(), cy - bh / 2, right, cy + bh / 2, done ? 2 : 0, done ? "Copied" : "Copy");
+        float pr = right - Block.copyW() - Block.btnGap();
+        pill(c, p, pr - Block.pasteW(), cy - bh / 2, pr, cy + bh / 2, 1, "Paste");
         p.setTextAlign(Paint.Align.LEFT);
-        c.drawText(b.lang, x + 4 * density, base, p);
-        p.setColor(0xFFA9B4FF);
-        p.setTextAlign(Paint.Align.RIGHT);
-        c.drawText("Copy", r.right - pad, base, p);
-        p.setTextAlign(Paint.Align.LEFT);
     }
 
-    private static void panelSlice(Canvas c, Paint p, float l, float t, float r, float b, float rad,
-                                   boolean first, boolean last, int fill, int border, float bw) {
-        float f = first ? rad : 0;
-        float g = last ? rad : 0;
-        PANEL_RECT.set(l, t, r, b);
-        PANEL_PATH.reset();
-        PANEL_PATH.addRoundRect(PANEL_RECT, new float[]{f, f, f, f, g, g, g, g}, android.graphics.Path.Direction.CW);
-        if (border != 0 && bw > 0) {
-            p.setColor(border);
-            c.drawPath(PANEL_PATH, p);
-            float fi = Math.max(0, f - bw);
-            float gi = Math.max(0, g - bw);
-            PANEL_RECT.set(l + bw, t + (first ? bw : 0), r - bw, b - (last ? bw : 0));
-            PANEL_PATH.reset();
-            PANEL_PATH.addRoundRect(PANEL_RECT, new float[]{fi, fi, fi, fi, gi, gi, gi, gi},
-                    android.graphics.Path.Direction.CW);
+    /** One outlined header button: an icon (0 copy, 1 paste, 2 tick) and a word, centred. */
+    private static void pill(Canvas c, Paint p, float l, float t, float r, float bt, int icon, String label) {
+        float h = bt - t;
+        float sw = Math.max(1f, density);
+        int ink = icon == 2 ? 0xFF8FE3A0 : 0xFFE6E6E6;
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(sw);
+        p.setColor(icon == 2 ? 0xFF4F8F5E : 0xFF555555);
+        PANEL_RECT.set(l + sw / 2, t + sw / 2, r - sw / 2, bt - sw / 2);
+        c.drawRoundRect(PANEL_RECT, h / 2, h / 2, p);
+        p.setTextSize(12.5f * density);
+        float tw = p.measureText(label);
+        float s = 13 * density;
+        float gap = 6 * density;
+        float x0 = l + ((r - l) - (s + gap + tw)) / 2f;
+        float cx = x0 + s / 2;
+        float cy = t + h / 2;
+        p.setColor(ink);
+        p.setStrokeWidth(Math.max(1.4f, 1.4f * density));
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeJoin(Paint.Join.ROUND);
+        if (icon == 0) { // two overlapping sheets
+            PANEL_RECT.set(cx - s * 0.5f, cy - s * 0.5f, cx + s * 0.2f, cy + s * 0.2f);
+            c.drawRoundRect(PANEL_RECT, 2 * density, 2 * density, p);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Block.HEAD_BG);
+            PANEL_RECT.set(cx - s * 0.2f, cy - s * 0.2f, cx + s * 0.5f, cy + s * 0.5f);
+            c.drawRoundRect(PANEL_RECT, 2 * density, 2 * density, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setColor(ink);
+            c.drawRoundRect(PANEL_RECT, 2 * density, 2 * density, p);
+        } else if (icon == 1) { // a clipboard
+            PANEL_RECT.set(cx - s * 0.42f, cy - s * 0.38f, cx + s * 0.42f, cy + s * 0.5f);
+            c.drawRoundRect(PANEL_RECT, 2 * density, 2 * density, p);
+            p.setStyle(Paint.Style.FILL);
+            PANEL_RECT.set(cx - s * 0.2f, cy - s * 0.52f, cx + s * 0.2f, cy - s * 0.26f);
+            c.drawRoundRect(PANEL_RECT, 1.5f * density, 1.5f * density, p);
+            p.setStyle(Paint.Style.STROKE);
+            c.drawLine(cx - s * 0.2f, cy + s * 0.02f, cx + s * 0.2f, cy + s * 0.02f, p);
+            c.drawLine(cx - s * 0.2f, cy + s * 0.27f, cx + s * 0.1f, cy + s * 0.27f, p);
+        } else { // tick
+            c.drawLine(cx - s * 0.42f, cy + s * 0.02f, cx - s * 0.1f, cy + s * 0.34f, p);
+            c.drawLine(cx - s * 0.1f, cy + s * 0.34f, cx + s * 0.46f, cy - s * 0.3f, p);
         }
-        p.setColor(fill);
-        c.drawPath(PANEL_PATH, p);
-    }
-
-    /** True when this line is the first line of the paragraph run the span covers. */
-    private static boolean firstLine(CharSequence text, Object span, int lineStart) {
-        return !(text instanceof Spanned) || ((Spanned) text).getSpanStart(span) >= lineStart;
-    }
-
-    /** True when this line is the last line of the paragraph run the span covers. */
-    private static boolean lastLine(CharSequence text, Object span, int lineEnd) {
-        return !(text instanceof Spanned) || ((Spanned) text).getSpanEnd(span) <= lineEnd;
-    }
-
-    /** Extra room above the first and below the last line of a panel. */
-    private static void panelPadding(CharSequence text, Object span, int start, int end, int padPx,
-                                     Paint.FontMetricsInt fm) {
-        panelPadding(text, span, start, end, padPx, padPx, fm);
-    }
-
-    private static void panelPadding(CharSequence text, Object span, int start, int end, int topPx, int botPx,
-                                     Paint.FontMetricsInt fm) {
-        if (!(text instanceof Spanned)) return;
-        Spanned sp = (Spanned) text;
-        int a = sp.getSpanStart(span);
-        int b = sp.getSpanEnd(span);
-        if (a < 0 || start < a || start >= Math.max(b, a + 1)) return; // a line outside this panel
-        if (start == a) {
-            fm.ascent -= topPx;
-            fm.top -= topPx;
-        }
-        if (b <= end) {
-            fm.descent += botPx;
-            fm.bottom += botPx;
-        }
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(ink);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        c.drawText(label, x0 + s + gap, cy - (fm.ascent + fm.descent) / 2f, p);
     }
 
     /**
@@ -580,15 +576,37 @@ final class RichText {
      */
     static final class Block extends MetricAffectingSpan implements LineBackgroundSpan,
             android.text.style.LeadingMarginSpan, android.text.style.LineHeightSpan {
-        static final int BG = 0xFF0B0B0A;
-        static final int EDGE = 0xFF2A2A25;
-        static final int FG = 0xFFE4E1D6;
+        static final int BG = 0xFF0D0D0D;
+        static final int HEAD_BG = 0xFF2F2F2F;
+        static final int EDGE = 0xFF2F2F2F;
+        static final int FG = 0xFFE6E6E6;
         /** Shown in the panel's header; guessed from the code by {@link #highlight}. */
         String lang = "code";
 
-        /** Height of the header strip (window dots, language, Copy) at the top of the panel. */
+        /** Height of the header strip (language label, Paste and Copy buttons) at the top of the panel. */
         static int headPx() {
-            return Math.round(32 * density);
+            return Math.round(40 * density);
+        }
+
+        /** Room above the first line (the header and a gap) and below the last line of a block. */
+        static int topPad() {
+            return headPx() + Math.round(10 * density);
+        }
+
+        static int botPad() {
+            return Math.round(14 * density);
+        }
+
+        static float copyW() {
+            return 78 * density;
+        }
+
+        static float pasteW() {
+            return 84 * density;
+        }
+
+        static float btnGap() {
+            return 8 * density;
         }
 
         @Override
@@ -605,7 +623,7 @@ final class RichText {
         @Override
         public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
                                  Paint.FontMetricsInt fm) {
-            panelPadding(text, this, start, end, headPx() + Math.round(8 * density), Math.round(14 * density), fm);
+            panelPadding(text, this, start, end, topPad(), botPad(), fm);
         }
 
         @Override
@@ -643,12 +661,12 @@ final class RichText {
         }
     }
 
-    private static final int SYN_KEYWORD = 0xFFFF9C73;
-    private static final int SYN_STRING = 0xFF9FE08A;
-    private static final int SYN_NUMBER = 0xFFE8C77A;
-    private static final int SYN_COMMENT = 0xFF7C796D;
-    private static final int SYN_FUNC = 0xFFA9B4FF;
-    private static final int SYN_TYPE = 0xFF7FD6D0;
+    private static final int SYN_KEYWORD = 0xFFFF7B72;
+    private static final int SYN_STRING = 0xFFA5D6A7;
+    private static final int SYN_NUMBER = 0xFFFFB86C;
+    private static final int SYN_COMMENT = 0xFF8B949E;
+    private static final int SYN_FUNC = 0xFF79B8FF;
+    private static final int SYN_TYPE = 0xFFD2A8FF;
 
     private static final java.util.HashSet<String> KEYWORDS = new java.util.HashSet<>(java.util.Arrays.asList(
             "if", "else", "elif", "for", "while", "do", "switch", "case", "break", "continue", "return", "function",
@@ -735,6 +753,8 @@ final class RichText {
                         syn(e, a + i, a + j, SYN_KEYWORD);
                     } else if (k < n && t.charAt(k) == '(') {
                         syn(e, a + i, a + j, SYN_FUNC);
+                    } else if (k < n && t.charAt(k) == '=' && (k + 1 >= n || t.charAt(k + 1) != '=')) {
+                        syn(e, a + i, a + j, SYN_FUNC); // a name being assigned, like records = ...
                     } else if (Character.isUpperCase(ch) && j - i > 1) {
                         syn(e, a + i, a + j, SYN_TYPE);
                     }
@@ -748,6 +768,128 @@ final class RichText {
 
     private static void syn(Editable e, int a, int b, int color) {
         if (b > a) e.setSpan(new Syn(color), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    // ------------------------------------------------------------- counters
+
+    /**
+     * A number with - and + buttons, usable anywhere in a note ("Tables moved: [-] 20 [+]"). The span covers the
+     * digits themselves, so the value is ordinary text (it shows in search, exports and previews) and the span only
+     * draws it as buttons. The arg is the step each tap moves it by.
+     */
+    static final class Counter extends android.text.style.ReplacementSpan {
+        final int step;
+        /** Width as last measured, for finding which part a tap landed on. */
+        float width;
+
+        Counter(int step) {
+            this.step = Math.max(1, Math.min(9999, step));
+        }
+
+        static float btn(Paint p) {
+            return p.getTextSize() * 1.5f;
+        }
+
+        @Override
+        public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+            width = btn(p) * 2 + p.measureText(text, start, end) + p.getTextSize() * 0.7f;
+            return Math.round(width);
+        }
+
+        @Override
+        public void draw(Canvas c, CharSequence text, int start, int end, float x, int top, int y,
+                         int bottom, Paint p) {
+            if (hiddenAt(text, start, end)) return;
+            int oldColor = p.getColor();
+            Paint.Style oldStyle = p.getStyle();
+            float oldW = p.getStrokeWidth();
+            Paint.Align oldAlign = p.getTextAlign();
+            float ts = p.getTextSize();
+            Paint.FontMetrics fm = p.getFontMetrics();
+            float cy = y + (fm.ascent + fm.descent) / 2f;
+            float h = ts * 1.25f;
+            float btn = btn(p);
+            float w = btn * 2 + p.measureText(text, start, end) + ts * 0.7f;
+            width = w;
+            p.setStyle(Paint.Style.FILL);
+            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x2E000000 : 0x24000000));
+            PANEL_RECT.set(x, cy - h / 2, x + w, cy + h / 2);
+            c.drawRoundRect(PANEL_RECT, h / 2, h / 2, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(1.6f, ts * 0.1f));
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setColor(Pal.accent);
+            float g = btn * 0.2f;
+            c.drawLine(x + btn / 2 - g, cy, x + btn / 2 + g, cy, p); // minus
+            float px = x + w - btn / 2;
+            c.drawLine(px - g, cy, px + g, cy, p); // plus
+            c.drawLine(px, cy - g, px, cy + g, p);
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Pal.ink);
+            p.setTextAlign(Paint.Align.CENTER);
+            c.drawText(text, start, end, x + w / 2, y, p);
+            p.setTextAlign(oldAlign);
+            p.setColor(oldColor);
+            p.setStyle(oldStyle);
+            p.setStrokeWidth(oldW);
+        }
+    }
+
+    private static boolean validNumber(CharSequence t) {
+        int n = t.length();
+        if (n == 0 || n > 8) return false;
+        int i = t.charAt(0) == '-' ? 1 : 0;
+        if (i >= n) return false;
+        for (; i < n; i++) if (t.charAt(i) < '0' || t.charAt(i) > '9') return false;
+        return true;
+    }
+
+    /** The number a counter shows (0 if its text is not a number). */
+    static long counterValue(Spanned text, Counter c) {
+        int a = text.getSpanStart(c);
+        int b = text.getSpanEnd(c);
+        if (a < 0 || b <= a) return 0;
+        CharSequence t = text.subSequence(a, b);
+        if (!validNumber(t)) return 0;
+        try {
+            return Long.parseLong(t.toString());
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    /** A counter whose digits were edited into something that is not a number goes back to plain text. */
+    static void healCounters(Editable e) {
+        for (Counter k : e.getSpans(0, e.length(), Counter.class)) {
+            int a = e.getSpanStart(k);
+            int b = e.getSpanEnd(k);
+            if (a < 0 || b <= a || !validNumber(e.subSequence(a, b))) e.removeSpan(k);
+        }
+    }
+
+    /** Writes a new value (and step) into a counter. */
+    static void setCounter(Editable e, Counter old, long value, int step) {
+        int a = e.getSpanStart(old);
+        int b = e.getSpanEnd(old);
+        if (a < 0 || b <= a) return;
+        value = Math.max(-9_999_999L, Math.min(9_999_999L, value));
+        String num = Long.toString(value);
+        e.removeSpan(old);
+        e.replace(a, b, num);
+        e.setSpan(new Counter(step), a, a + num.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    /** Inserts "Name: 0" (the number being a counter) at the selection; returns where the number starts. */
+    static int insertCounter(Editable e, int selStart, int selEnd, String name, long value, int step) {
+        String label = name == null || name.trim().isEmpty() ? ""
+                : name.trim() + (name.trim().endsWith(":") ? " " : ": ");
+        value = Math.max(-9_999_999L, Math.min(9_999_999L, value));
+        String num = Long.toString(value);
+        boolean spaceAfter = selEnd < e.length() && !Character.isWhitespace(e.charAt(selEnd));
+        e.replace(selStart, selEnd, label + num + (spaceAfter ? " " : ""));
+        int at = selStart + label.length();
+        e.setSpan(new Counter(step), at, at + num.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return at;
     }
 
     // ------------------------------------------------------------- tables
@@ -806,6 +948,92 @@ final class RichText {
         static String compose(int state, String label) {
             if (state == 0) return label;
             return (state == 2 ? CHECK_ON : CHECK_OFF) + label;
+        }
+
+        /** A cell that is a counter starts with this; then the number, and " x5" when the step is not 1. */
+        static final String COUNT = "\u00B1 ";
+
+        /** {value, step} of a counter cell, or null for any other cell. */
+        static long[] counterOf(String cell) {
+            if (cell == null || !cell.startsWith(COUNT)) return null;
+            String rest = cell.substring(COUNT.length()).trim();
+            long step = 1;
+            int x = rest.indexOf('\u00D7');
+            if (x >= 0) {
+                try {
+                    step = Math.max(1, Math.min(9999, Long.parseLong(rest.substring(x + 1).trim())));
+                } catch (NumberFormatException ex) {
+                    return null;
+                }
+                rest = rest.substring(0, x).trim();
+            }
+            if (!validNumber(rest)) return null;
+            try {
+                return new long[]{Long.parseLong(rest), step};
+            } catch (NumberFormatException ex) {
+                return null;
+            }
+        }
+
+        static String counterCell(long value, long step) {
+            value = Math.max(-9_999_999L, Math.min(9_999_999L, value));
+            return COUNT + value + (step > 1 ? " \u00D7" + step : "");
+        }
+
+        /** Where the counter pill sits inside a cell: {left from the cell's left edge, width, button width}. */
+        float[] pill(Paint p, String cell) {
+            long[] cv = counterOf(cell);
+            if (cv == null) return null;
+            float ts = p.getTextSize();
+            float room = colW() - 2 * padX(p);
+            float num = p.measureText(Long.toString(cv[0]));
+            float btn = Math.min(ts * 1.5f, Math.max(ts * 0.9f, (room - num - ts * 0.5f) / 2f));
+            float w = Math.min(room, btn * 2 + num + ts * 0.5f);
+            return new float[]{padX(p), w, btn};
+        }
+
+        /** For a tap at (xl, yl) from the table's top-left: -1 not a counter cell, else 0 minus, 1 number, 2 plus. */
+        int counterZone(float xl, float yl, Paint p) {
+            int[] rc = cellAt(xl, yl, p);
+            if (rc == null) return -1;
+            float[] g = pill(p, cells[rc[0]][rc[1]]);
+            if (g == null) return -1;
+            float x = xl - rc[1] * colW() - g[0];
+            if (x >= -6 * density && x < g[2]) return 0;
+            if (x > g[1] - g[2] && x <= g[1] + 6 * density) return 2;
+            return 1;
+        }
+
+        private void drawPill(Canvas c, TextPaint tp, float left, float cy, float w, float btn, long value) {
+            float ts = tp.getTextSize();
+            float h = ts * 1.25f;
+            Paint.Style oldStyle = tp.getStyle();
+            float oldW = tp.getStrokeWidth();
+            Paint.Align oldAlign = tp.getTextAlign();
+            boolean oldFake = tp.isFakeBoldText();
+            tp.setFakeBoldText(false);
+            tp.setStyle(Paint.Style.FILL);
+            tp.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x2E000000 : 0x24000000));
+            PANEL_RECT.set(left, cy - h / 2, left + w, cy + h / 2);
+            c.drawRoundRect(PANEL_RECT, h / 2, h / 2, tp);
+            tp.setStyle(Paint.Style.STROKE);
+            tp.setStrokeWidth(Math.max(1.6f, ts * 0.1f));
+            tp.setStrokeCap(Paint.Cap.ROUND);
+            tp.setColor(Pal.accent);
+            float g = btn * 0.2f;
+            c.drawLine(left + btn / 2 - g, cy, left + btn / 2 + g, cy, tp);
+            float px = left + w - btn / 2;
+            c.drawLine(px - g, cy, px + g, cy, tp);
+            c.drawLine(px, cy - g, px, cy + g, tp);
+            tp.setStyle(Paint.Style.FILL);
+            tp.setColor(Pal.ink);
+            tp.setTextAlign(Paint.Align.CENTER);
+            Paint.FontMetrics fm = tp.getFontMetrics();
+            c.drawText(Long.toString(value), left + w / 2, cy - (fm.ascent + fm.descent) / 2f, tp);
+            tp.setTextAlign(oldAlign);
+            tp.setStyle(oldStyle);
+            tp.setStrokeWidth(oldW);
+            tp.setFakeBoldText(oldFake);
         }
 
         /** Row height in px for the paint the table is drawn with. */
@@ -991,6 +1219,12 @@ final class RichText {
                 float base = t0 + r * rh + rh / 2f - (fm.ascent + fm.descent) / 2f;
                 for (int k = 0; k < cols; k++) {
                     String raw = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
+                    float[] pg = r == 0 ? null : pill(tp, raw);
+                    if (pg != null) { // a counter cell: [-] 20 [+]
+                        drawPill(c, tp, x + k * colW + pg[0], t0 + r * rh + rh / 2f, pg[1], pg[2],
+                                counterOf(raw)[0]);
+                        continue;
+                    }
                     int st = tick(raw);
                     String cell = label(raw);
                     float tx = x + k * colW + pad;
@@ -1226,6 +1460,8 @@ final class RichText {
                 return new Align(arg);
             case LINK:
                 return new NoteLink(arg);
+            case COUNTER:
+                return new Counter(arg);
             default:
                 return new Block();
         }
@@ -1252,6 +1488,7 @@ final class RichText {
         if (o instanceof Callout) return CALLOUT;
         if (o instanceof Align) return ALIGN;
         if (o instanceof NoteLink) return LINK;
+        if (o instanceof Counter) return COUNTER;
         return -1;
     }
 
@@ -1263,6 +1500,7 @@ final class RichText {
         if (o instanceof Fnt) return ((Fnt) o).idx;
         if (o instanceof Align) return ((Align) o).mode;
         if (o instanceof NoteLink) return ((NoteLink) o).noteId;
+        if (o instanceof Counter) return ((Counter) o).step;
         return o instanceof Hl ? ((Hl) o).color : 0;
     }
 
@@ -2005,12 +2243,13 @@ final class RichText {
                     continue;
                 }
                 if (a < b) out.setSpan(make(r.getInt(0), r.optInt(3)), a, b,
-                        r.getInt(0) == HIDE || r.getInt(0) == RULE || r.getInt(0) == LINK
+                        r.getInt(0) == HIDE || r.getInt(0) == RULE || r.getInt(0) == LINK || r.getInt(0) == COUNTER
                                 ? Spanned.SPAN_EXCLUSIVE_EXCLUSIVE : FLAGS);
             }
             for (Object blk : out.getSpans(0, out.length(), Block.class)) { // old notes: drop code-in-block
                 apply(out, CODE, out.getSpanStart(blk), out.getSpanEnd(blk), 0, false);
             }
+            healCounters(out);
             normalize(out); // heals notes saved with stacked / split paragraph spans
         } catch (JSONException ex) {
             out.clear();

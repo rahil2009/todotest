@@ -305,6 +305,7 @@ public class NoteEditorActivity extends Activity {
             changed();
         }));
         body.setLinkTapListener(this::openNoteLink);
+        body.setCounterListener(this::onCounterTap);
         body.setSelectionListener((s, e) -> {
             if (!typing && !busy && !(s == e && s == expectCursor)) pending.clear();
             refreshToolbar();
@@ -754,6 +755,7 @@ public class NoteEditorActivity extends Activity {
     private static final int TIME_KEY = -15;
     private static final int DATETIME_KEY = -16;
     private static final int IMPORT_FONT_KEY = -17;
+    private static final int COUNTER_KEY = -18;
     private static final int REQ_FONT = 72;
     private static final int FONT_BASE = 1000;
     private static final int CASE_BASE = 2000;
@@ -918,6 +920,7 @@ public class NoteEditorActivity extends Activity {
                         tool(RichText.QUOTE, "“", Typeface.BOLD, "Quote", "Quote"),
                         tool(RichText.CALLOUT, "▤", Typeface.BOLD, "Callout", "Callout box"),
                         tool(DIVIDER_KEY, "―", Typeface.BOLD, "Divider", "Divider line"),
+                        tool(COUNTER_KEY, "±", Typeface.BOLD, "Counter", "A number with minus and plus buttons"),
                         tool(RichText.BLOCK, "</>", Typeface.BOLD, "Code block", "Code block"),
                         tool(LINK_KEY, "↗", Typeface.BOLD, "Note link", "Link to another note"),
                         tool(DATE_KEY, "◷", Typeface.BOLD, "Date", "Insert today's date"),
@@ -1268,6 +1271,148 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
+    /** A tap on a counter: minus and plus move it by its step, the number opens the editor. */
+    private void onCounterTap(RichText.Counter c, int zone) {
+        Editable e = body.getText();
+        if (e.getSpanStart(c) < 0) return;
+        if (zone == 1) {
+            counterDialog(c);
+            return;
+        }
+        long v = RichText.counterValue(e, c) + (zone == 2 ? c.step : -c.step);
+        commitNow();
+        busy = true;
+        RichText.setCounter(e, c, v, c.step);
+        busy = false;
+        changed();
+    }
+
+    private EditText counterField(LinearLayout box, String label, String hint, String value, boolean signed) {
+        TextView l = new TextView(this);
+        l.setText(label);
+        l.setTextSize(12);
+        l.setTextColor(Pal.muted);
+        l.setPadding(0, dp(10), 0, dp(2));
+        box.addView(l);
+        EditText f = new EditText(this);
+        f.setSingleLine(true);
+        f.setTextSize(17);
+        f.setTextColor(Pal.ink);
+        f.setHint(hint);
+        if (signed) {
+            f.setInputType(android.text.InputType.TYPE_CLASS_NUMBER | android.text.InputType.TYPE_NUMBER_FLAG_SIGNED);
+        } else if (hint.startsWith("e.g.")) {
+            f.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        }
+        f.setText(value);
+        f.setSelection(f.getText().length());
+        box.addView(f, new LinearLayout.LayoutParams(-1, -2));
+        return f;
+    }
+
+    private static long parseLong(String s, long fallback) {
+        try {
+            return Long.parseLong(s.trim());
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    /**
+     * Makes a counter (existing == null: asks for a name, a start value and a step, and inserts "Name: 0" with
+     * the buttons) or edits one (value, step, and an "add or subtract" box for typing a whole amount at once).
+     */
+    private void counterDialog(final RichText.Counter existing) {
+        final Editable e = body.getText();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(22), dp(4), dp(22), 0);
+        final long cur = existing == null ? 0 : RichText.counterValue(e, existing);
+        final EditText name = existing == null
+                ? counterField(box, "Name (optional)", "e.g. Tables moved", "", false) : null;
+        final EditText val = counterField(box, existing == null ? "Start at" : "Value", "0", String.valueOf(cur), true);
+        final EditText step = counterField(box, "Each tap on - or + moves it by", "1",
+                String.valueOf(existing == null ? 1 : existing.step), false);
+        step.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        final EditText delta = existing == null ? null
+                : counterField(box, "Or add / subtract an amount now", "e.g. 9 or -3", "", true);
+        new Dlg.Builder(this)
+                .setTitle(existing == null ? "New counter" : "Edit counter")
+                .setView(box)
+                .setPositiveButton(existing == null ? "Insert" : "Save", (d, w) -> {
+                    int st = (int) Math.max(1, Math.min(9999, parseLong(step.getText().toString(), 1)));
+                    long v = parseLong(val.getText().toString(), 0);
+                    if (existing == null) {
+                        commitNow();
+                        busy = true;
+                        int at = RichText.insertCounter(e, selStart(), selEnd(), name.getText().toString(), v, st);
+                        busy = false;
+                        long shown = Math.max(-9_999_999L, Math.min(9_999_999L, v));
+                        body.setSelection(Math.min(e.length(), at + Long.toString(shown).length()));
+                        changed();
+                        refreshToolbar();
+                    } else if (e.getSpanStart(existing) >= 0) {
+                        v += parseLong(delta.getText().toString(), 0);
+                        commitNow();
+                        busy = true;
+                        RichText.setCounter(e, existing, v, st);
+                        busy = false;
+                        changed();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Makes a table cell a counter (starting from the number already in it), edits one, or turns it back to text. */
+    private void tableCounterDialog(final RichText.Tbl t, final int r, final int c) {
+        final String old = t.cells[r][c];
+        long[] cv = RichText.Tbl.counterOf(old);
+        long start = 0;
+        if (cv != null) {
+            start = cv[0];
+        } else {
+            try {
+                start = Long.parseLong(RichText.Tbl.label(old).trim());
+            } catch (NumberFormatException ex) {
+                start = 0;
+            }
+        }
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(22), dp(4), dp(22), 0);
+        final EditText val = counterField(box, "Value", "0", String.valueOf(start), true);
+        final EditText step = counterField(box, "Each tap on - or + moves it by", "1",
+                String.valueOf(cv == null ? 1 : cv[1]), false);
+        step.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        final EditText delta = counterField(box, "Or add / subtract an amount now", "e.g. 9 or -3", "", true);
+        Dlg.Builder b = new Dlg.Builder(this);
+        b.setTitle(cv == null ? "Counter in this cell" : "Edit counter")
+                .setView(box)
+                .setPositiveButton("Save", (d, w) -> {
+                    int st = (int) Math.max(1, Math.min(9999, parseLong(step.getText().toString(), 1)));
+                    long v = parseLong(val.getText().toString(), 0) + parseLong(delta.getText().toString(), 0);
+                    if (body.getText().getSpanStart(t) < 0 || r >= t.rows() || c >= t.cols()) return;
+                    commitNow();
+                    t.cells[r][c] = RichText.Tbl.counterCell(v, st);
+                    RichText.refresh(body.getText(), t);
+                    changed();
+                    body.invalidate();
+                })
+                .setNegativeButton("Cancel", null);
+        if (cv != null) {
+            b.setNeutralButton("Back to text", (d, w) -> {
+                if (body.getText().getSpanStart(t) < 0 || r >= t.rows() || c >= t.cols()) return;
+                commitNow();
+                t.cells[r][c] = String.valueOf(cv[0]);
+                RichText.refresh(body.getText(), t);
+                changed();
+                body.invalidate();
+            });
+        }
+        b.show();
+    }
+
     private void insertTableBlock(RichText.Tbl t) {
         commitNow();
         Editable e = body.getText();
@@ -1486,6 +1631,21 @@ public class NoteEditorActivity extends Activity {
 
     private void onTableTap(RichText.Tbl t, int r, int c, boolean onTick) {
         if (paintMode || reading) return;
+        long[] cv = r == 0 ? null : RichText.Tbl.counterOf(t.cells[r][c]);
+        if (cv != null) { // a counter cell: - and + step it, the number opens its editor
+            if (cellOpen) flushCell();
+            int zone = body.lastTableZone();
+            if (zone == 0 || zone == 2) {
+                commitNow();
+                t.cells[r][c] = RichText.Tbl.counterCell(cv[0] + (zone == 2 ? cv[1] : -cv[1]), cv[1]);
+                RichText.refresh(body.getText(), t);
+                changed();
+                body.invalidate();
+            } else {
+                tableCounterDialog(t, r, c);
+            }
+            return;
+        }
         if (onTick) {
             flushCell();
             commitNow();
@@ -1648,7 +1808,7 @@ public class NoteEditorActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(8), dp(6), dp(8), dp(6));
-        String[] names = {"Done", "+ Row", "+ Col", "− Row", "− Col", "Tick", "←", "→", "↑", "↓", "Delete table"};
+        String[] names = {"Done", "+ Row", "+ Col", "− Row", "− Col", "Tick", "←", "→", "↑", "↓", "± Counter", "Delete table"};
         for (int i = 0; i < names.length; i++) {
             final int op = i;
             TextView chip = toolChip(names[i], () -> tableOp(op));
@@ -1722,6 +1882,14 @@ public class NoteEditorActivity extends Activity {
                 c = nc;
                 break;
             }
+            case 10:
+                if (r == 0) {
+                    Toast.makeText(this, "Header cells are text; put a counter in a row below", Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                dropCell();
+                tableCounterDialog(t, r, c);
+                return;
             default: {
                 int a = e.getSpanStart(t);
                 dropCell();
@@ -1891,6 +2059,10 @@ public class NoteEditorActivity extends Activity {
         }
         if (key >= FONT_BASE && key < FONT_BASE + 100) {
             applyFont(key - FONT_BASE);
+            return;
+        }
+        if (key == COUNTER_KEY) {
+            counterDialog(null);
             return;
         }
         if (key == IMPORT_FONT_KEY) {

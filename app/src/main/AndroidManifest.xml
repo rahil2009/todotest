@@ -135,6 +135,11 @@
             android:parentActivityName=".NotesActivity" />
 
         <activity
+            android:name=".LabActivity"
+            android:exported="false"
+            android:parentActivityName=".SettingsActivity" />
+
+        <activity
             android:name=".BinActivity"
             android:exported="false"
             android:parentActivityName=".NotesActivity" />
