@@ -752,6 +752,9 @@ public class NoteEditorActivity extends Activity {
     private static final int DIVIDER_KEY = -13;
     private static final int DATE_KEY = -14;
     private static final int TIME_KEY = -15;
+    private static final int DATETIME_KEY = -16;
+    private static final int IMPORT_FONT_KEY = -17;
+    private static final int REQ_FONT = 72;
     private static final int FONT_BASE = 1000;
     private static final int CASE_BASE = 2000;
     private static final int ACT_BASE = 3000; // templates and Markdown actions
@@ -767,6 +770,58 @@ public class NoteEditorActivity extends Activity {
     private final java.util.ArrayList<TextView> hlSwatches = new java.util.ArrayList<>();
 
     /** One button of the tool row: a glyph over a small label. */
+    /** A toolbar glyph drawn in the text colour: 0 = a to-do box with a tick, 1 = a calendar with a clock. */
+    private static final class GlyphSpan extends android.text.style.ReplacementSpan {
+        private final int kind;
+
+        GlyphSpan(int kind) {
+            this.kind = kind;
+        }
+
+        @Override
+        public int getSize(android.graphics.Paint p, CharSequence text, int start, int end,
+                           android.graphics.Paint.FontMetricsInt fm) {
+            return Math.round(p.getTextSize() * 1.15f);
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas c, CharSequence text, int start, int end, float x, int top,
+                         int y, int bottom, android.graphics.Paint p) {
+            int oldC = p.getColor();
+            android.graphics.Paint.Style oldS = p.getStyle();
+            float oldW = p.getStrokeWidth();
+            float u = p.getTextSize();
+            float w = u * 1.15f;
+            float cx = x + w / 2f;
+            float cy = y - u * 0.34f;
+            float h = u * 0.5f; // half size of the box
+            p.setStyle(android.graphics.Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(1.6f, u * 0.1f));
+            p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+            p.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+            if (kind == 0) {
+                c.drawRoundRect(cx - h, cy - h, cx + h, cy + h, u * 0.2f, u * 0.2f, p);
+                android.graphics.Path tick = new android.graphics.Path();
+                tick.moveTo(cx - h * 0.5f, cy + h * 0.02f);
+                tick.lineTo(cx - h * 0.1f, cy + h * 0.42f);
+                tick.lineTo(cx + h * 0.55f, cy - h * 0.4f);
+                c.drawPath(tick, p);
+            } else {
+                c.drawRoundRect(cx - h, cy - h * 0.8f, cx + h, cy + h, u * 0.16f, u * 0.16f, p);
+                c.drawLine(cx - h, cy - h * 0.25f, cx + h, cy - h * 0.25f, p);
+                c.drawLine(cx - h * 0.5f, cy - h * 1.1f, cx - h * 0.5f, cy - h * 0.55f, p);
+                c.drawLine(cx + h * 0.5f, cy - h * 1.1f, cx + h * 0.5f, cy - h * 0.55f, p);
+                p.setStyle(android.graphics.Paint.Style.FILL);
+                c.drawCircle(cx - h * 0.35f, cy + h * 0.35f, u * 0.05f, p);
+                c.drawCircle(cx + h * 0.05f, cy + h * 0.35f, u * 0.05f, p);
+                c.drawCircle(cx + h * 0.45f, cy + h * 0.35f, u * 0.05f, p);
+            }
+            p.setColor(oldC);
+            p.setStyle(oldS);
+            p.setStrokeWidth(oldW);
+        }
+    }
+
     private static final class Tool {
         LinearLayout box;
         TextView glyph;
@@ -849,7 +904,7 @@ public class NoteEditorActivity extends Activity {
                 return toolRow(
                         tool(BULLET_KEY, "•", Typeface.BOLD, "Bullets", "Bullet list"),
                         tool(NUM_KEY, "1.", Typeface.BOLD, "Numbered", "Numbered list"),
-                        tool(CHECK_KEY, "(✓)", Typeface.BOLD, "To-do", "To-do list"),
+                        tool(CHECK_KEY, "\uFFFC", Typeface.BOLD, "To-do", "To-do list"),
                         tool(TOGGLE_KEY, "▸", Typeface.BOLD, "Toggle", "Toggle: hide or show the lines under it"),
                         tool(OUT_KEY, "←", Typeface.BOLD, "Out", "Move item out one level"),
                         tool(IN_KEY, "→", Typeface.BOLD, "In", "Nest item one level in"),
@@ -866,7 +921,8 @@ public class NoteEditorActivity extends Activity {
                         tool(RichText.BLOCK, "</>", Typeface.BOLD, "Code block", "Code block"),
                         tool(LINK_KEY, "↗", Typeface.BOLD, "Note link", "Link to another note"),
                         tool(DATE_KEY, "◷", Typeface.BOLD, "Date", "Insert today's date"),
-                        tool(TIME_KEY, "⏱", Typeface.BOLD, "Time", "Insert the time"));
+                        tool(TIME_KEY, "⏱", Typeface.BOLD, "Time", "Insert the time"),
+                        tool(DATETIME_KEY, "\uFFFC", Typeface.BOLD, "Date+time", "Insert date and time together"));
             case 3: {
                 Tool[] t = new Tool[CaseTools.NAMES.length];
                 for (int k = 0; k < t.length; k++) {
@@ -882,14 +938,17 @@ public class NoteEditorActivity extends Activity {
                 java.util.List<Tool> fl = new java.util.ArrayList<>();
                 for (int k = 0; k < NoteFonts.count(); k++) {
                     if (!NoteFonts.shown(k)) continue;
-                    Tool ft = tool(FONT_BASE + k, "Ag", Typeface.NORMAL, k == 0 ? "Default" : NoteFonts.NAMES[k],
-                            NoteFonts.NOTES[k]);
+                    Tool ft = tool(FONT_BASE + k, "Ag", Typeface.NORMAL, k == 0 ? "Default" : NoteFonts.name(k),
+                            NoteFonts.note(k));
                     ft.glyph.setTypeface(NoteFonts.face(k));
                     ft.glyph.setTag("keepfont");
                     ft.glyph.setTextSize(22);
                     ft.box.setMinimumWidth(dp(74));
                     fl.add(ft);
                 }
+                Tool imp = tool(IMPORT_FONT_KEY, "+", Typeface.BOLD, "Import font", "Import a .ttf or .otf font file");
+                imp.box.setMinimumWidth(dp(74));
+                fl.add(imp);
                 return toolRow(fl.toArray(new Tool[0]));
             }
             case 6:
@@ -971,6 +1030,11 @@ public class NoteEditorActivity extends Activity {
         t.glyph.setTypeface(Typeface.DEFAULT, style);
         t.glyph.setGravity(Gravity.CENTER);
         t.glyph.setSingleLine(true);
+        if (key == CHECK_KEY || key == DATETIME_KEY) {
+            android.text.SpannableString gs = new android.text.SpannableString("\uFFFC");
+            gs.setSpan(new GlyphSpan(key == CHECK_KEY ? 0 : 1), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            t.glyph.setText(gs);
+        }
         if (key == RichText.UNDER) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
         if (key == RichText.STRIKE) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
         if (key == RichText.CODE || key == RichText.BLOCK) t.glyph.setTypeface(Typeface.MONOSPACE, key == RichText.BLOCK ? Typeface.BOLD : Typeface.NORMAL);
@@ -980,6 +1044,11 @@ public class NoteEditorActivity extends Activity {
             t.glyph.setTextSize(30);
             t.glyph.setPadding(0, dp(6), 0, 0);
             t.glyph.setIncludeFontPadding(false);
+            // same height as every other glyph, so the "Quote" label lines up with the rest of the row
+            TextView ref = new TextView(this);
+            ref.setTextSize(18);
+            android.graphics.Paint.FontMetricsInt fmi = ref.getPaint().getFontMetricsInt();
+            t.glyph.setHeight(fmi.bottom - fmi.top);
         }
         t.label = new TextView(this);
         t.label.setText(label);
@@ -1181,8 +1250,8 @@ public class NoteEditorActivity extends Activity {
 
     // ----- the tools themselves
 
-    private void dayStamp(boolean time) {
-        String f = time ? "HH:mm" : "EEE, d MMM yyyy";
+    private void dayStamp(int what) {
+        String f = what == 1 ? "HH:mm" : what == 2 ? "EEE, d MMM yyyy, HH:mm" : "EEE, d MMM yyyy";
         insertPlain(new java.text.SimpleDateFormat(f, java.util.Locale.getDefault()).format(new java.util.Date()));
     }
 
@@ -1345,6 +1414,18 @@ public class NoteEditorActivity extends Activity {
                 deleted = true;
                 finish();
                 startActivity(new Intent(this, NoteEditorActivity.class).putExtra(EXTRA_ID, hid));
+            }
+            return;
+        }
+        if (req == REQ_FONT) {
+            if (res == RESULT_OK && data != null && data.getData() != null) {
+                String nm = NoteFonts.importFont(this, data.getData());
+                if (nm == null) {
+                    Toast.makeText(this, "That file is not a usable font (use .ttf or .otf)", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, nm + " added. Pick it in the Font tab.", Toast.LENGTH_LONG).show();
+                    showTab(5);
+                }
             }
             return;
         }
@@ -1812,8 +1893,15 @@ public class NoteEditorActivity extends Activity {
             applyFont(key - FONT_BASE);
             return;
         }
-        if (key == DATE_KEY || key == TIME_KEY) {
-            dayStamp(key == TIME_KEY);
+        if (key == IMPORT_FONT_KEY) {
+            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"font/ttf", "font/otf",
+                            "font/sfnt", "application/x-font-ttf", "application/x-font-otf", "application/font-sfnt",
+                            "application/octet-stream"}), REQ_FONT);
+            return;
+        }
+        if (key == DATE_KEY || key == TIME_KEY || key == DATETIME_KEY) {
+            dayStamp(key == TIME_KEY ? 1 : key == DATETIME_KEY ? 2 : 0);
             return;
         }
         if (key == DIVIDER_KEY) {

@@ -293,3 +293,11 @@ Everything the in-page design edits had changed, now in the app:
 - **Callout fixed**: the panel was chopped at the left and right because TextView clips everything a span draws to the text column. The editor now draws callout and code-block panels itself, before the text, so they reach 14dp past the column on each side and keep their rounded corners. The callout matches the design board exactly: dark violet panel (#1E1B30; light mode a pale violet), no border, 18dp corners, a 36dp lavender icon tile with a lightbulb, 14dp padding. The code block panel uses the same mechanism. The note text margin is now 24dp so the panels sit clear of the screen edge.
 
 v3.38 build fix: restored the Hide, Rule, Align and NoteLink span classes and hiddenAt() that the callout rewrite had deleted from RichText.java, and replaced View.SYSTEM_UI_VISIBLE (not an Android constant) with 0.
+
+v3.39:
+- **Code block** redesigned like the canvas: a header strip with window dots, the detected language (kotlin, python, sql, json, shell and so on) and a Copy button (tap it to copy the code), a bordered rounded panel, and coloured keywords, strings, numbers, comments and calls. Colours are drawing only; the saved note is unchanged.
+- **Quote**: the toolbar label now lines up with the other tools, and an empty quote shows the word "Quote" in italic (it disappears as soon as you type).
+- **Insert tab**: new Date+time button (e.g. "Thu, 29 Oct 2026, 14:30"); the To-do tool has a drawn checkbox icon.
+- **Fonts**: import your own .ttf or .otf (Settings > Notebook > Note font > Import a font, or the Font tab > Import font). Press and hold an imported font in Settings to remove it. Imported fonts stay on the phone and are not part of backups.
+- **Water reminders**: Settings order is now toggle, Reminders per day, Water animation, Test, then Times last. New "Water animation" switch: the live water from the Drink water habit rises behind the full-screen alert. The alert also has a Custom button to type any amount.
+

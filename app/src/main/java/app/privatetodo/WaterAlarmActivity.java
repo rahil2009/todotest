@@ -58,8 +58,19 @@ public class WaterAlarmActivity extends Activity {
         FrameLayout frame = new FrameLayout(this);
         frame.setBackgroundColor(BG);
         int mode = Prefs.alertAnim(this);
+        Habit wh = WaterAlert.animation(this) ? WaterAlert.habit(this) : null;
+        if (wh != null) {
+            // the live water from the Drink water habit, rising to today's level behind everything
+            View water = new View(this);
+            float level = 0.12f + 0.88f * (wh.goal > 0
+                    ? Math.min(1f, WaterAlert.todayAmount(this, wh) / (float) wh.goal) : 0f); // always some water to see
+            water.setBackground(new WaterDrawable(density, 0, WaterDrawable.BLUE, wh.id + 2000000L, level));
+            frame.addView(water, new FrameLayout.LayoutParams(-1, -1));
+            if (mode != AlertFx.EDGE) mode = AlertFx.OFF;
+        }
         View fx = AlertFx.create(this, mode);
         View content = build();
+        if (wh != null) content.setBackgroundColor(Color.TRANSPARENT);
         if (fx != null && mode != AlertFx.EDGE) {
             frame.addView(fx, new FrameLayout.LayoutParams(-1, -1));
             content.setBackgroundColor(Color.TRANSPARENT);
@@ -145,21 +156,25 @@ public class WaterAlarmActivity extends Activity {
             dlp.leftMargin = dp(4);
             dlp.rightMargin = dp(4);
             root.addView(done, dlp);
-            if (q.size() > 1) {
-                LinearLayout row = new LinearLayout(this);
-                for (int i = 1; i < q.size() && i < 4; i++) {
-                    final int a = q.get(i);
-                    TextView b = pill("+" + a + (h.unit.isEmpty() ? "" : " " + h.unit), 0xFF1D2C3B);
-                    b.setOnClickListener(v -> drank(h, a));
-                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
-                    lp.leftMargin = dp(4);
-                    lp.rightMargin = dp(4);
-                    row.addView(b, lp);
-                }
-                LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
-                rlp.topMargin = dp(8);
-                root.addView(row, rlp);
+            LinearLayout row = new LinearLayout(this);
+            for (int i = 1; i < q.size() && i < 3; i++) {
+                final int a = q.get(i);
+                TextView b = pill("+" + a + (h.unit.isEmpty() ? "" : " " + h.unit), 0xFF1D2C3B);
+                b.setOnClickListener(v -> drank(h, a));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+                lp.leftMargin = dp(4);
+                lp.rightMargin = dp(4);
+                row.addView(b, lp);
             }
+            TextView custom = pill("Custom\u2026", 0xFF1D2C3B);
+            custom.setOnClickListener(v -> askAmount(h));
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(0, dp(48), 1f);
+            clp.leftMargin = dp(4);
+            clp.rightMargin = dp(4);
+            row.addView(custom, clp);
+            LinearLayout.LayoutParams rlp = new LinearLayout.LayoutParams(-1, -2);
+            rlp.topMargin = dp(8);
+            root.addView(row, rlp);
         }
 
         TextView snoozeLabel = label("Remind me again in", 13, 0xFFB7C2CF, true);
@@ -191,6 +206,43 @@ public class WaterAlarmActivity extends Activity {
         xlp.topMargin = dp(8);
         root.addView(dismiss, xlp);
         return root;
+    }
+
+    /** Any amount: a small box for the number, in the habit's own unit. */
+    private void askAmount(final Habit h) {
+        final android.widget.EditText et = new android.widget.EditText(this);
+        et.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        et.setSingleLine(true);
+        et.setHint(h.unit.isEmpty() ? "Amount" : "Amount in " + h.unit);
+        et.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(6)});
+        LinearLayout box = new LinearLayout(this);
+        box.setPadding(dp(24), dp(8), dp(24), 0);
+        box.addView(et, new LinearLayout.LayoutParams(-1, -2));
+        final android.app.AlertDialog dlg = new android.app.AlertDialog.Builder(this)
+                .setTitle("How much did you drink?")
+                .setView(box)
+                .setPositiveButton("Add", null)
+                .setNegativeButton("Cancel", null)
+                .create();
+        dlg.setOnShowListener(d -> {
+            et.requestFocus();
+            dlg.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+            dlg.getButton(android.app.AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
+                int a;
+                try {
+                    a = Integer.parseInt(et.getText().toString().trim());
+                } catch (NumberFormatException ex) {
+                    a = 0;
+                }
+                if (a <= 0) {
+                    et.setError("Enter a number");
+                    return;
+                }
+                dlg.dismiss();
+                drank(h, a);
+            });
+        });
+        dlg.show();
     }
 
     private void drank(Habit h, int amount) {

@@ -253,7 +253,45 @@ final class RichText {
             PANEL_RECT.set(r.left + bw, r.top + bw, r.right - bw, r.bottom - bw);
             p.setColor(Block.BG);
             c.drawRoundRect(PANEL_RECT, rad - bw, rad - bw, p);
+            paintBlockHead(c, p, (Block) span, r, bw);
         }
+    }
+
+    /** The code panel's header: window dots, the language, and a Copy button on the right. */
+    private static void paintBlockHead(Canvas c, Paint p, Block b, android.graphics.RectF r, float bw) {
+        float head = Block.headPx();
+        float pad = panelExt();
+        p.setColor(0xFF1D1D19);
+        PANEL_RECT.set(r.left + bw, r.top + bw, r.right - bw, r.top + head);
+        float rad = 14 * density - bw;
+        c.save();
+        c.clipRect(PANEL_RECT);
+        PANEL_RECT.set(r.left + bw, r.top + bw, r.right - bw, r.top + head + rad * 2);
+        c.drawRoundRect(PANEL_RECT, rad, rad, p);
+        c.restore();
+        p.setColor(Block.EDGE);
+        c.drawRect(r.left + bw, r.top + head, r.right - bw, r.top + head + bw, p);
+        float cy = r.top + head / 2f;
+        float dot = 4.5f * density;
+        int[] cols = {0xFFFF5F57, 0xFFFEBC2E, 0xFF28C840};
+        float x = r.left + pad;
+        for (int col : cols) {
+            p.setColor(col);
+            c.drawCircle(x + dot, cy, dot, p);
+            x += dot * 2 + 6 * density;
+        }
+        p.setTypeface(NoteFonts.face(11));
+        p.setTextSize(11.5f * density);
+        p.setFakeBoldText(false);
+        Paint.FontMetrics fm = p.getFontMetrics();
+        float base = cy - (fm.ascent + fm.descent) / 2f;
+        p.setColor(0xFF8A877B);
+        p.setTextAlign(Paint.Align.LEFT);
+        c.drawText(b.lang, x + 4 * density, base, p);
+        p.setColor(0xFFA9B4FF);
+        p.setTextAlign(Paint.Align.RIGHT);
+        c.drawText("Copy", r.right - pad, base, p);
+        p.setTextAlign(Paint.Align.LEFT);
     }
 
     private static void panelSlice(Canvas c, Paint p, float l, float t, float r, float b, float rad,
@@ -290,18 +328,23 @@ final class RichText {
     /** Extra room above the first and below the last line of a panel. */
     private static void panelPadding(CharSequence text, Object span, int start, int end, int padPx,
                                      Paint.FontMetricsInt fm) {
+        panelPadding(text, span, start, end, padPx, padPx, fm);
+    }
+
+    private static void panelPadding(CharSequence text, Object span, int start, int end, int topPx, int botPx,
+                                     Paint.FontMetricsInt fm) {
         if (!(text instanceof Spanned)) return;
         Spanned sp = (Spanned) text;
         int a = sp.getSpanStart(span);
         int b = sp.getSpanEnd(span);
         if (a < 0 || start < a || start >= Math.max(b, a + 1)) return; // a line outside this panel
         if (start == a) {
-            fm.ascent -= padPx;
-            fm.top -= padPx;
+            fm.ascent -= topPx;
+            fm.top -= topPx;
         }
         if (b <= end) {
-            fm.descent += padPx;
-            fm.bottom += padPx;
+            fm.descent += botPx;
+            fm.bottom += botPx;
         }
     }
 
@@ -349,23 +392,20 @@ final class RichText {
         public void drawBackground(Canvas c, Paint p, int left, int right, int top, int baseline,
                                    int bottom, CharSequence text, int start, int end, int lnum) {
             if (!firstLine(text, this, start)) return;
-            // The big quotation mark is a placeholder: it shows while the quote is still empty and goes away
-            // with the first character typed, so it never sits behind (or leaks into) the words.
+            // "Quote" in italic is a placeholder: it shows while the quote is still empty and goes away with
+            // the first character typed, so it never sits behind (or leaks into) the words.
             for (int i = start; i < end && i < text.length(); i++) {
                 if (!Character.isWhitespace(text.charAt(i))) return;
             }
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             Typeface oldFace = p.getTypeface();
-            float oldSize = p.getTextSize();
             boolean oldFake = p.isFakeBoldText();
             p.setStyle(Paint.Style.FILL);
             p.setFakeBoldText(false);
-            p.setTypeface(NoteFonts.face(5)); // Gloock: the high-contrast display serif behind most web pull-quotes
-            p.setTextSize(64 * density);
-            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0xB0000000 : 0xA0000000));
-            c.drawText("\u201C", left + 6 * density, top + 47 * density, p);
-            p.setTextSize(oldSize);
+            p.setTypeface(Typeface.create(NoteFonts.face(2), Typeface.ITALIC));
+            p.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x99000000 : 0x8C000000));
+            c.drawText("Quote", left + 22 * density, baseline, p);
             p.setTypeface(oldFace);
             p.setFakeBoldText(oldFake);
             p.setColor(oldColor);
@@ -543,6 +583,13 @@ final class RichText {
         static final int BG = 0xFF0B0B0A;
         static final int EDGE = 0xFF2A2A25;
         static final int FG = 0xFFE4E1D6;
+        /** Shown in the panel's header; guessed from the code by {@link #highlight}. */
+        String lang = "code";
+
+        /** Height of the header strip (window dots, language, Copy) at the top of the panel. */
+        static int headPx() {
+            return Math.round(32 * density);
+        }
 
         @Override
         public void updateMeasureState(TextPaint p) {
@@ -558,7 +605,7 @@ final class RichText {
         @Override
         public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
                                  Paint.FontMetricsInt fm) {
-            panelPadding(text, this, start, end, Math.round(12 * density), fm);
+            panelPadding(text, this, start, end, headPx() + Math.round(8 * density), Math.round(14 * density), fm);
         }
 
         @Override
@@ -579,6 +626,129 @@ final class RichText {
         }
     }
 
+
+    // ------------------------------------------------------------- code colouring
+
+    /** A syntax colour inside a code block. Drawn only: never saved, rebuilt by {@link #highlight}. */
+    static final class Syn extends CharacterStyle implements UpdateAppearance {
+        final int color;
+
+        Syn(int color) {
+            this.color = color;
+        }
+
+        @Override
+        public void updateDrawState(TextPaint tp) {
+            tp.setColor(color);
+        }
+    }
+
+    private static final int SYN_KEYWORD = 0xFFFF9C73;
+    private static final int SYN_STRING = 0xFF9FE08A;
+    private static final int SYN_NUMBER = 0xFFE8C77A;
+    private static final int SYN_COMMENT = 0xFF7C796D;
+    private static final int SYN_FUNC = 0xFFA9B4FF;
+    private static final int SYN_TYPE = 0xFF7FD6D0;
+
+    private static final java.util.HashSet<String> KEYWORDS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "if", "else", "elif", "for", "while", "do", "switch", "case", "break", "continue", "return", "function",
+            "def", "class", "interface", "enum", "struct", "fun", "val", "var", "let", "const", "static", "final",
+            "public", "private", "protected", "void", "int", "long", "float", "double", "boolean", "bool", "char",
+            "string", "new", "import", "from", "package", "export", "default", "try", "catch", "finally", "throw",
+            "throws", "extends", "implements", "in", "is", "as", "not", "and", "or", "with", "lambda", "async",
+            "await", "yield", "null", "none", "nil", "true", "false", "this", "self", "super", "select", "where",
+            "insert", "into", "update", "delete", "create", "table", "join", "left", "right", "inner", "outer", "on",
+            "group", "by", "order", "limit", "values", "set", "distinct", "having", "union", "like", "between",
+            "func", "fn", "mut", "pub", "use", "mod", "type", "echo", "then", "fi", "done", "elseif", "end"));
+
+    /** A best guess at the language, shown in the header of a code block. */
+    static String guessLang(String t) {
+        String lo = t.toLowerCase(java.util.Locale.ROOT);
+        String tr = lo.trim();
+        if ((tr.startsWith("{") || tr.startsWith("[")) && tr.contains("\":")) return "json";
+        if (tr.startsWith("<?php")) return "php";
+        if (tr.startsWith("#!") || tr.startsWith("$ ") || tr.startsWith("sudo ") || tr.startsWith("git ")
+                || tr.startsWith("cd ") || tr.startsWith("npm ") || tr.startsWith("pip ") || tr.startsWith("echo ")) {
+            return "shell";
+        }
+        if (lo.contains("select ") && lo.contains(" from ")) return "sql";
+        if (lo.contains("#include")) return "c++";
+        if (lo.contains("def ") || lo.contains("elif ") || lo.contains("print(")
+                || (lo.contains("import ") && !lo.contains(";") && !lo.contains("{"))) return "python";
+        if (lo.contains("fun ") && (lo.contains("val ") || lo.contains("var "))) return "kotlin";
+        if (lo.contains("system.out") || lo.contains("public class") || lo.contains("void main")) return "java";
+        if (lo.contains("func ") && lo.contains(":=")) return "go";
+        if (lo.contains("let mut") || lo.contains("fn ")) return "rust";
+        if (tr.startsWith("<") && tr.contains(">")) return "html";
+        if (lo.contains("function") || lo.contains("=>") || lo.contains("const ") || lo.contains("console.")
+                || lo.contains("let ")) return "javascript";
+        return "code";
+    }
+
+    /** Colours keywords, strings, numbers, comments and calls inside every code block (drawing only). */
+    static void highlight(Editable e) {
+        for (Syn old : e.getSpans(0, e.length(), Syn.class)) e.removeSpan(old);
+        for (Block b : e.getSpans(0, e.length(), Block.class)) {
+            int a = e.getSpanStart(b);
+            int z = e.getSpanEnd(b);
+            if (a < 0 || z <= a) continue;
+            String t = e.subSequence(a, z).toString();
+            b.lang = guessLang(t);
+            int n = t.length();
+            int i = 0;
+            while (i < n) {
+                char ch = t.charAt(i);
+                char nx = i + 1 < n ? t.charAt(i + 1) : 0;
+                if (ch == '/' && nx == '/' || ch == '#' && (i == 0 || Character.isWhitespace(t.charAt(i - 1)))
+                        || ch == '-' && nx == '-' && i + 2 < n && t.charAt(i + 2) == ' ') {
+                    int j = t.indexOf('\n', i);
+                    if (j < 0) j = n;
+                    syn(e, a + i, a + j, SYN_COMMENT);
+                    i = j;
+                } else if (ch == '/' && nx == '*') {
+                    int j = t.indexOf("*/", i + 2);
+                    j = j < 0 ? n : j + 2;
+                    syn(e, a + i, a + j, SYN_COMMENT);
+                    i = j;
+                } else if (ch == '"' || ch == '\'' || ch == '`') {
+                    int j = i + 1;
+                    while (j < n && t.charAt(j) != ch && t.charAt(j) != '\n') {
+                        if (t.charAt(j) == '\\') j++;
+                        j++;
+                    }
+                    j = Math.min(n, j + (j < n && t.charAt(j) == ch ? 1 : 0));
+                    syn(e, a + i, a + j, SYN_STRING);
+                    i = j;
+                } else if (Character.isDigit(ch) && (i == 0 || !Character.isLetterOrDigit(t.charAt(i - 1))
+                        && t.charAt(i - 1) != '_')) {
+                    int j = i + 1;
+                    while (j < n && (Character.isLetterOrDigit(t.charAt(j)) || t.charAt(j) == '.')) j++;
+                    syn(e, a + i, a + j, SYN_NUMBER);
+                    i = j;
+                } else if (Character.isLetter(ch) || ch == '_') {
+                    int j = i + 1;
+                    while (j < n && (Character.isLetterOrDigit(t.charAt(j)) || t.charAt(j) == '_')) j++;
+                    String w = t.substring(i, j);
+                    int k = j;
+                    while (k < n && t.charAt(k) == ' ') k++;
+                    if (KEYWORDS.contains(w.toLowerCase(java.util.Locale.ROOT))) {
+                        syn(e, a + i, a + j, SYN_KEYWORD);
+                    } else if (k < n && t.charAt(k) == '(') {
+                        syn(e, a + i, a + j, SYN_FUNC);
+                    } else if (Character.isUpperCase(ch) && j - i > 1) {
+                        syn(e, a + i, a + j, SYN_TYPE);
+                    }
+                    i = j;
+                } else {
+                    i++;
+                }
+            }
+        }
+    }
+
+    private static void syn(Editable e, int a, int b, int color) {
+        if (b > a) e.setSpan(new Syn(color), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
 
     // ------------------------------------------------------------- tables
 
@@ -1151,6 +1321,11 @@ final class RichText {
     /** Puts every style span into its canonical shape (see above). Text is never touched. */
     @SuppressWarnings("unchecked")
     static void normalize(Editable e) {
+        normalizeSpans(e);
+        highlight(e);
+    }
+
+    private static void normalizeSpans(Editable e) {
         int n = e.length();
         Object[] all = e.getSpans(0, n, Object.class);
         java.util.ArrayList<Object>[] by = new java.util.ArrayList[LINK + 1];

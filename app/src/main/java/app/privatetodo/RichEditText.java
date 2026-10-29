@@ -104,6 +104,7 @@ final class RichEditText extends EditText {
             @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
             @Override public void afterTextChanged(Editable e) {
                 syncCircles(e);
+                RichText.highlight(e);
             }
         });
     }
@@ -204,6 +205,41 @@ final class RichEditText extends EditText {
 
     void setLinkTapListener(LinkTapListener l) {
         linkListener = l;
+    }
+
+    private RichText.Block copyBlock;
+    private boolean copyMoved;
+
+    /** The code block whose header "Copy" button is under this point, or null. */
+    private RichText.Block copyZoneAt(float x, float y) {
+        android.text.Layout l = getLayout();
+        CharSequence t = getText();
+        if (l == null || !(t instanceof android.text.Spanned) || t.length() == 0) return null;
+        float d = getResources().getDisplayMetrics().density;
+        float yl = y - getTotalPaddingTop() + getScrollY();
+        if (yl < 0 || yl > l.getHeight()) return null;
+        int line = l.getLineForVertical((int) yl);
+        int ls = l.getLineStart(line);
+        if (x < getWidth() - getCompoundPaddingRight() - 90 * d) return null;
+        if (yl > l.getLineTop(line) + RichText.Block.headPx()) return null;
+        android.text.Spanned sp = (android.text.Spanned) t;
+        for (RichText.Block b : sp.getSpans(ls, Math.min(t.length(), ls + 1), RichText.Block.class)) {
+            if (sp.getSpanStart(b) == ls) return b;
+        }
+        return null;
+    }
+
+    private void copyCode(RichText.Block b) {
+        CharSequence t = getText();
+        int a = ((android.text.Spanned) t).getSpanStart(b);
+        int z = ((android.text.Spanned) t).getSpanEnd(b);
+        if (a < 0 || z <= a) return;
+        String code = t.subSequence(a, z).toString();
+        while (code.endsWith("\n")) code = code.substring(0, code.length() - 1);
+        android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                getContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+        if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("code", code));
+        android.widget.Toast.makeText(getContext(), "Code copied", android.widget.Toast.LENGTH_SHORT).show();
     }
 
     /** The note id of the link under this point, or -1. */
@@ -335,6 +371,26 @@ final class RichEditText extends EditText {
             return true;
         }
         if (paintL != null) return paintTouch(e);
+        // The Copy button in a code block's header: a tap copies the code, no cursor or keyboard.
+        int actC = e.getActionMasked();
+        if (actC == MotionEvent.ACTION_DOWN) {
+            copyBlock = copyZoneAt(e.getX(), e.getY());
+            copyMoved = false;
+            downX = e.getX();
+            downY = e.getY();
+            if (copyBlock != null) return true;
+        } else if (copyBlock != null) {
+            int slopC = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            if (Math.abs(e.getX() - downX) >= slopC || Math.abs(e.getY() - downY) >= slopC) copyMoved = true;
+            if (actC == MotionEvent.ACTION_UP) {
+                RichText.Block b = copyBlock;
+                copyBlock = null;
+                if (!copyMoved) copyCode(b);
+            } else if (actC == MotionEvent.ACTION_CANCEL) {
+                copyBlock = null;
+            }
+            return true;
+        }
         // A touch that starts on a table cell is ours too: no cursor, no keyboard from the note itself;
         // a tap hands the cell to the editor, which opens it for typing right there.
         if (tableListener != null) {

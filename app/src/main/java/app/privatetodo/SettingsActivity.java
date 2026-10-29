@@ -28,6 +28,7 @@ public class SettingsActivity extends Activity {
     private float density;
     private static final int REQ_EXPORT = 4101;
     private static final int REQ_IMPORT = 4102;
+    private static final int REQ_FONT = 4103;
     private int pickKind;
     private final TextView[] soundName = new TextView[3];
 
@@ -596,7 +597,7 @@ public class SettingsActivity extends Activity {
         for (int i = 0; i < nf; i++) {
             if (!NoteFonts.shown(i)) continue;
             final int idx = i;
-            TextView c = text(NoteFonts.NAMES[i], 15, Pal.ink, false);
+            TextView c = text(NoteFonts.name(i), 15, Pal.ink, false);
             c.setTypeface(NoteFonts.face(i));
             c.setTag("keepfont");
             c.setGravity(Gravity.CENTER);
@@ -606,10 +607,45 @@ public class SettingsActivity extends Activity {
                 NoteFonts.setNoteDefault(this, idx);
                 fpaint.run();
             });
+            if (i >= NoteFonts.BUILTIN) {
+                c.setOnLongClickListener(v -> {
+                    new Dlg.Builder(this)
+                            .setTitle("Remove " + NoteFonts.name(idx) + "?")
+                            .setMessage("Text written in it will show in the app font.")
+                            .setPositiveButton("Remove", (d, w) -> {
+                                NoteFonts.removeFont(this, idx);
+                                recreate();
+                            })
+                            .setNegativeButton("Cancel", null)
+                            .show();
+                    return true;
+                });
+            }
             chips[i] = c;
             fl.addView(c, new android.view.ViewGroup.LayoutParams(-2, dp(42)));
         }
         card.addView(fl);
+        TextView imp = text("+ Import a font (.ttf or .otf)", 15, Pal.accent, true);
+        imp.setGravity(Gravity.CENTER);
+        GradientDrawable ig = new GradientDrawable();
+        ig.setCornerRadius(dp(24));
+        ig.setColor(Pal.chip);
+        imp.setBackground(ig);
+        imp.setOnClickListener(v -> {
+            Hap.tick(v);
+            startActivityForResult(new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                    .setType("*/*").putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"font/ttf", "font/otf",
+                            "font/sfnt", "application/x-font-ttf", "application/x-font-otf", "application/font-sfnt",
+                            "application/octet-stream"}), REQ_FONT);
+        });
+        LinearLayout.LayoutParams ilp = new LinearLayout.LayoutParams(-1, dp(48));
+        ilp.topMargin = dp(12);
+        card.addView(imp, ilp);
+        TextView ihelp = text("Pick a font file from your phone. It is copied into the app and never leaves the phone. "
+                + "Press and hold an imported font to remove it. Imported fonts are not part of backups.",
+                12, Pal.muted, false);
+        ihelp.setPadding(0, dp(6), 0, 0);
+        card.addView(ihelp);
         sample.setPadding(0, dp(12), 0, dp(4));
         card.addView(sample);
         fpaint.run();
@@ -627,14 +663,69 @@ public class SettingsActivity extends Activity {
                     if (on) Toast.makeText(this, "Water reminders on", Toast.LENGTH_SHORT).show();
                 }));
 
+        final Runnable[] fill = new Runnable[1];
+        final TextView[] numRef = new TextView[1];
+
+        TextView rtitle = text("Reminders per day", 16, Pal.ink, true);
+        rtitle.setPadding(0, dp(18), 0, 0);
+        card.addView(rtitle);
+        TextView rsub = text("How many times a day it reminds you (1 to 8), spread over the day. "
+                + "Changing this re-spreads the times below; you can still edit any time by hand. "
+                + "The sound plays a few times and the screen stays until you log a drink, snooze or dismiss.",
+                13, Pal.muted, false);
+        rsub.setPadding(0, dp(2), 0, dp(8));
+        card.addView(rsub);
+        LinearLayout rrow = new LinearLayout(this);
+        rrow.setOrientation(LinearLayout.HORIZONTAL);
+        rrow.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView num = text(String.valueOf(WaterAlert.perDay(this)), 28, Pal.ink, true);
+        num.setGravity(Gravity.CENTER);
+        numRef[0] = num;
+        final TextView minus = pinStep("\u2212");
+        final TextView plus = pinStep("+");
+        View.OnClickListener step = v -> {
+            Hap.tick(v);
+            WaterAlert.setPerDay(this, WaterAlert.perDay(this) + (v == plus ? 1 : -1));
+            fill[0].run();
+        };
+        minus.setOnClickListener(step);
+        plus.setOnClickListener(step);
+        rrow.addView(minus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        rrow.addView(num, new LinearLayout.LayoutParams(0, -2, 1f));
+        rrow.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
+        card.addView(rrow);
+
+        card.addView(toggleRow("Water animation",
+                "The live water filling up behind the drink buttons on the alert screen, like in your Drink water habit. "
+                        + "Turn it off for a plain screen.",
+                WaterAlert.animation(this), on -> WaterAlert.setAnimation(this, on)));
+
+        TextView test = text("Test it now", 16, Pal.onAccent, true);
+        test.setGravity(Gravity.CENTER);
+        GradientDrawable tg = new GradientDrawable();
+        tg.setCornerRadius(dp(26));
+        tg.setColor(Pal.accent);
+        test.setBackground(tg);
+        test.setOnClickListener(v -> {
+            Hap.confirm(v);
+            WaterAlert.fire(this, true);
+        });
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(52));
+        tlp.topMargin = dp(18);
+        card.addView(test, tlp);
+
+        TextView note = text("Uses your Drink water habit (any habit named water or counted in ml, l, oz, glasses or cups). "
+                + "The sound, its volume and the alert animation are the ones chosen for alarms in Settings. "
+                + "If nothing rings, allow notifications and full-screen alerts for this app in your phone's settings.",
+                12, Pal.muted, false);
+        note.setPadding(0, dp(12), 0, dp(6));
+        card.addView(note);
         TextView ttitle = text("Times", 16, Pal.ink, true);
-        ttitle.setPadding(0, dp(16), 0, dp(4));
+        ttitle.setPadding(0, dp(20), 0, dp(4));
         card.addView(ttitle);
         final LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         card.addView(box);
-        final Runnable[] fill = new Runnable[1];
-        final TextView[] numRef = new TextView[1];
         fill[0] = () -> {
             box.removeAllViews();
             final java.util.List<Integer> times = WaterAlert.times(this);
@@ -705,55 +796,6 @@ public class SettingsActivity extends Activity {
         };
         fill[0].run();
 
-        TextView rtitle = text("Reminders per day", 16, Pal.ink, true);
-        rtitle.setPadding(0, dp(18), 0, 0);
-        card.addView(rtitle);
-        TextView rsub = text("How many times a day it reminds you (1 to 8), spread over the day. "
-                + "Changing this re-spreads the times above; you can still edit any time by hand. "
-                + "The sound plays a few times and the screen stays until you log a drink, snooze or dismiss.",
-                13, Pal.muted, false);
-        rsub.setPadding(0, dp(2), 0, dp(8));
-        card.addView(rsub);
-        LinearLayout rrow = new LinearLayout(this);
-        rrow.setOrientation(LinearLayout.HORIZONTAL);
-        rrow.setGravity(Gravity.CENTER_VERTICAL);
-        final TextView num = text(String.valueOf(WaterAlert.perDay(this)), 28, Pal.ink, true);
-        num.setGravity(Gravity.CENTER);
-        numRef[0] = num;
-        final TextView minus = pinStep("\u2212");
-        final TextView plus = pinStep("+");
-        View.OnClickListener step = v -> {
-            Hap.tick(v);
-            WaterAlert.setPerDay(this, WaterAlert.perDay(this) + (v == plus ? 1 : -1));
-            fill[0].run();
-        };
-        minus.setOnClickListener(step);
-        plus.setOnClickListener(step);
-        rrow.addView(minus, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        rrow.addView(num, new LinearLayout.LayoutParams(0, -2, 1f));
-        rrow.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
-        card.addView(rrow);
-
-        TextView test = text("Test it now", 16, Pal.onAccent, true);
-        test.setGravity(Gravity.CENTER);
-        GradientDrawable tg = new GradientDrawable();
-        tg.setCornerRadius(dp(26));
-        tg.setColor(Pal.accent);
-        test.setBackground(tg);
-        test.setOnClickListener(v -> {
-            Hap.confirm(v);
-            WaterAlert.fire(this, true);
-        });
-        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, dp(52));
-        tlp.topMargin = dp(18);
-        card.addView(test, tlp);
-
-        TextView note = text("Uses your Drink water habit (any habit named water or counted in ml, l, oz, glasses or cups). "
-                + "The sound, its volume and the alert animation are the ones chosen for alarms in Settings. "
-                + "If nothing rings, allow notifications and full-screen alerts for this app in your phone's settings.",
-                12, Pal.muted, false);
-        note.setPadding(0, dp(12), 0, dp(6));
-        card.addView(note);
         return card;
     }
 
@@ -948,6 +990,18 @@ public class SettingsActivity extends Activity {
                 && data.getData() != null) {
             if (req == REQ_EXPORT) doExport(data.getData());
             else doImport(data.getData());
+            return;
+        }
+        if (req == REQ_FONT) {
+            if (result == RESULT_OK && data != null && data.getData() != null) {
+                String nm = NoteFonts.importFont(this, data.getData());
+                if (nm == null) {
+                    Toast.makeText(this, "That file is not a usable font (use .ttf or .otf)", Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, nm + " added", Toast.LENGTH_SHORT).show();
+                    recreate();
+                }
+            }
             return;
         }
         String picked = SoundPicker.result(this, req, result, data);

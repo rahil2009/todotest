@@ -45,6 +45,15 @@ final class WaterAlert {
         scheduleAll(c);
     }
 
+    /** Whether the alert screen shows the live water animation (on by default). */
+    static boolean animation(Context c) {
+        return sp(c).getBoolean("water_anim", true);
+    }
+
+    static void setAnimation(Context c, boolean on) {
+        sp(c).edit().putBoolean("water_anim", on).apply();
+    }
+
     /** How many times the alarm sound plays at each reminder; the screen then stays until you answer. */
     static final int PLAYS = 3;
 
