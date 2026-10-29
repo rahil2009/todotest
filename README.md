@@ -317,3 +317,5 @@ v3.42 (test only, not wired into the app):
   - **Slide to delete**: ten animations (Trash lid, Shred, Into the bin, Poof, Elastic, Circle wipe, Dust, Paper drop, Strike out, Motion trail). Slide the test task left past the threshold; nothing is deleted, the task comes back after a moment.
   - Tap **Keep** on the ones you like; the list at the top shows your picks. Picks are stored on the phone only (prefs file "lab").
 - New files: LabActivity, LabDial, LabSwipe. The real dials and swipe-to-delete are untouched.
+
+v3.42 build fix: restored RichText.firstLine and RichText.panelPadding (used by Quote, Callout and the code block), which had gone missing and broke the Actions build.

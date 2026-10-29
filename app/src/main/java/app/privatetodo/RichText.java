@@ -237,6 +237,33 @@ final class RichText {
         return o instanceof Callout || o instanceof Block;
     }
 
+    /** True when the line starting at {@code start} is the first line of {@code span}. */
+    static boolean firstLine(CharSequence text, Object span, int start) {
+        if (!(text instanceof android.text.Spanned)) return true;
+        return ((android.text.Spanned) text).getSpanStart(span) >= start;
+    }
+
+    /** Adds {@code px} of room above the first line and below the last line of a panel span. */
+    static void panelPadding(CharSequence text, Object span, int start, int end, int px,
+                             Paint.FontMetricsInt fm) {
+        panelPadding(text, span, start, end, px, px, fm);
+    }
+
+    /** Same, with separate room above (top) and below (bottom). */
+    static void panelPadding(CharSequence text, Object span, int start, int end, int top, int bottom,
+                             Paint.FontMetricsInt fm) {
+        if (!(text instanceof android.text.Spanned)) return;
+        android.text.Spanned sp = (android.text.Spanned) text;
+        if (sp.getSpanStart(span) >= start) { // first line
+            fm.ascent -= top;
+            fm.top -= top;
+        }
+        if (sp.getSpanEnd(span) <= end) { // last line
+            fm.descent += bottom;
+            fm.bottom += bottom;
+        }
+    }
+
     /**
      * Draws the rounded panel behind a callout or code block into {@code r} (view coordinates). The editor
      * calls this before the text is drawn: TextView clips everything drawn by spans to its text column, which
