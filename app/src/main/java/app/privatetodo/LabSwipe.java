@@ -81,8 +81,8 @@ final class LabSwipe extends View {
     private final int style;
     final float d;
     private final int slop;
-    final float rh; // row height
-    private final float pad;
+    float rh; // row height
+    private float pad;
     final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint bmpPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     final RectF rf = new RectF();
@@ -102,10 +102,15 @@ final class LabSwipe extends View {
     private boolean swiping;
     private boolean armed;
     Bitmap snap;
+    Bitmap ext;
     Bitmap[] mos;
     private ValueAnimator anim;
     private Runnable pending;
     float rw;
+    private boolean over; // playing on top of a real task row (see playOver)
+    private float ox;
+    private float oy;
+    private Runnable overDone;
     private int deleted;
     private Runnable onDeleted;
 
@@ -133,6 +138,10 @@ final class LabSwipe extends View {
 
     @Override
     protected void onMeasure(int w, int h) {
+        if (over) { // the overlay on a real screen fills it
+            setMeasuredDimension(MeasureSpec.getSize(w), MeasureSpec.getSize(h));
+            return;
+        }
         setMeasuredDimension(resolveSize(Math.round(300 * d), w), Math.round(rh + 36 * d));
     }
 
@@ -163,6 +172,12 @@ final class LabSwipe extends View {
     // ------------------------------------------------------------------ the test task row
 
     void drawRow(Canvas c, int alpha, float strike) {
+        if (ext != null) { // a real task row, as a picture
+            bmpPaint.setAlpha(Math.max(0, Math.min(255, alpha)));
+            c.drawBitmap(ext, 0, 0, bmpPaint);
+            bmpPaint.setAlpha(255);
+            return;
+        }
         p.setStyle(Paint.Style.FILL);
         p.setColor(Pal.card);
         p.setAlpha(alpha);
@@ -336,6 +351,15 @@ final class LabSwipe extends View {
 
     @Override
     protected void onDraw(Canvas c) {
+        if (over) {
+            if (phase == COMMIT) {
+                c.save();
+                c.translate(ox, oy);
+                drawCommit(c);
+                c.restore();
+            }
+            return;
+        }
         rw = getWidth() - 2 * pad;
         c.save();
         c.translate(pad, (getHeight() - rh) / 2f);
@@ -590,6 +614,7 @@ final class LabSwipe extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        if (over) return false; // only a picture of a real row: touches go to the screen below
         if (phase != IDLE) return true;
         int a = e.getActionMasked();
         switch (a) {
@@ -637,6 +662,55 @@ final class LabSwipe extends View {
         anim.addUpdateListener(a -> {
             dx = Math.min(0f, from * (1f - (Float) a.getAnimatedValue()));
             invalidate();
+        });
+        anim.start();
+    }
+
+    /**
+     * Plays this delete animation on a picture of a real task row, drawn at ({@code x}, {@code y}) of this
+     * view (which covers the whole screen). {@code done} runs when the animation has finished.
+     */
+    void playOver(Bitmap row, float x, float y, float startDx, Runnable done) {
+        over = true;
+        ext = row;
+        ox = x;
+        oy = y;
+        rw = row.getWidth();
+        rh = row.getHeight();
+        cdx = startDx;
+        overDone = done;
+        phase = COMMIT;
+        t = 0;
+        mos = null;
+        if (style == 1 || style == 6 || style >= 10) snap = row.copy(Bitmap.Config.ARGB_8888, false);
+        anim = ValueAnimator.ofFloat(0f, 1f);
+        anim.setDuration(DURATION[style]);
+        anim.setInterpolator(new LinearInterpolator());
+        anim.addUpdateListener(a -> {
+            t = (Float) a.getAnimatedValue();
+            invalidate();
+        });
+        anim.addListener(new android.animation.AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(android.animation.Animator an) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(android.animation.Animator an) {
+                if (cancelled) return;
+                phase = GONE;
+                if (snap != null) {
+                    snap.recycle();
+                    snap = null;
+                }
+                invalidate();
+                Runnable r = overDone;
+                overDone = null;
+                if (r != null) r.run();
+            }
         });
         anim.start();
     }
@@ -712,6 +786,11 @@ final class LabSwipe extends View {
     protected void onDetachedFromWindow() {
         if (pending != null) removeCallbacks(pending);
         if (anim != null) anim.cancel();
+        if (overDone != null) { // the screen went away mid-animation: the action the person confirmed still happens
+            Runnable r = overDone;
+            overDone = null;
+            r.run();
+        }
         if (snap != null) {
             snap.recycle();
             snap = null;

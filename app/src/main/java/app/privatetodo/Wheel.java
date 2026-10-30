@@ -132,8 +132,32 @@ final class Wheel extends View {
         setMeasuredDimension(resolveSize(Math.round(80 * density), w), Math.round(rowH * ROWS));
     }
 
+    private LabDial look; // a look picked in the Design lab draws the column instead of the plain one below
+    private int lookStyle = -2;
+    private String[] numberLabels;
+
+    private String[] lookLabels() {
+        if (labels != null) return labels;
+        int n = count();
+        if (numberLabels == null || numberLabels.length != n || !numberLabels[0].equals(String.valueOf(min))) {
+            numberLabels = new String[n];
+            for (int i = 0; i < n; i++) numberLabels[i] = String.valueOf(min + i);
+        }
+        return numberLabels;
+    }
+
     @Override
     protected void onDraw(Canvas c) {
+        if (lookStyle == -2) lookStyle = AnimPrefs.pickHeld(getContext(), AnimPrefs.DIAL);
+        if (lookStyle >= 0) {
+            try {
+                if (look == null) look = new LabDial(getContext(), lookStyle);
+                look.renderColumn(c, getWidth(), getHeight(), lookLabels(), wrap, pos, rowH);
+                return;
+            } catch (RuntimeException ex) {
+                lookStyle = -1; // never leave a dial blank: fall back to the plain look
+            }
+        }
         float cy = getHeight() / 2f;
         float cx = getWidth() / 2f;
         // two accent lines frame the centre value, as in the design

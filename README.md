@@ -329,3 +329,16 @@ v3.43:
   - **Delete**: 30 slide-left animations (20 new: Black hole, Explode, Fire, Glitch, Shatter, Zip, Rocket, Slice, Flip away, Genie, Melt, Bubbles, Lightning, Confetti, Stamp, Eraser, Spin out, Dominoes, Pixelate, Portal).
   - **Done**: 30 slide-right (complete) animations. The task goes ticked and dimmed, then comes back so you can retry.
   - Tap Keep on the ones you like. Nothing in the lab changes real tasks.
+
+v3.44:
+- **Fix: quote / code block / callout vanishing.** Insert a quote or code block on an empty line, type one letter, and it disappeared until you tapped it again. Typing at the very start of a styled line pushed its style out of that line; the style now stays with the line.
+- **Fix: inline Code stripping fonts.** Android applies overlapping text styles in the order they were added, so switching on Code could turn text in one of your note fonts back into the monospace font, and drop bold / italic. Fonts now always win over Code (the code background stays), and Code keeps bold / italic. This is re-checked after every edit, so the result no longer depends on the order you typed things.
+- **Menu icons**: To-do is now a drawn checklist (a ticked box and an empty box with their lines) and Callout is a drawn panel with an info mark and two text lines, in the same style as the Date+time icon.
+- **Settings > Design lab** now has a fourth tab, **Title**, and every tab can be applied to the real app:
+  - Each tab has **Default** (how the app always was), **Random** (a different one every time) and a **Use in the app** button on each look. The line at the top says what the app uses now.
+  - **Time dials**: every dial in the app (reminder time, snooze, repeat, calendar, plan, habits) is drawn in the chosen look, one column at a time (no hour:minute colon, since hour and minute are separate dials). Random picks one look each time a dial opens.
+  - **Slide left (delete)**: after you confirm Delete, the task plays the chosen animation as a picture of itself, then it is deleted (undo still works).
+  - **Slide right (done)**: swiping a task right plays the chosen animation (the task changes into its ticked look), then it is ticked. It is not used for un-ticking, or when a repeating task cannot be ticked yet. The tick-circle tap still uses Settings > Tick animation.
+  - **Title**: 20 animations for the "Tasks" heading on the main screen (Typewriter, Wave, Shimmer, Drop bounce, Rainbow, Neon pulse, Glitch, Card flip, Underline draw, Breathing, Spotlight, Domino, Sparkle, Ink fill, Tick draw, Slide in, Zoom in, Strike and rewrite, Rubber, Scramble). It plays when the screen opens and then every few seconds; between plays nothing runs.
+  - If an animation fails for any reason, the app falls back to the default behaviour.
+- New files: AnimPrefs, TitleFx. Lab classes can now also play on top of a real task row.

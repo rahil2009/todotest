@@ -77,10 +77,11 @@ final class LabTick extends View {
     private final int style;
     private final float d;
     private final int slop;
-    private final float rh;
+    private float rh;
     private final float pad;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint q = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint bmp = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF rf = new RectF();
     private final Path path = new Path();
     private final Typeface regular;
@@ -98,6 +99,12 @@ final class LabTick extends View {
     private ValueAnimator anim;
     private Runnable pending;
     private float rw;
+    private boolean over; // playing on top of a real task row (see playOver)
+    private float ox;
+    private float oy;
+    private android.graphics.Bitmap ext;  // the real row before ...
+    private android.graphics.Bitmap ext2; // ... and after it is ticked
+    private Runnable overDone;
     private int count;
     private Runnable onDone;
 
@@ -121,6 +128,10 @@ final class LabTick extends View {
 
     @Override
     protected void onMeasure(int w, int h) {
+        if (over) { // the overlay on a real screen fills it
+            setMeasuredDimension(MeasureSpec.getSize(w), MeasureSpec.getSize(h));
+            return;
+        }
         setMeasuredDimension(resolveSize(Math.round(300 * d), w), Math.round(rh + 60 * d));
     }
 
@@ -182,6 +193,17 @@ final class LabTick extends View {
 
     /** strike < 0: follow the done amount. */
     private void drawRow(Canvas c, int alpha, float dn, float strike) {
+        if (ext != null) { // a real task row: cross-fade from how it is to how it looks when ticked
+            float k = cl(dn);
+            bmp.setAlpha(Math.max(0, Math.min(255, alpha)));
+            c.drawBitmap(ext, 0, 0, bmp);
+            if (ext2 != null) {
+                bmp.setAlpha(Math.max(0, Math.min(255, Math.round(alpha * k))));
+                c.drawBitmap(ext2, 0, 0, bmp);
+            }
+            bmp.setAlpha(255);
+            return;
+        }
         if (strike < 0) strike = dn;
         p.setStyle(Paint.Style.FILL);
         p.setColor(Pal.card);
@@ -255,6 +277,15 @@ final class LabTick extends View {
 
     @Override
     protected void onDraw(Canvas c) {
+        if (over) {
+            if (phase == COMMIT) {
+                c.save();
+                c.translate(ox, oy);
+                effect(c);
+                c.restore();
+            }
+            return;
+        }
         rw = getWidth() - 2 * pad;
         c.save();
         c.translate(pad, (getHeight() - rh) / 2f);
@@ -993,6 +1024,7 @@ final class LabTick extends View {
 
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        if (over) return false; // only a picture of a real row: touches go to the screen below
         if (phase != IDLE) return true;
         int a = e.getActionMasked();
         switch (a) {
@@ -1040,6 +1072,50 @@ final class LabTick extends View {
         anim.addUpdateListener(a -> {
             dx = Math.max(0f, from * (1f - (Float) a.getAnimatedValue()));
             invalidate();
+        });
+        anim.start();
+    }
+
+    /**
+     * Plays this done animation on pictures of a real task row (as it is, and as it looks once ticked), drawn at
+     * ({@code x}, {@code y}) of this view, which covers the whole screen. {@code done} runs when it has finished.
+     */
+    void playOver(android.graphics.Bitmap before, android.graphics.Bitmap after, float x, float y, Runnable done) {
+        over = true;
+        ext = before;
+        ext2 = after;
+        ox = x;
+        oy = y;
+        rw = before.getWidth();
+        rh = before.getHeight();
+        overDone = done;
+        dx = 0;
+        t = 0;
+        phase = COMMIT;
+        anim = ValueAnimator.ofFloat(0f, 1f);
+        anim.setDuration(DUR[style]);
+        anim.setInterpolator(new LinearInterpolator());
+        anim.addUpdateListener(a -> {
+            t = (Float) a.getAnimatedValue();
+            invalidate();
+        });
+        anim.addListener(new AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(Animator an) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator an) {
+                if (cancelled) return;
+                phase = HOLD;
+                invalidate();
+                Runnable r = overDone;
+                overDone = null;
+                if (r != null) r.run();
+            }
         });
         anim.start();
     }
@@ -1102,6 +1178,11 @@ final class LabTick extends View {
     protected void onDetachedFromWindow() {
         if (pending != null) removeCallbacks(pending);
         if (anim != null) anim.cancel();
+        if (overDone != null) { // the screen went away mid-animation: the tick the person made still counts
+            Runnable r = overDone;
+            overDone = null;
+            r.run();
+        }
         super.onDetachedFromWindow();
     }
 }

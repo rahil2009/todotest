@@ -86,13 +86,17 @@ final class LabLooks {
     // ------------------------------------------------------------------ entry
 
     static void draw(LabDial v, Canvas c, int s) {
-        float w = v.getWidth();
-        float h = v.getHeight();
+        float w = v.vw();
+        float h = v.vh();
         float cy = h / 2f;
         float d = v.dens();
         float rowH = v.rowH();
         panel(c, s, w, h, d);
-        for (int i = 0; i < 3; i++) col(v, c, s, i, cy, d, rowH, w, h);
+        for (int i = 0; i < v.ncols(); i++) col(v, c, s, i, cy, d, rowH, w, h);
+        if (v.ncols() < 3) {
+            if (s == 12 || s == 24) scanlines(c, w, h, d, s == 12 ? 0x147DF9FF : 0x1439FF14);
+            return;
+        }
         // colon between hour and minute
         float colonX = (v.cx1(0) + v.cx0(1)) / 2f;
         boolean mono = s == 13 || s == 24 || s == 25;
@@ -229,7 +233,7 @@ final class LabLooks {
             }
             case 14: { // mechanical tile
                 p.setColor(0xFF242928);
-                rf.set(x0 + 2 * d, 4 * d, x1 - 2 * d, v.getHeight() - 4 * d);
+                rf.set(x0 + 2 * d, 4 * d, x1 - 2 * d, v.vh() - 4 * d);
                 c.drawRoundRect(rf, 10 * d, 10 * d, p);
                 p.setColor(0xFF313836);
                 rf.set(x0 + 2 * d, cy - rowH / 2f, x1 - 2 * d, cy + rowH / 2f);
@@ -255,7 +259,7 @@ final class LabLooks {
                 p.setStrokeWidth(2 * d);
                 p.setColor((Pal.accent & 0x00FFFFFF) | 0x55000000);
                 path.reset();
-                for (float y = 0; y <= v.getHeight(); y += 4 * d) {
+                for (float y = 0; y <= v.vh(); y += 4 * d) {
                     float xx = cx + (float) Math.sin((y - cy) / rowH * 1.1f - pos * 0.0f) * 9 * d;
                     if (y == 0) path.moveTo(xx, y);
                     else path.lineTo(xx, y);
@@ -268,7 +272,7 @@ final class LabLooks {
                 p.setColor(0x66FFFFFF);
                 float step = 14 * d;
                 float off = ((pos * rowH) % step + step) % step;
-                for (float y = -step + off; y < v.getHeight() + step; y += step) {
+                for (float y = -step + off; y < v.vh() + step; y += step) {
                     rf.set(x0 + 3 * d, y, x0 + 9 * d, y + 7 * d);
                     c.drawRoundRect(rf, 1.5f * d, 1.5f * d, p);
                     rf.set(x1 - 9 * d, y, x1 - 3 * d, y + 7 * d);
@@ -599,7 +603,7 @@ final class LabLooks {
         float f = pos - Math.round(pos);
         float tp = Math.round(pos) + 0.5f * Math.signum(f) * (float) Math.pow(Math.min(1f, 2f * Math.abs(f)), 3);
         // tens slide slower, then catch up
-        float cyy = v.getHeight() / 2f;
+        float cyy = v.vh() / 2f;
         float yTens = cyy + (pos + dist - tp) * rowH;
         float dx = cw * 0.2f;
         txt(c, String.valueOf(l2.charAt(1)), cx + dx, y, (centre ? 26 : 19) * d, centre ? 0xFFFFFFFF : 0xFFAAAAAA,

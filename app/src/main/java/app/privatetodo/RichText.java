@@ -162,14 +162,21 @@ final class RichText {
     }
 
     static final class Code extends MetricAffectingSpan {
+        private static void mono(TextPaint p) {
+            Typeface cur = p.getTypeface();
+            int st = cur == null ? Typeface.NORMAL : cur.getStyle();
+            // keep bold / italic that were applied before this span, whichever order the spans sit in
+            p.setTypeface(st == Typeface.NORMAL ? Typeface.MONOSPACE : Typeface.create(Typeface.MONOSPACE, st));
+        }
+
         @Override
         public void updateMeasureState(TextPaint p) {
-            p.setTypeface(Typeface.MONOSPACE);
+            mono(p);
         }
 
         @Override
         public void updateDrawState(TextPaint p) {
-            p.setTypeface(Typeface.MONOSPACE);
+            mono(p);
             p.bgColor = codeBg();
         }
     }
@@ -1594,6 +1601,40 @@ final class RichText {
         highlight(e);
     }
 
+    /**
+     * Android applies overlapping text spans in the order they were added, so a code span added after a
+     * font span used to turn that text back into the monospace font. A chosen font always wins: when a
+     * font span sits before a code span it overlaps, the font spans are added again, after everything else.
+     */
+    private static void fontsLast(Editable e) {
+        int n = e.length();
+        Object[] all = e.getSpans(0, n, Object.class);
+        java.util.ArrayList<Object> fonts = new java.util.ArrayList<>();
+        boolean need = false;
+        for (Object o : all) {
+            if (o instanceof Fnt) {
+                fonts.add(o);
+            } else if (o instanceof Code && !need && !fonts.isEmpty()) {
+                int a = e.getSpanStart(o);
+                int b = e.getSpanEnd(o);
+                for (Object f : fonts) {
+                    if (e.getSpanStart(f) < b && e.getSpanEnd(f) > a) {
+                        need = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!need) return;
+        for (Object f : fonts) {
+            int a = e.getSpanStart(f);
+            int b = e.getSpanEnd(f);
+            int fl = e.getSpanFlags(f);
+            e.removeSpan(f);
+            if (a >= 0 && b > a) e.setSpan(f, a, b, fl);
+        }
+    }
+
     private static void normalizeSpans(Editable e) {
         int n = e.length();
         Object[] all = e.getSpans(0, n, Object.class);
@@ -1605,6 +1646,7 @@ final class RichText {
             by[t].add(o);
         }
         for (int t : CHAR_TYPES) mergeChars(e, t, by[t]);
+        fontsLast(e);
 
         int count = 1;
         for (int i = 0; i < n; i++) if (e.charAt(i) == '\n') count++;
@@ -1679,6 +1721,9 @@ final class RichText {
         iv.sort((x, y) -> x[0] != y[0] ? x[0] - y[0] : x[2] - y[2]); // the span that starts last wins
         for (int[] r : iv) {
             int p = firstParaAtOrAfter(st, count, r[0]);
+            // typing at the very start of a styled line (or on a styled empty line) pushes the span's
+            // start forward, into the middle of its own paragraph: that paragraph still has the style
+            if (p > 0 && r[0] > st[p - 1] && r[0] <= (p < count ? st[p] - 1 : n)) p = p - 1;
             for (; p < count && st[p] < r[1] && st[p] < n; p++) val[p] = r[2];
             // a margin span that reaches the end of the text carries over to an empty last line
             if (margin && n > 0 && r[1] == n && r[0] < n && st[count - 1] == n) val[count - 1] = r[2];

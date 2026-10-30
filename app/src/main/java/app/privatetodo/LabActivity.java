@@ -8,14 +8,14 @@ import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
 /**
- * Design lab: ten swipe-time dial looks and ten slide-to-delete animations to try by hand.
- * Nothing here is wired into the app. Mark the ones you like with "Keep"; the list at the top
- * shows what you picked.
+ * Design lab: time-dial looks, slide-left and slide-right animations and main-screen title animations to try
+ * by hand. "Keep" marks a shortlist; "Use in the app" (or Default / Random) picks what the app really uses.
  */
 public class LabActivity extends Activity {
     private float density;
@@ -26,6 +26,9 @@ public class LabActivity extends Activity {
     private TextView tabDial;
     private TextView tabSwipe;
     private TextView tabTick;
+    private TextView tabTitle;
+    private TextView useLine;
+    private LinearLayout useChips;
     private SharedPreferences sp;
 
     @Override
@@ -74,8 +77,9 @@ public class LabActivity extends Activity {
         header.addView(text("Design lab", 30, Pal.ink, true));
         col.addView(header);
 
-        TextView intro = text("Try each one with your finger, then tap Keep on the ones you like. "
-                + "None of this is connected to the app yet, nothing is saved or deleted.", 14, Pal.muted, false);
+        TextView intro = text("Try each one with your finger. Keep is just your shortlist. \"Use in the app\" "
+                + "makes the app use it for real: Default is how the app always was, Random picks a different "
+                + "one every time. The test rows here never delete or complete anything.", 14, Pal.muted, false);
         intro.setPadding(dp(8), dp(4), dp(8), dp(12));
         col.addView(intro);
 
@@ -84,20 +88,30 @@ public class LabActivity extends Activity {
         tabDial = tab("Time dials");
         tabSwipe = tab("Delete");
         tabTick = tab("Done");
+        tabTitle = tab("Title");
         tabDial.setOnClickListener(v -> pick(0));
         tabSwipe.setOnClickListener(v -> pick(1));
         tabTick.setOnClickListener(v -> pick(2));
-        LinearLayout.LayoutParams a = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        a.rightMargin = dp(4);
-        LinearLayout.LayoutParams m = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        m.leftMargin = dp(4);
-        m.rightMargin = dp(4);
-        LinearLayout.LayoutParams b = new LinearLayout.LayoutParams(0, dp(44), 1f);
-        b.leftMargin = dp(4);
-        tabs.addView(tabDial, a);
-        tabs.addView(tabSwipe, m);
-        tabs.addView(tabTick, b);
+        tabTitle.setOnClickListener(v -> pick(3));
+        TextView[] all = {tabDial, tabSwipe, tabTick, tabTitle};
+        for (int i = 0; i < all.length; i++) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1f);
+            lp.leftMargin = i == 0 ? 0 : dp(3);
+            lp.rightMargin = i == all.length - 1 ? 0 : dp(3);
+            all[i].setTextSize(13);
+            tabs.addView(all[i], lp);
+        }
         col.addView(tabs);
+
+        useLine = text("", 14, Pal.ink, true);
+        useLine.setPadding(dp(8), dp(12), dp(8), 0);
+        col.addView(useLine);
+        useChips = new LinearLayout(this);
+        useChips.setOrientation(LinearLayout.HORIZONTAL);
+        useChips.setPadding(0, dp(6), 0, dp(2));
+        useChips.addView(useChip("Default", AnimPrefs.DEFAULT), chipLp(false));
+        useChips.addView(useChip("Random", AnimPrefs.RANDOM), chipLp(true));
+        col.addView(useChips);
 
         summary = text("", 14, Pal.accent, true);
         summary.setPadding(dp(8), dp(14), dp(8), dp(4));
@@ -134,9 +148,10 @@ public class LabActivity extends Activity {
         styleTab(tabDial, tab == 0);
         styleTab(tabSwipe, tab == 1);
         styleTab(tabTick, tab == 2);
+        styleTab(tabTitle, tab == 3);
         list.removeAllViews();
         String[] names = names();
-        String[] notes = tab == 0 ? LabDial.NOTES : tab == 1 ? LabSwipe.NOTES : LabTick.NOTES;
+        String[] notes = tab == 0 ? LabDial.NOTES : tab == 1 ? LabSwipe.NOTES : tab == 2 ? LabTick.NOTES : TitleFx.NOTES;
         String prefix = prefix();
         for (int i = 0; i < names.length; i++) {
             final int idx = i;
@@ -153,7 +168,7 @@ public class LabActivity extends Activity {
             top.setGravity(Gravity.CENTER_VERTICAL);
             LinearLayout names2 = new LinearLayout(this);
             names2.setOrientation(LinearLayout.VERTICAL);
-            names2.addView(text((tab == 0 ? "Dial " : tab == 1 ? "Delete " : "Done ") + (i + 1) + " · " + names[i], 17, Pal.ink, true));
+            names2.addView(text((tab == 0 ? "Dial " : tab == 1 ? "Delete " : tab == 2 ? "Done " : "Title ") + (i + 1) + " · " + names[i], 17, Pal.ink, true));
             TextView note = text(notes[i], 13, Pal.muted, false);
             note.setPadding(0, dp(2), dp(8), 0);
             names2.addView(note);
@@ -171,8 +186,33 @@ public class LabActivity extends Activity {
             top.addView(keep);
             card.addView(top);
 
+            LinearLayout useRow2 = new LinearLayout(this);
+            useRow2.setOrientation(LinearLayout.HORIZONTAL);
+            useRow2.setGravity(Gravity.END);
+            final TextView use = text("", 14, Pal.ink, true);
+            use.setPadding(dp(14), dp(8), dp(14), dp(8));
+            styleUse(use, AnimPrefs.mode(this, kind()) == idx);
+            use.setOnClickListener(v -> {
+                AnimPrefs.setMode(this, kind(), idx);
+                Hap.confirm(v);
+                fill();
+            });
+            useRow2.addView(use);
+            LinearLayout.LayoutParams ul = new LinearLayout.LayoutParams(-1, -2);
+            ul.topMargin = dp(6);
+            card.addView(useRow2, ul);
+
             View demo;
-            if (tab == 0) {
+            if (tab == 3) {
+                FrameLayout box = new FrameLayout(this);
+                GradientDrawable pg = new GradientDrawable();
+                pg.setColor(Pal.bg);
+                pg.setCornerRadius(dp(18));
+                box.setBackground(pg);
+                box.setPadding(dp(18), dp(14), dp(18), dp(14));
+                box.addView(new TitleFx(this, "Tasks", 34, i, 1400), new FrameLayout.LayoutParams(-2, -2));
+                demo = box;
+            } else if (tab == 0) {
                 final LabDial dial = new LabDial(this, i);
                 final TextView live = text(dial.time(), 15, Pal.accent, true);
                 live.setPadding(0, dp(6), 0, 0);
@@ -206,6 +246,7 @@ public class LabActivity extends Activity {
             list.addView(card, cl);
         }
         updateSummary();
+        refreshUse();
         Fonts.apply(list);
     }
 
@@ -223,11 +264,62 @@ public class LabActivity extends Activity {
     }
 
     private String[] names() {
-        return tab == 0 ? LabDial.NAMES : tab == 1 ? LabSwipe.NAMES : LabTick.NAMES;
+        return tab == 0 ? LabDial.NAMES : tab == 1 ? LabSwipe.NAMES : tab == 2 ? LabTick.NAMES : TitleFx.NAMES;
     }
 
     private String prefix() {
-        return tab == 0 ? "dial_" : tab == 1 ? "swipe_" : "tick_";
+        return tab == 0 ? "dial_" : tab == 1 ? "swipe_" : tab == 2 ? "tick_" : "title_";
+    }
+
+    private int kind() {
+        return tab == 0 ? AnimPrefs.DIAL : tab == 1 ? AnimPrefs.SWIPE : tab == 2 ? AnimPrefs.TICK : AnimPrefs.TITLE;
+    }
+
+    private TextView useChip(String label, final int mode) {
+        TextView t = text(label, 14, Pal.ink, true);
+        t.setGravity(Gravity.CENTER);
+        t.setTag(mode);
+        t.setOnClickListener(v -> {
+            AnimPrefs.setMode(this, kind(), mode);
+            Hap.confirm(v);
+            fill();
+        });
+        return t;
+    }
+
+    private LinearLayout.LayoutParams chipLp(boolean second) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        if (second) lp.leftMargin = dp(6);
+        else lp.rightMargin = dp(6);
+        return lp;
+    }
+
+    private void styleUse(TextView t, boolean on) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(20));
+        g.setColor(on ? Pal.sel : Pal.chip);
+        t.setBackground(g);
+        t.setText(on ? "In the app ✓" : "Use in the app");
+        t.setTextColor(on ? Pal.onSel : Pal.ink);
+    }
+
+    /** Colours the Default / Random chips and says what the app uses for this tab right now. */
+    private void refreshUse() {
+        int m = AnimPrefs.mode(this, kind());
+        String[] nm = names();
+        String what = tab == 0 ? "time dials" : tab == 1 ? "slide left (delete)" : tab == 2 ? "slide right (done)" : "main-screen title";
+        String now = m == AnimPrefs.DEFAULT ? "Default" : m == AnimPrefs.RANDOM ? "Random, a different one every time"
+                : (m + 1) + " · " + nm[m];
+        useLine.setText("In the app for " + what + ": " + now);
+        for (int i = 0; i < useChips.getChildCount(); i++) {
+            TextView c = (TextView) useChips.getChildAt(i);
+            boolean on = ((Integer) c.getTag()) == m;
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(22));
+            g.setColor(on ? Pal.sel : Pal.card);
+            c.setBackground(g);
+            c.setTextColor(on ? Pal.onSel : Pal.ink);
+        }
     }
 
     private void updateSummary() {
@@ -240,7 +332,7 @@ public class LabActivity extends Activity {
                 sb.append(i + 1);
             }
         }
-        String what = tab == 0 ? "dials" : tab == 1 ? "delete animations" : "done animations";
+        String what = tab == 0 ? "dials" : tab == 1 ? "delete animations" : tab == 2 ? "done animations" : "titles";
         summary.setText(sb.length() == 0 ? "Kept: none yet" : "Kept " + what + ": " + sb);
     }
 

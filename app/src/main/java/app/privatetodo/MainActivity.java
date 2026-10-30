@@ -11,6 +11,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Typeface;
@@ -203,7 +205,16 @@ public class MainActivity extends Activity {
 
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
-        titles.addView(text("Tasks", 34, Pal.ink, true));
+        View titleView = text("Tasks", 34, Pal.ink, true);
+        int titleStyle = AnimPrefs.pick(this, AnimPrefs.TITLE); // Settings > Design lab > Title (Default = plain)
+        if (titleStyle >= 0) {
+            try {
+                titleView = new TitleFx(this, "Tasks", 34, titleStyle, 7000);
+            } catch (RuntimeException ignored) {
+                // keep the plain title
+            }
+        }
+        titles.addView(titleView);
         subtitle = text("", 15, Pal.muted, false);
         subtitle.setPadding(0, dp(2), 0, 0);
         titles.addView(subtitle);
@@ -1751,23 +1762,101 @@ public class MainActivity extends Activity {
     }
 
     private void confirmDelete(final Task t) {
+        confirmDelete(t, null);
+    }
+
+    private void confirmDelete(final Task t, final Row row) {
         new Dlg.Builder(this)
                 .setTitle("Delete task?")
                 .setMessage(t.title)
                 .setPositiveButton("Delete", (d, w) -> {
-                    final TaskDb.Snap snap = db.snapshot("id = ?", new String[]{String.valueOf(t.id)});
-                    Reminders.cancel(this, t.id);
-                    db.delete(t.id);
-                    Hap.confirm(listView);
-                    refresh();
-                    showUndo("Task deleted", () -> {
-                        db.restore(snap);
-                        Reminders.schedule(this, db.get(t.id));
-                        refresh();
-                    });
+                    if (fxBusy) return;
+                    // the slide-left animation picked in Settings > Design lab (Default = none, just gone)
+                    playDelete(row, t, () -> deleteTask(t));
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    private void deleteTask(final Task t) {
+        final TaskDb.Snap snap = db.snapshot("id = ?", new String[]{String.valueOf(t.id)});
+        Reminders.cancel(this, t.id);
+        db.delete(t.id);
+        Hap.confirm(listView);
+        refresh();
+        showUndo("Task deleted", () -> {
+            db.restore(snap);
+            Reminders.schedule(this, db.get(t.id));
+            refresh();
+        });
+    }
+
+    // ---- slide-left / slide-right animations (Settings > Design lab), played on a picture of the row
+
+    private boolean fxBusy;
+
+    private void playDelete(final Row row, Task t, final Runnable then) {
+        int style = AnimPrefs.pick(this, AnimPrefs.SWIPE);
+        Bitmap pic = style < 0 || row == null || !row.isBound(t) ? null : row.snapCard();
+        if (pic == null) {
+            then.run();
+            return;
+        }
+        try {
+            final LabSwipe fx = new LabSwipe(this, style);
+            final ViewGroup decor = (ViewGroup) getWindow().getDecorView();
+            int[] at = row.cardLocation();
+            fxBusy = true;
+            final Bitmap shown = pic;
+            decor.addView(fx, new FrameLayout.LayoutParams(-1, -1));
+            row.hideCard(true);
+            fx.playOver(shown, at[0], at[1], 0f, () -> {
+                fxBusy = false;
+                row.hideCard(false);
+                decor.removeView(fx);
+                then.run();
+            });
+        } catch (RuntimeException ex) {
+            fxBusy = false;
+            if (row != null) row.hideCard(false);
+            then.run();
+        }
+    }
+
+    private void slideDone(final Row row, final Task t) {
+        final Runnable act = () -> {
+            tickAnchor = row;
+            tickRow = row;
+            toggleDone(t);
+        };
+        boolean early = t.repeat > 0 && !t.done && startOfDayOf(t.due) > startOfDayOf(System.currentTimeMillis());
+        int style = t.done || early || fxBusy ? AnimPrefs.DEFAULT : AnimPrefs.pick(this, AnimPrefs.TICK);
+        Bitmap before = style < 0 ? null : row.snapCard();
+        Bitmap after = before == null ? null : row.snapDoneCard();
+        if (before == null) {
+            act.run();
+            return;
+        }
+        try {
+            final LabTick fx = new LabTick(this, style);
+            final ViewGroup decor = (ViewGroup) getWindow().getDecorView();
+            int[] at = row.cardLocation();
+            fxBusy = true;
+            decor.addView(fx, new FrameLayout.LayoutParams(-1, -1));
+            row.hideCard(true);
+            fx.playOver(before, after, at[0], at[1], () -> {
+                fxBusy = false;
+                row.hideCard(false);
+                decor.removeView(fx);
+                tickAnchor = null; // the chosen animation is the celebration: no second one on top
+                tickRow = null;
+                toggleDone(t);
+            });
+        } catch (RuntimeException ex) {
+            fxBusy = false;
+            row.hideCard(false);
+            act.run();
+        }
     }
 
     private void confirmClearDone() {
@@ -2376,15 +2465,57 @@ public class MainActivity extends Activity {
                 card.animate().translationX(0).setDuration(160).withEndAction(
                         () -> reveal.setVisibility(View.INVISIBLE)).start();
                 if (a == MotionEvent.ACTION_UP && t != null) {
-                    if (dx <= -limit) confirmDelete(t);
-                    else if (dx >= limit) {
-                        tickAnchor = this;
-                        tickRow = this;
-                        toggleDone(t);
-                    }
+                    if (fxBusy) return true;
+                    if (dx <= -limit) confirmDelete(t, this);
+                    else if (dx >= limit) slideDone(this, t);
                 }
             }
             return true;
+        }
+
+        boolean isBound(Task t) {
+            return bound != null && t != null && bound.id == t.id && card.getWidth() > 0 && card.getHeight() > 0;
+        }
+
+        int[] cardLocation() {
+            card.animate().cancel(); // the card is still sliding back after the swipe: measure it at rest
+            card.setTranslationX(0);
+            reveal.setVisibility(View.INVISIBLE);
+            int[] l = new int[2];
+            card.getLocationInWindow(l);
+            return l;
+        }
+
+        void hideCard(boolean hide) {
+            card.setVisibility(hide ? View.INVISIBLE : View.VISIBLE);
+        }
+
+        /** The task card as a picture (null when it is not on screen). */
+        Bitmap snapCard() {
+            if (card.getWidth() <= 0 || card.getHeight() <= 0) return null;
+            try {
+                Bitmap b = Bitmap.createBitmap(card.getWidth(), card.getHeight(), Bitmap.Config.ARGB_8888);
+                card.draw(new Canvas(b));
+                return b;
+            } catch (RuntimeException | OutOfMemoryError ex) {
+                return null;
+            }
+        }
+
+        /** The same card as it looks once the task is ticked off (drawn on a spare row, nothing on screen changes). */
+        Bitmap snapDoneCard() {
+            Task t = bound;
+            if (t == null || getWidth() <= 0) return null;
+            try {
+                Row tmp = new Row(MainActivity.this);
+                tmp.bind(t.copyAt(t.due, !t.done));
+                tmp.measure(View.MeasureSpec.makeMeasureSpec(getWidth(), View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+                tmp.layout(0, 0, tmp.getMeasuredWidth(), tmp.getMeasuredHeight());
+                return tmp.snapCard();
+            } catch (RuntimeException ex) {
+                return null;
+            }
         }
 
         private void showSwipe(float dx) {
@@ -2405,6 +2536,7 @@ public class MainActivity extends Activity {
             armed = false;
             card.animate().cancel();
             card.setTranslationX(0);
+            card.setVisibility(View.VISIBLE);
             reveal.setVisibility(View.INVISIBLE);
 
             emojiView.setText(t.emoji);
@@ -2412,7 +2544,7 @@ public class MainActivity extends Activity {
             emojiView.setVisibility(t.emoji.isEmpty() ? View.GONE : View.VISIBLE);
             delete.setVisibility(t.emoji.isEmpty() ? View.VISIBLE : View.GONE);
             emojiView.setContentDescription("Delete task");
-            emojiView.setOnClickListener(v -> confirmDelete(t));
+            emojiView.setOnClickListener(v -> confirmDelete(t, Row.this));
             title.setText(t.title);
             title.setPaintFlags(t.done
                     ? title.getPaintFlags() | Paint.STRIKE_THRU_TEXT_FLAG
@@ -2495,7 +2627,7 @@ public class MainActivity extends Activity {
             });
             // The whole text column opens the editor; only a tap exactly on a link pill opens the link.
             textCol.setOnClickListener(v -> editDialog(t, null));
-            delete.setOnClickListener(v -> confirmDelete(t));
+            delete.setOnClickListener(v -> confirmDelete(t, Row.this));
 
             subsBox.removeAllViews();
             for (final Sub s : db.subs(t.id)) {

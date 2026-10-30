@@ -209,8 +209,8 @@ public class SettingsActivity extends Activity {
                 {IconView.HABIT, "Habit units", units + " units", 2, "habit units ml min quick amounts"},
                 {IconView.BELL, "Full-screen alert", AlertFx.NAMES[Math.min(AlertFx.NAMES.length - 1, Prefs.alertAnim(this))], 3,
                         "full screen alert animation glow aurora test lock screen"},
-                {IconView.LOOKS, "Design lab", "Test", 10,
-                        "design lab test dial dials time swipe slide delete animation animations try variations"},
+                {IconView.LOOKS, "Design lab", "Dials \u00b7 slide \u00b7 title animations", 10,
+                        "design lab test dial dials time swipe slide delete done animation animations title header default random try variations"},
                 {IconView.LOCK, "Backup", "Export \u00b7 Import", 4, "backup export import restore"},
         };
         final java.util.List<View> tileViews = new java.util.ArrayList<>();

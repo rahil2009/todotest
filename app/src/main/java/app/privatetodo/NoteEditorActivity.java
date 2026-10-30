@@ -793,7 +793,7 @@ public class NoteEditorActivity extends Activity {
         @Override
         public int getSize(android.graphics.Paint p, CharSequence text, int start, int end,
                            android.graphics.Paint.FontMetricsInt fm) {
-            return Math.round(p.getTextSize() * 1.15f);
+            return Math.round(p.getTextSize() * (kind == 1 ? 1.15f : 1.3f));
         }
 
         @Override
@@ -803,7 +803,7 @@ public class NoteEditorActivity extends Activity {
             android.graphics.Paint.Style oldS = p.getStyle();
             float oldW = p.getStrokeWidth();
             float u = p.getTextSize();
-            float w = u * 1.15f;
+            float w = u * (kind == 1 ? 1.15f : 1.3f);
             float cx = x + w / 2f;
             float cy = y - u * 0.34f;
             float h = u * 0.5f; // half size of the box
@@ -811,13 +811,31 @@ public class NoteEditorActivity extends Activity {
             p.setStrokeWidth(Math.max(1.6f, u * 0.1f));
             p.setStrokeCap(android.graphics.Paint.Cap.ROUND);
             p.setStrokeJoin(android.graphics.Paint.Join.ROUND);
-            if (kind == 0) {
-                c.drawRoundRect(cx - h, cy - h, cx + h, cy + h, u * 0.2f, u * 0.2f, p);
+            if (kind == 0) { // a checklist: a ticked box with its line, an empty box with a shorter line
+                float side = h * 0.95f;
+                float y1 = cy - h * 0.5f;
+                float y2 = cy + h * 0.58f;
+                float bx = cx - h * 1.05f;
+                float r = u * 0.12f;
+                c.drawRoundRect(bx, y1 - side / 2f, bx + side, y1 + side / 2f, r, r, p);
                 android.graphics.Path tick = new android.graphics.Path();
-                tick.moveTo(cx - h * 0.5f, cy + h * 0.02f);
-                tick.lineTo(cx - h * 0.1f, cy + h * 0.42f);
-                tick.lineTo(cx + h * 0.55f, cy - h * 0.4f);
+                tick.moveTo(bx + side * 0.2f, y1 + side * 0.02f);
+                tick.lineTo(bx + side * 0.43f, y1 + side * 0.26f);
+                tick.lineTo(bx + side * 0.82f, y1 - side * 0.26f);
                 c.drawPath(tick, p);
+                c.drawRoundRect(bx, y2 - side / 2f, bx + side, y2 + side / 2f, r, r, p);
+                c.drawLine(bx + side + h * 0.3f, y1, cx + h * 1.05f, y1, p);
+                c.drawLine(bx + side + h * 0.3f, y2, cx + h * 0.62f, y2, p);
+            } else if (kind == 2) { // a callout panel: an info mark on the left, two lines of text on the right
+                c.drawRoundRect(cx - h * 1.12f, cy - h * 0.86f, cx + h * 1.12f, cy + h * 0.86f, u * 0.22f, u * 0.22f, p);
+                float ix = cx - h * 0.52f;
+                c.drawCircle(ix, cy, h * 0.36f, p);
+                c.drawLine(ix, cy - h * 0.02f, ix, cy + h * 0.17f, p);
+                p.setStyle(android.graphics.Paint.Style.FILL);
+                c.drawCircle(ix, cy - h * 0.16f, u * 0.035f, p);
+                p.setStyle(android.graphics.Paint.Style.STROKE);
+                c.drawLine(cx + h * 0.08f, cy - h * 0.26f, cx + h * 0.8f, cy - h * 0.26f, p);
+                c.drawLine(cx + h * 0.08f, cy + h * 0.26f, cx + h * 0.55f, cy + h * 0.26f, p);
             } else {
                 c.drawRoundRect(cx - h, cy - h * 0.8f, cx + h, cy + h, u * 0.16f, u * 0.16f, p);
                 c.drawLine(cx - h, cy - h * 0.25f, cx + h, cy - h * 0.25f, p);
@@ -928,7 +946,7 @@ public class NoteEditorActivity extends Activity {
                         tool(TABLE_KEY, "▦", Typeface.BOLD, "Table", "Table"),
                         tool(KANBAN_KEY, "◫", Typeface.BOLD, "Kanban", "Kanban board (To do, Doing, Done)"),
                         tool(RichText.QUOTE, "“", Typeface.BOLD, "Quote", "Quote"),
-                        tool(RichText.CALLOUT, "▤", Typeface.BOLD, "Callout", "Callout box"),
+                        tool(RichText.CALLOUT, "\uFFFC", Typeface.BOLD, "Callout", "Callout box"),
                         tool(DIVIDER_KEY, "―", Typeface.BOLD, "Divider", "Divider line"),
                         tool(COUNTER_KEY, "±", Typeface.BOLD, "Counter", "A number with minus and plus buttons"),
                         tool(RichText.BLOCK, "</>", Typeface.BOLD, "Code block", "Code block"),
@@ -1043,9 +1061,9 @@ public class NoteEditorActivity extends Activity {
         t.glyph.setTypeface(Typeface.DEFAULT, style);
         t.glyph.setGravity(Gravity.CENTER);
         t.glyph.setSingleLine(true);
-        if (key == CHECK_KEY || key == DATETIME_KEY) {
+        if (key == CHECK_KEY || key == DATETIME_KEY || key == RichText.CALLOUT) {
             android.text.SpannableString gs = new android.text.SpannableString("\uFFFC");
-            gs.setSpan(new GlyphSpan(key == CHECK_KEY ? 0 : 1), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            gs.setSpan(new GlyphSpan(key == CHECK_KEY ? 0 : key == RichText.CALLOUT ? 2 : 1), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             t.glyph.setText(gs);
         }
         if (key == RichText.UNDER) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);

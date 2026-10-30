@@ -61,6 +61,7 @@ final class DialView extends LinearLayout {
     /** {@code withMonths} adds a "month" unit; used for repeat intervals like "every 2 weeks". */
     DialView(Context c, boolean allowAbsolute, boolean withMonths) {
         super(c);
+        AnimPrefs.reroll(AnimPrefs.DIAL); // "Random" dial look: a new one each time a dial opens
         this.withMonths = withMonths;
         this.allowAbsolute = allowAbsolute;
         this.density = c.getResources().getDisplayMetrics().density;

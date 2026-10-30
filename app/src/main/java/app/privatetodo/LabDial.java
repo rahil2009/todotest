@@ -65,14 +65,17 @@ final class LabDial extends View {
 
     private final int style;
     private final float d;
-    private final float rowH;
+    private float rowH;
     private final int slop;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rf = new RectF();
     private final Path path = new Path();
     private final Typeface regular;
     private final Typeface bold;
-    private final Col[] cols = new Col[3];
+    private Col[] cols = new Col[3];
+    private int ow;
+    private int oh;
+    private boolean solo;
     private Col active;
     private Runnable onChange;
 
@@ -123,6 +126,18 @@ final class LabDial extends View {
     }
 
     // ---- read access for LabLooks
+    int vw() {
+        return ow > 0 ? ow : getWidth();
+    }
+
+    int vh() {
+        return oh > 0 ? oh : getHeight();
+    }
+
+    int ncols() {
+        return cols.length;
+    }
+
     float dens() {
         return d;
     }
@@ -175,7 +190,6 @@ final class LabDial extends View {
     protected void onDraw(Canvas c) {
         float w = getWidth();
         float h = getHeight();
-        float cy = h / 2f;
         float pad = 14 * d;
         float avail = w - 2 * pad;
         float[] fr = {0.36f, 0.36f, 0.28f};
@@ -185,7 +199,37 @@ final class LabDial extends View {
             x += avail * fr[i];
             cols[i].x1 = x;
         }
+        paintLook(c, w, h);
+    }
 
+    /**
+     * Draws one column of a real dial (the app's Wheel) in this look: the same panel and row styling as the
+     * test dial, for a single column and without the colon. {@code pos} is the wheel's position in rows.
+     */
+    void renderColumn(Canvas c, int w, int h, String[] labels, boolean wrap, float pos, float rowHeight) {
+        if (labels == null || labels.length == 0) return;
+        Col[] saved = cols;
+        Col k = new Col(labels, wrap, 0);
+        k.pos = pos;
+        k.x0 = 4 * d;
+        k.x1 = w - 4 * d;
+        cols = new Col[]{k};
+        ow = w;
+        oh = h;
+        rowH = rowHeight;
+        solo = true;
+        try {
+            paintLook(c, w, h);
+        } finally {
+            solo = false;
+            cols = saved;
+            ow = 0;
+            oh = 0;
+        }
+    }
+
+    private void paintLook(Canvas c, float w, float h) {
+        float cy = h / 2f;
         if (style >= 10) {
             LabLooks.draw(this, c, style);
             return;
@@ -247,7 +291,8 @@ final class LabDial extends View {
                 break;
         }
 
-        for (int i = 0; i < 3; i++) drawCol(c, cols[i], i);
+        for (int i = 0; i < cols.length; i++) drawCol(c, cols[i], i);
+        if (solo) return;
 
         // colon between hour and minute
         float colonX = (cols[0].x1 + cols[1].x0) / 2f;
@@ -279,7 +324,7 @@ final class LabDial extends View {
     }
 
     private void drawCol(Canvas c, Col k, int colIndex) {
-        float cy = getHeight() / 2f;
+        float cy = vh() / 2f;
         float cx = (k.x0 + k.x1) / 2f;
         float cw = k.x1 - k.x0;
         int n = k.count;
@@ -293,7 +338,7 @@ final class LabDial extends View {
             for (int s = -14; s <= 14; s++) {
                 int g = g0 + s;
                 float y = cy + (g / 4f - k.pos) * rowH;
-                if (y < 4 * d || y > getHeight() - 4 * d) continue;
+                if (y < 4 * d || y > vh() - 4 * d) continue;
                 boolean major = ((g % 4) + 4) % 4 == 0;
                 if (!k.wrap && (g < 0 || g > (n - 1) * 4)) continue;
                 float near = Math.max(0f, 1f - Math.abs(y - cy) / (rowH * 1.6f));
