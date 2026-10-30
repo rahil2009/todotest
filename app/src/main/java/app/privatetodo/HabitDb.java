@@ -23,8 +23,18 @@ final class HabitDb extends SQLiteOpenHelper {
     static final int[] COLORS = {0xFF4ADEB0, 0xFF60A5FA, 0xFFA78BFA, 0xFFF472B6,
             0xFFFBBF24, 0xFFFB923C, 0xFF34D399, 0xFFF87171};
 
+    private final Context appCtx;
+
     HabitDb(Context c) {
         super(c.getApplicationContext(), "habits.db", null, 2);
+        appCtx = c.getApplicationContext();
+    }
+
+    /** Every write goes through here, so the home-screen widgets are told shortly after (debounced, read-only refresh). */
+    @Override
+    public SQLiteDatabase getWritableDatabase() {
+        TaskWidget.refreshSoon(appCtx);
+        return super.getWritableDatabase();
     }
 
     static long today() {

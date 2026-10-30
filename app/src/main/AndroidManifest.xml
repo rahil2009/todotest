@@ -15,6 +15,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <application
+        android:name=".App"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -78,6 +79,85 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_plan_info" />
         </receiver>
+
+        <receiver
+            android:name=".Widgets$Today"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_today_info" />
+        </receiver>
+
+        <receiver
+            android:name=".Widgets$Habits"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_habits_info" />
+        </receiver>
+
+        <receiver
+            android:name=".Widgets$Water"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_water_info" />
+        </receiver>
+
+        <receiver
+            android:name=".Widgets$Lent"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_lent_info" />
+        </receiver>
+
+        <receiver
+            android:name=".Widgets$Count"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_count_info" />
+        </receiver>
+
+        <receiver
+            android:name=".Widgets$Now"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_now_info" />
+        </receiver>
+
+        <service
+            android:name=".WidgetService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
+
+        <activity
+            android:name=".WidgetActionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
             android:name=".WidgetConfigActivity"
@@ -213,6 +293,46 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".LentActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".LentPersonActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:parentActivityName=".LentActivity" />
+        <activity
+            android:name=".LentEditActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:parentActivityName=".LentActivity" />
+        <activity
+            android:name=".UnlockActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop" />
+        <activity
+            android:name=".CountdownActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+        <receiver
+            android:name=".CountdownReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".AutoBackupReceiver"
+            android:exported="false" />
+        <activity
+            android:name=".KanbanActivity"
+            android:exported="false"
+            android:parentActivityName=".MainActivity" />
+        <activity
+            android:name=".KanbanBoardActivity"
+            android:exported="false"
+            android:parentActivityName=".KanbanActivity" />
+        <receiver
+            android:name=".LentReceiver"
+            android:exported="false" />
         <receiver
             android:name=".PomodoroReceiver"
             android:exported="false" />

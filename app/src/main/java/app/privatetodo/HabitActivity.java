@@ -41,6 +41,7 @@ public class HabitActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        Lock.guard(this, Lock.ALL);
         Pal.init(this);
         if (Pal.themeRes() != builtTheme) {
             recreate();

@@ -57,6 +57,7 @@ public class PlanActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        Lock.guard(this, Lock.ALL);
         Pal.init(this);
         Reminders.normalise(this);
         if (Pal.themeRes() != builtDark) {

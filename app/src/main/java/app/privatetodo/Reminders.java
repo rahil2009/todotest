@@ -361,6 +361,9 @@ final class Reminders {
 
     static void rescheduleAll(Context ctx) {
         WaterAlert.scheduleAll(ctx); // water reminders are re-armed with everything else
+        LentRemind.scheduleAll(ctx);
+        CountdownRemind.scheduleAll(ctx);
+        AutoBackup.schedule(ctx);
         normalise(ctx);
         TaskDb db = new TaskDb(ctx);
         try {
@@ -369,6 +372,7 @@ final class Reminders {
         } finally {
             db.close();
         }
+        TaskWidget.refreshSoon(ctx);
     }
 
     // -------------------------------------------------- user actions

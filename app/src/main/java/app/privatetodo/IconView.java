@@ -38,6 +38,8 @@ final class IconView extends View {
     static final int FINGER = 27;
     static final int FULLSCREEN = 28;
     static final int CLOSE_X = 29;
+    static final int LENT = 30;
+    static final int SPACES = 31;
 
     private final int kind;
     private boolean on;
@@ -294,6 +296,36 @@ final class IconView extends View {
                 canvas.drawLine(cx + 7 * d, cy - 9 * d, cx + 7 * d, cy - 6 * d, paint);
                 canvas.drawLine(cx + 5.5f * d, cy - 7.5f * d, cx + 8.5f * d, cy - 7.5f * d, paint);
                 break;
+            case LENT: { // a coin with a small arrow leaving it: money lent out
+                stroke(1.8f, Pal.ink);
+                canvas.drawCircle(cx - 1.5f * d, cy + 1.5f * d, 7.5f * d, paint);
+                canvas.drawLine(cx - 1.5f * d, cy - 1.5f * d, cx - 1.5f * d, cy + 4.5f * d, paint);
+                canvas.drawLine(cx - 4 * d, cy - 0.5f * d, cx + 1 * d, cy - 0.5f * d, paint);
+                canvas.drawLine(cx - 4 * d, cy + 3.5f * d, cx + 1 * d, cy + 3.5f * d, paint);
+                canvas.drawLine(cx + 3 * d, cy - 3 * d, cx + 8.5f * d, cy - 8.5f * d, paint);
+                canvas.drawLine(cx + 4.8f * d, cy - 8.5f * d, cx + 8.5f * d, cy - 8.5f * d, paint);
+                canvas.drawLine(cx + 8.5f * d, cy - 8.5f * d, cx + 8.5f * d, cy - 4.8f * d, paint);
+                break;
+            }
+            case SPACES: { // four rounded tiles, one filled: the hub of extra sections
+                stroke(1.8f, Pal.ink);
+                for (int gy = 0; gy < 2; gy++) {
+                    for (int gx = 0; gx < 2; gx++) {
+                        float x0 = cx - 8.5f * d + gx * 9.5f * d;
+                        float y0 = cy - 8.5f * d + gy * 9.5f * d;
+                        rect.set(x0, y0, x0 + 7.5f * d, y0 + 7.5f * d);
+                        if (gx == 1 && gy == 0) {
+                            paint.setStyle(Paint.Style.FILL);
+                            paint.setColor(Pal.accent);
+                            canvas.drawRoundRect(rect, 2.4f * d, 2.4f * d, paint);
+                            stroke(1.8f, Pal.ink);
+                        } else {
+                            canvas.drawRoundRect(rect, 2.4f * d, 2.4f * d, paint);
+                        }
+                    }
+                }
+                break;
+            }
             case CALENDAR: // month grid with one day filled in
                 stroke(1.8f, Pal.ink);
                 rect.set(cx - 9 * d, cy - 9 * d, cx + 9 * d, cy + 9 * d);

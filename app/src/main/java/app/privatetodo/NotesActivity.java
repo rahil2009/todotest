@@ -58,6 +58,7 @@ public class NotesActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        Lock.guard(this, Lock.NOTES);
         Pal.init(this);
         if (Pal.themeRes() != builtDark) {
             recreate();

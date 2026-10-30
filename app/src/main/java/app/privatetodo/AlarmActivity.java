@@ -31,8 +31,7 @@ public class AlarmActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Pal.init(this);
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
+        Immersive.apply(this, BG); // true full screen: no status / navigation bars, runs under the camera cut-out
         density = getResources().getDisplayMetrics().density;
         if (Build.VERSION.SDK_INT >= 27) {
             setShowWhenLocked(true);
@@ -44,6 +43,12 @@ public class AlarmActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         id = getIntent().getLongExtra(Reminders.EXTRA_ID, -1);
         show();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) Immersive.hideBars(this);
     }
 
     @Override

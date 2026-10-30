@@ -1,8 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Private Todo</string>
-    <string name="widget_tasks_desc">Today\'s tasks, tick them off from the home screen</string>
-    <string name="widget_quick_desc">Add a task in one tap</string>
-    <string name="widget_notes_desc">Your latest notes; tap one to open it</string>
-    <string name="widget_plan_desc">Today\'s plan with free time</string>
+    <string name="widget_tasks_desc">Your tasks as a scrollable list; tick them off, switch Today / Upcoming / All</string>
+    <string name="widget_quick_desc">Shortcuts: new task, new note, habits, Lent and focus timer</string>
+    <string name="widget_notes_desc">Your notes, pinned first; scroll and tap one to open it</string>
+    <string name="widget_plan_desc">Today in time order, with the free stretches between</string>
+    <string name="widget_today_desc">A ring of today\'s progress and what is next</string>
+    <string name="widget_habits_desc">Your habits with today\'s progress; tap + to log</string>
+    <string name="widget_water_desc">Water for today with one-tap add buttons</string>
+    <string name="widget_lent_desc">Who owes you, and how much; scroll through your Lent list</string>
+    <string name="widget_count_desc">Days left to your events; scrolls</string>
+    <string name="widget_now_desc">The next task with a countdown and one-tap done or snooze</string>
 </resources>

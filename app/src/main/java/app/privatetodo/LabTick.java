@@ -265,6 +265,45 @@ final class LabTick extends View {
         p.setAlpha(255);
     }
 
+    private static final String[] HINT = {"\u2714\uFE0F", "\uD83C\uDF89", "\uD83D\uDCA7", "\uD83C\uDF3F", "\uD83C\uDF86",
+            "\uD83E\uDE99", "\u2B50", "\uD83C\uDF88", "\u2728", "\uD83E\uDD98", "\uD83D\uDD8A\uFE0F",
+            "\uD83D\uDD04", "\u2705", "\uD83D\uDC96", "\uD83E\uDD73", "\uD83C\uDFC5", "\uD83C\uDF00",
+            "\uD83C\uDF08", "\uD83D\uDD26", "\uD83D\uDCEE", "\uD83D\uDCA5", "\u2601\uFE0F",
+            "\uD83C\uDFC6", "\uD83D\uDCCA", "\u26D3\uFE0F", "\u2600\uFE0F", "\u2708\uFE0F",
+            "\uD83C\uDF6E", "\uD83D\uDC41\uFE0F", "\u26F2"};
+
+    /**
+     * The area behind a real task row while it is being dragged to the right: a green panel, a circle that
+     * draws its tick as you pull, the words, and a small emoji of this look that fades in.
+     */
+    void paintReveal(Canvas c, float pr, float w, float h) {
+        rw = w;
+        rh = h;
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(Pal.accent);
+        p.setAlpha(255);
+        rf.set(0, 0, w, h);
+        c.drawRoundRect(rf, 16 * d, 16 * d, p);
+        float cx = 38 * d;
+        p.setColor(0x33FFFFFF);
+        c.drawCircle(cx, h / 2f, (16 + 8 * pr) * d, p);
+        drawCheck(c, cx, h / 2f, (20 + 6 * pr) * d, pr, Pal.onAccent, 3 * d);
+        p.setTypeface(bold);
+        p.setTextAlign(Paint.Align.LEFT);
+        p.setTextSize(12.5f * d);
+        p.setColor(Pal.onAccent);
+        p.setAlpha(255);
+        c.drawText(pr >= 1f ? "Release to complete" : "Slide to complete", cx + 32 * d,
+                h / 2f - (p.ascent() + p.descent()) / 2f, p);
+        p.setTypeface(regular);
+        p.setTextAlign(Paint.Align.CENTER);
+        p.setTextSize(22 * d);
+        p.setColor(Pal.onAccent);
+        p.setAlpha((int) (255 * pr));
+        c.drawText(HINT[style % HINT.length], w - 40 * d, h / 2f - (p.ascent() + p.descent()) / 2f, p);
+        p.setAlpha(255);
+    }
+
     private static int mix(int a, int b, float t) {
         t = cl(t);
         int r = Math.round(((a >> 16) & 255) * (1 - t) + ((b >> 16) & 255) * t);

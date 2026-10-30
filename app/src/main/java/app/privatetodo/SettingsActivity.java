@@ -29,6 +29,8 @@ public class SettingsActivity extends Activity {
     private static final int REQ_EXPORT = 4101;
     private static final int REQ_IMPORT = 4102;
     private static final int REQ_FONT = 4103;
+    private static final int REQ_TREE = 4104;
+    private boolean enableAfterPick;
     private int pickKind;
     private final TextView[] soundName = new TextView[3];
 
@@ -48,6 +50,7 @@ public class SettingsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        Lock.guard(this, Lock.ANY);
         if (resumedOnce && page == 0) { // tiles show live status, so refresh after a sub-page
             blocks.clear();
             blockWords.clear();
@@ -84,7 +87,7 @@ public class SettingsActivity extends Activity {
         col.setPadding(dp(16), dp(12), dp(16), dp(32));
         scroll.addView(col, new ScrollView.LayoutParams(-1, -2));
 
-        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Tick animation", "Haptics", "Water reminders"};
+        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Tick animation", "Haptics", "Water reminders", "Design lab", "App lock"};
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -109,10 +112,20 @@ public class SettingsActivity extends Activity {
             col.addView(hapticCard());
         } else if (page == 9) {
             col.addView(waterCard());
+        } else if (page == 11) {
+            col.addView(lockCard());
+            TextView lnote = text("The lock uses your phone's own fingerprint, face or screen lock, so there is no separate PIN "
+                    + "to forget. Alarms and reminders still ring while the app is locked. If you turn on hiding in recent apps, "
+                    + "screenshots are blocked in locked screens.", 13, Pal.muted, false);
+            lnote.setPadding(dp(8), dp(16), dp(8), 0);
+            col.addView(lnote);
         } else if (page == 3) {
             col.addView(alertCard());
         } else if (page == 4) {
             col.addView(backupCard());
+            View gap = new View(this);
+            col.addView(gap, new LinearLayout.LayoutParams(-1, dp(14)));
+            col.addView(autoBackupCard());
             TextView bnote = text("Backups are plain files you choose where to save. Nothing is sent anywhere.",
                     13, Pal.muted, false);
             bnote.setPadding(dp(8), dp(16), dp(8), 0);
@@ -211,7 +224,10 @@ public class SettingsActivity extends Activity {
                         "full screen alert animation glow aurora test lock screen"},
                 {IconView.LOOKS, "Design lab", "Dials \u00b7 slide \u00b7 title animations", 10,
                         "design lab test dial dials time swipe slide delete done animation animations title header default random try variations"},
-                {IconView.LOCK, "Backup", "Export \u00b7 Import", 4, "backup export import restore"},
+                {IconView.LOCK, "App lock", Lock.enabled(this) ? "On" : "Off", 11,
+                        "lock app lock fingerprint face pin biometric privacy hide recents screenshot secure"},
+                {IconView.LOCK, "Backup", AutoBackup.on(this) ? "Daily \u00b7 Export \u00b7 Import" : "Export \u00b7 Import", 4,
+                        "backup export import restore daily automatic auto folder"},
         };
         final java.util.List<View> tileViews = new java.util.ArrayList<>();
         LinearLayout grid = new LinearLayout(this);
@@ -895,6 +911,153 @@ public class SettingsActivity extends Activity {
         return backupCard;
     }
 
+    /** Daily backup: switch, folder, how many to keep, run now, and how the last one went. */
+    private LinearLayout autoBackupCard() {
+        LinearLayout c = card();
+        c.addView(toggleRow("Daily backup",
+                "Saves a copy every night to a folder you choose, and keeps the last few. Nothing leaves the phone.",
+                AutoBackup.on(this), on -> {
+                    if (on) {
+                        if (AutoBackup.tree(this) == null) {
+                            enableAfterPick = true;
+                            pickBackupFolder();
+                        } else {
+                            AutoBackup.setOn(this, true);
+                            runBackupNow(false);
+                        }
+                    } else {
+                        AutoBackup.setOn(this, false);
+                    }
+                }));
+        c.addView(backupRow("Backup folder", AutoBackup.folderName(this), v -> pickBackupFolder()));
+        LinearLayout keepRow = backupRow("Keep the last " + AutoBackup.keep(this) + " backups",
+                "Tap to change: 3, 7, 14 or 30", v -> {
+                    int[] opts = {3, 7, 14, 30};
+                    int cur = AutoBackup.keep(this);
+                    int next = opts[0];
+                    for (int i = 0; i < opts.length; i++) if (opts[i] == cur) next = opts[(i + 1) % opts.length];
+                    AutoBackup.setKeep(this, next);
+                    ((TextView) ((LinearLayout) v).getChildAt(0)).setText("Keep the last " + next + " backups");
+                });
+        c.addView(keepRow);
+        long last = AutoBackup.last(this);
+        String st = AutoBackup.status(this);
+        String when = last == 0 ? "No backup yet" : "Last: " + Reminders.when(this, last);
+        if (!st.isEmpty() && !st.equals("OK")) when += "\n" + st;
+        c.addView(backupRow("Back up now", when, v -> runBackupNow(true)));
+        return c;
+    }
+
+    private static void chipOn(TextView t, boolean on) {
+        t.setTextColor(on ? Pal.onSel : Pal.muted);
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(on ? Pal.sel : Pal.chip);
+        g.setCornerRadius(1000);
+        t.setBackground(g);
+    }
+
+    private TextView chip(String label, boolean on, View.OnClickListener l) {
+        TextView t = text(label, 14, Pal.muted, true);
+        t.setGravity(Gravity.CENTER);
+        t.setMinHeight(dp(38));
+        t.setPadding(dp(16), 0, dp(16), 0);
+        chipOn(t, on);
+        t.setOnClickListener(v -> {
+            Hap.tick(v);
+            l.onClick(v);
+        });
+        return t;
+    }
+
+    /** App lock: on/off, which parts, how soon it locks again, and hiding in recent apps. */
+    private LinearLayout lockCard() {
+        LinearLayout c = card();
+        c.addView(toggleRow("Lock the app",
+                "Ask for your fingerprint, face or screen lock to open the locked parts.",
+                Lock.enabled(this), on -> {
+                    if (on && !Lock.deviceSecure(this)) {
+                        Toast.makeText(this, "Set a screen lock in your phone's settings first", Toast.LENGTH_LONG).show();
+                    } else {
+                        Lock.setEnabled(this, on);
+                    }
+                    setContentView(build());
+                }));
+        if (!Lock.enabled(this)) return c;
+
+        TextView h1 = text("LOCK THESE", 12, Pal.muted, true);
+        h1.setLetterSpacing(0.08f);
+        h1.setPadding(dp(2), dp(14), 0, dp(6));
+        c.addView(h1);
+        LinearLayout row1 = new LinearLayout(this);
+        final int[] bits = {Lock.NOTES, Lock.LENT, Lock.ALL};
+        final String[] names = {"Notebook", "Lent", "Whole app"};
+        for (int i = 0; i < bits.length; i++) {
+            final int bit = bits[i];
+            TextView t = chip(names[i], (Lock.scope(this) & bit) != 0, v -> {
+                int s = Lock.scope(this) ^ bit;
+                if (s == 0) s = bit; // keep at least one part locked
+                Lock.setScope(this, s);
+                setContentView(build());
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.rightMargin = dp(8);
+            row1.addView(t, lp);
+        }
+        c.addView(row1);
+
+        TextView h2 = text("LOCK AGAIN AFTER LEAVING THE APP", 12, Pal.muted, true);
+        h2.setLetterSpacing(0.08f);
+        h2.setPadding(dp(2), dp(16), 0, dp(6));
+        c.addView(h2);
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout row2 = new LinearLayout(this);
+        for (int i = 0; i < Lock.AFTER_NAMES.length; i++) {
+            final int k = i;
+            TextView t = chip(Lock.AFTER_NAMES[i], Lock.afterIndex(this) == i, v -> {
+                Lock.setAfter(this, k);
+                setContentView(build());
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.rightMargin = dp(8);
+            row2.addView(t, lp);
+        }
+        hs.addView(row2);
+        c.addView(hs);
+
+        View gap = new View(this);
+        c.addView(gap, new LinearLayout.LayoutParams(-1, dp(8)));
+        c.addView(toggleRow("Hide in recent apps",
+                "Blank preview in the app switcher, and no screenshots of locked screens.",
+                Lock.hideInRecents(this), on -> {
+                    Lock.setHideInRecents(this, on);
+                    Lock.guard(this, Lock.ANY);
+                }));
+        return c;
+    }
+
+    private void pickBackupFolder() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+        startActivityForResult(i, REQ_TREE);
+    }
+
+    private void runBackupNow(final boolean say) {
+        if (AutoBackup.tree(this) == null) {
+            Toast.makeText(this, "Choose a backup folder first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        final android.content.Context app = getApplicationContext();
+        new Thread(() -> {
+            final boolean ok = AutoBackup.run(app);
+            runOnUiThread(() -> {
+                if (say || !ok) Toast.makeText(this, ok ? "Backup saved" : AutoBackup.status(this), Toast.LENGTH_LONG).show();
+                if (!isFinishing()) setContentView(build());
+            });
+        }, "auto-backup").start();
+    }
+
     private LinearLayout soundCard(final int kind) {
         LinearLayout card = card();
 
@@ -993,6 +1156,26 @@ public class SettingsActivity extends Activity {
                 && data.getData() != null) {
             if (req == REQ_EXPORT) doExport(data.getData());
             else doImport(data.getData());
+            return;
+        }
+        if (req == REQ_TREE) {
+            boolean enable = enableAfterPick;
+            enableAfterPick = false;
+            if (result == RESULT_OK && data != null && data.getData() != null) {
+                Uri tree = data.getData();
+                try {
+                    getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                } catch (SecurityException ignored) {
+                    // the grant may already be persistent
+                }
+                AutoBackup.setTree(this, tree);
+                if (enable || AutoBackup.on(this)) {
+                    AutoBackup.setOn(this, true);
+                    runBackupNow(false);
+                }
+            }
+            setContentView(build());
             return;
         }
         if (req == REQ_FONT) {

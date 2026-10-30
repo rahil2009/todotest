@@ -5,4 +5,11 @@
     <color name="w_muted">#FF9FA9A5</color>
     <color name="w_accent">#FF6FCDBD</color>
     <color name="w_on_accent">#FF04201B</color>
+    <color name="w_card">#FF252C2A</color>
+    <color name="w_chip">#FF303835</color>
+    <color name="w_soft">#266FCDBD</color>
+    <color name="w_red">#FFF2B8B5</color>
+    <color name="w_red_soft">#33F2B8B5</color>
+    <color name="w_amber">#FFF2B35C</color>
+    <color name="w_blue">#FF7DB8F5</color>
 </resources>

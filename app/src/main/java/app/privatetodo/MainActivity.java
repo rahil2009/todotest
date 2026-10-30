@@ -148,9 +148,38 @@ public class MainActivity extends Activity {
         }, 250);
     }
 
+    private LinearLayout titlesBox;
+    private boolean resumedBefore;
+
+    /** The "Tasks" heading in the look chosen in Settings > Design lab > Title (Default = plain). */
+    private View makeTitle() {
+        View titleView = text("Tasks", 34, Pal.ink, true);
+        int titleStyle = AnimPrefs.pick(this, AnimPrefs.TITLE);
+        if (titleStyle >= 0) {
+            try {
+                titleView = new TitleFx(this, "Tasks", 34, titleStyle, 7000);
+            } catch (RuntimeException ignored) {
+                // keep the plain title
+            }
+        }
+        // Random picks a new look each time the heading is shown again, or when it is tapped
+        if (AnimPrefs.mode(this, AnimPrefs.TITLE) == AnimPrefs.RANDOM) {
+            titleView.setOnClickListener(v -> rollTitle());
+        }
+        return titleView;
+    }
+
+    private void rollTitle() {
+        if (titlesBox == null || titlesBox.getChildCount() == 0) return;
+        titlesBox.removeViewAt(0);
+        titlesBox.addView(makeTitle(), 0);
+        Fonts.apply(titlesBox);
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
+        Lock.guard(this, Lock.ALL);
         Pal.init(this);
         if (Pal.themeRes() != builtDark) { // theme changed in Settings
             recreate();
@@ -158,6 +187,12 @@ public class MainActivity extends Activity {
         }
         Reminders.normalise(this); // every series sits on its current round
         WaterAlert.scheduleAll(this); // water reminders survive a force-stop: opening the app re-arms them
+        LentRemind.scheduleAll(this); // so do the Lent reminders
+        CountdownRemind.scheduleAll(this); // and the countdown reminders
+        AutoBackup.schedule(this); // and tonight's backup
+        AutoBackup.catchUp(this);  // a night that was missed
+        if (resumedBefore && AnimPrefs.mode(this, AnimPrefs.TITLE) == AnimPrefs.RANDOM) rollTitle(); // Random: a new look every visit
+        resumedBefore = true;
         // Picks up Done / Snooze taken from a notification or the alarm screen.
         refresh();
     }
@@ -187,6 +222,79 @@ public class MainActivity extends Activity {
         updateBell();
     }
 
+    /** The "more" sheet: Lent, Countdowns and Kanban boards, each a tile with a one-line summary. */
+    private void showSpaces() {
+        String lentSub = "Money and things";
+        LentDb ldb = new LentDb(this);
+        try {
+            long owed = 0;
+            for (LentDb.Loan l : ldb.all()) if (!l.closed && l.dir == 0 && l.money()) owed += l.left();
+            if (owed > 0) lentSub = "You are owed " + LentUi.money(this, owed);
+        } catch (RuntimeException ignored) {
+            // no Lent data yet
+        } finally {
+            ldb.close();
+        }
+        String cdSub = "Days left to events";
+        CountdownDb cdb = new CountdownDb(this);
+        try {
+            for (CountdownDb.Item i : cdb.all()) {
+                if (i.daysLeft() >= 0) {
+                    cdSub = CountdownRemind.headline(i);
+                    break;
+                }
+            }
+        } finally {
+            cdb.close();
+        }
+        String kbSub = "Projects in columns";
+        KanbanDb kdb = new KanbanDb(this);
+        try {
+            int n = kdb.boards().size();
+            if (n > 0) kbSub = n + (n == 1 ? " board" : " boards");
+        } finally {
+            kdb.close();
+        }
+        final String[] names = {"Lent", "Countdowns", "Kanban"};
+        final String[] icons = {"\uD83D\uDCB0", "\u23F3", "\uD83D\uDCCB"};
+        final String[] subs = {lentSub, cdSub, kbSub};
+        final Class<?>[] targets = {LentActivity.class, CountdownActivity.class, KanbanActivity.class};
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(4), dp(16), dp(4));
+        final android.app.AlertDialog[] dlg = new android.app.AlertDialog[1];
+        for (int i = 0; i < names.length; i++) {
+            final int k = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(16), dp(14), dp(16), dp(14));
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(18));
+            g.setColor(Pal.chip);
+            row.setBackground(g);
+            TextView ic = text(icons[i], 26, Pal.ink, false);
+            row.addView(ic, new LinearLayout.LayoutParams(dp(44), -2));
+            LinearLayout words = new LinearLayout(this);
+            words.setOrientation(LinearLayout.VERTICAL);
+            words.addView(text(names[i], 18, Pal.ink, true));
+            TextView sub = text(subs[i], 13, Pal.muted, false);
+            sub.setSingleLine(true);
+            sub.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            words.addView(sub);
+            row.addView(words, new LinearLayout.LayoutParams(0, -2, 1f));
+            row.setOnClickListener(v -> {
+                Hap.tick(v);
+                if (dlg[0] != null) dlg[0].dismiss();
+                startActivity(new Intent(this, targets[k]));
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = dp(8);
+            box.addView(row, lp);
+        }
+        Fonts.apply(box);
+        dlg[0] = new Dlg.Builder(this).setTitle("More").setView(box).setNegativeButton("Close", null).show();
+    }
+
     // ---------------------------------------------------------------- UI
 
     private View buildUi() {
@@ -201,20 +309,12 @@ public class MainActivity extends Activity {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.TOP);
-        header.setPadding(dp(24), dp(16), dp(12), 0);
+        header.setPadding(dp(24), dp(16), dp(8), 0);
 
         LinearLayout titles = new LinearLayout(this);
         titles.setOrientation(LinearLayout.VERTICAL);
-        View titleView = text("Tasks", 34, Pal.ink, true);
-        int titleStyle = AnimPrefs.pick(this, AnimPrefs.TITLE); // Settings > Design lab > Title (Default = plain)
-        if (titleStyle >= 0) {
-            try {
-                titleView = new TitleFx(this, "Tasks", 34, titleStyle, 7000);
-            } catch (RuntimeException ignored) {
-                // keep the plain title
-            }
-        }
-        titles.addView(titleView);
+        titlesBox = titles;
+        titles.addView(makeTitle());
         subtitle = text("", 15, Pal.muted, false);
         subtitle.setPadding(0, dp(2), 0, 0);
         titles.addView(subtitle);
@@ -225,7 +325,15 @@ public class MainActivity extends Activity {
         trash.setContentDescription("Clear completed tasks");
         trash.setOnClickListener(v -> confirmClearDone());
         clearDone = trash;
-        header.addView(trash, new LinearLayout.LayoutParams(dp(41), dp(48)));
+        header.addView(trash, new LinearLayout.LayoutParams(dp(35), dp(48)));
+
+        IconView spaces = new IconView(this, IconView.SPACES);
+        spaces.setContentDescription("More: Lent, Countdowns, Kanban boards");
+        spaces.setOnClickListener(v -> {
+            Hap.tick(v);
+            showSpaces();
+        });
+        header.addView(spaces, new LinearLayout.LayoutParams(dp(35), dp(48)));
 
         IconView habit = new IconView(this, IconView.HABIT);
         habit.setContentDescription("Habits");
@@ -233,7 +341,7 @@ public class MainActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, HabitActivity.class));
         });
-        header.addView(habit, new LinearLayout.LayoutParams(dp(41), dp(48)));
+        header.addView(habit, new LinearLayout.LayoutParams(dp(35), dp(48)));
 
         IconView pomodoro = new IconView(this, IconView.POMODORO);
         pomodoro.setContentDescription("Pomodoro focus timer");
@@ -241,7 +349,7 @@ public class MainActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, PomodoroActivity.class));
         });
-        header.addView(pomodoro, new LinearLayout.LayoutParams(dp(41), dp(48)));
+        header.addView(pomodoro, new LinearLayout.LayoutParams(dp(35), dp(48)));
 
         IconView plan = new IconView(this, IconView.PLAN);
         plan.setContentDescription("Plan");
@@ -249,17 +357,17 @@ public class MainActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, PlanActivity.class));
         });
-        header.addView(plan, new LinearLayout.LayoutParams(dp(41), dp(48)));
+        header.addView(plan, new LinearLayout.LayoutParams(dp(35), dp(48)));
 
         IconView notebook = new IconView(this, IconView.NOTE);
         notebook.setContentDescription("Notebook");
         notebook.setOnClickListener(v -> startActivity(new Intent(this, NotesActivity.class)));
-        header.addView(notebook, new LinearLayout.LayoutParams(dp(41), dp(48)));
+        header.addView(notebook, new LinearLayout.LayoutParams(dp(35), dp(48)));
 
         bell = new IconView(this, IconView.BELL);
         bell.setContentDescription("Reminder setup");
         bell.setOnClickListener(v -> showSetup());
-        header.addView(bell, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(bell, new LinearLayout.LayoutParams(dp(42), dp(48)));
 
         column.addView(header, new LinearLayout.LayoutParams(-1, -2));
 
@@ -1794,9 +1902,13 @@ public class MainActivity extends Activity {
     // ---- slide-left / slide-right animations (Settings > Design lab), played on a picture of the row
 
     private boolean fxBusy;
+    /** The look that was previewed while dragging (MIN_VALUE = none, pick afresh). */
+    private int nextSwipeStyle = Integer.MIN_VALUE;
+    private int nextTickStyle = Integer.MIN_VALUE;
 
     private void playDelete(final Row row, Task t, final Runnable then) {
-        int style = AnimPrefs.pick(this, AnimPrefs.SWIPE);
+        int style = nextSwipeStyle != Integer.MIN_VALUE ? nextSwipeStyle : AnimPrefs.pick(this, AnimPrefs.SWIPE);
+        nextSwipeStyle = Integer.MIN_VALUE;
         Bitmap pic = style < 0 || row == null || !row.isBound(t) ? null : row.snapCard();
         if (pic == null) {
             then.run();
@@ -1830,7 +1942,9 @@ public class MainActivity extends Activity {
             toggleDone(t);
         };
         boolean early = t.repeat > 0 && !t.done && startOfDayOf(t.due) > startOfDayOf(System.currentTimeMillis());
-        int style = t.done || early || fxBusy ? AnimPrefs.DEFAULT : AnimPrefs.pick(this, AnimPrefs.TICK);
+        int style = t.done || early || fxBusy ? AnimPrefs.DEFAULT
+                : nextTickStyle != Integer.MIN_VALUE ? nextTickStyle : AnimPrefs.pick(this, AnimPrefs.TICK);
+        nextTickStyle = Integer.MIN_VALUE;
         Bitmap before = style < 0 ? null : row.snapCard();
         Bitmap after = before == null ? null : row.snapDoneCard();
         if (before == null) {
@@ -2309,6 +2423,35 @@ public class MainActivity extends Activity {
         return t;
     }
 
+    /** Paints the area behind a dragged row with a Design lab look (delete or done). */
+    private static final class FxReveal extends View {
+        private LabSwipe del;
+        private LabTick tick;
+        private float pr;
+
+        FxReveal(Context c) {
+            super(c);
+        }
+
+        void set(LabSwipe d, LabTick t, float p) {
+            del = d;
+            tick = t;
+            pr = p;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            if (del != null) {
+                del.rw = getWidth();
+                del.rh = getHeight();
+                del.drawReveal(c, pr, pr, 1f);
+            } else if (tick != null) {
+                tick.paintReveal(c, pr, getWidth(), getHeight());
+            }
+        }
+    }
+
     private final class Row extends FrameLayout {
         private final IconView check;
         private final TextView title;
@@ -2330,6 +2473,12 @@ public class MainActivity extends Activity {
         private float downY;
         private boolean swiping;
         private boolean armed;
+        // while a finger drags the row, the reveal behind it is drawn in the look chosen in the Design lab
+        private final FxReveal fx;
+        private LabSwipe dragDel;
+        private LabTick dragTick;
+        private int delStyle = -1;
+        private int tickStyle = -1;
 
         Row(Context c) {
             super(c);
@@ -2349,6 +2498,9 @@ public class MainActivity extends Activity {
             revealTrash.setTint(Color.WHITE);
             revealTrash.setClickable(false);
             reveal.addView(revealTrash, new FrameLayout.LayoutParams(dp(56), dp(56), Gravity.END | Gravity.CENTER_VERTICAL));
+            fx = new FxReveal(c);
+            fx.setVisibility(View.GONE);
+            reveal.addView(fx, new FrameLayout.LayoutParams(-1, -1));
             addView(reveal, new FrameLayout.LayoutParams(-1, -1));
 
             card = new LinearLayout(c);
@@ -2423,6 +2575,7 @@ public class MainActivity extends Activity {
                         float dy = e.getY() - downY;
                         if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > Math.abs(dy) * 1.5f) {
                             swiping = true;
+                            beginSwipe();
                             if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                         }
                     }
@@ -2447,6 +2600,7 @@ public class MainActivity extends Activity {
                     float dy = e.getY() - downY;
                     if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > Math.abs(dy) * 1.5f) {
                         swiping = true;
+                        beginSwipe();
                         if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
                     }
                 }
@@ -2462,12 +2616,17 @@ public class MainActivity extends Activity {
                 swiping = false;
                 float limit = Math.max(dp(96), getWidth() * 0.3f);
                 Task t = bound;
-                card.animate().translationX(0).setDuration(160).withEndAction(
+                card.animate().translationX(0).scaleX(1f).scaleY(1f).setDuration(160).withEndAction(
                         () -> reveal.setVisibility(View.INVISIBLE)).start();
                 if (a == MotionEvent.ACTION_UP && t != null) {
                     if (fxBusy) return true;
-                    if (dx <= -limit) confirmDelete(t, this);
-                    else if (dx >= limit) slideDone(this, t);
+                    if (dx <= -limit) {
+                        nextSwipeStyle = delStyle; // the animation previewed while dragging is the one that plays
+                        confirmDelete(t, this);
+                    } else if (dx >= limit) {
+                        nextTickStyle = tickStyle;
+                        slideDone(this, t);
+                    }
                 }
             }
             return true;
@@ -2480,6 +2639,8 @@ public class MainActivity extends Activity {
         int[] cardLocation() {
             card.animate().cancel(); // the card is still sliding back after the swipe: measure it at rest
             card.setTranslationX(0);
+            card.setScaleX(1f);
+            card.setScaleY(1f);
             reveal.setVisibility(View.INVISIBLE);
             int[] l = new int[2];
             card.getLocationInWindow(l);
@@ -2518,13 +2679,57 @@ public class MainActivity extends Activity {
             }
         }
 
+        /** Picks the looks for this drag (the same ones that will play on release) and sets up their painters. */
+        private void beginSwipe() {
+            nextSwipeStyle = Integer.MIN_VALUE;
+            nextTickStyle = Integer.MIN_VALUE;
+            dragDel = null;
+            dragTick = null;
+            delStyle = AnimPrefs.pick(MainActivity.this, AnimPrefs.SWIPE);
+            Task t = bound;
+            boolean early = t != null && t.repeat > 0 && !t.done
+                    && startOfDayOf(t.due) > startOfDayOf(System.currentTimeMillis());
+            tickStyle = t == null || t.done || early ? AnimPrefs.DEFAULT : AnimPrefs.pick(MainActivity.this, AnimPrefs.TICK);
+            try {
+                if (delStyle >= 0) dragDel = new LabSwipe(getContext(), delStyle);
+                if (tickStyle >= 0) dragTick = new LabTick(getContext(), tickStyle);
+            } catch (RuntimeException ex) {
+                dragDel = null;
+                dragTick = null;
+            }
+        }
+
         private void showSwipe(float dx) {
             card.setTranslationX(dx);
             reveal.setVisibility(View.VISIBLE);
             boolean left = dx < 0;
-            revealBg.setColor(left ? 0xFFD64545 : Pal.accent);
-            revealTrash.setVisibility(left ? View.VISIBLE : View.INVISIBLE);
-            revealTick.setVisibility(left ? View.INVISIBLE : View.VISIBLE);
+            float lim = Math.max(dp(96), getWidth() * 0.3f);
+            float pr = Math.max(0f, Math.min(1f, Math.abs(dx) / lim));
+            boolean styled = left ? dragDel != null : dragTick != null;
+            if (styled) {
+                fx.set(left ? dragDel : null, left ? null : dragTick, pr);
+                fx.setVisibility(View.VISIBLE);
+                revealBg.setColor(0);
+                revealTrash.setVisibility(View.INVISIBLE);
+                revealTick.setVisibility(View.INVISIBLE);
+                float sx = 1f;
+                float sy = 1f;
+                if (left && delStyle == 4) { // rubber: stretches, pinned at the right edge
+                    card.setPivotX(card.getWidth());
+                    sx = 1f + 0.14f * pr;
+                    sy = 1f - 0.04f * pr;
+                } else if (left && delStyle == 2) {
+                    card.setPivotX(card.getWidth() / 2f);
+                    sx = sy = 1f - 0.06f * pr;
+                }
+                card.setScaleX(sx);
+                card.setScaleY(sy);
+            } else {
+                fx.setVisibility(View.GONE);
+                revealBg.setColor(left ? 0xFFD64545 : Pal.accent);
+                revealTrash.setVisibility(left ? View.VISIBLE : View.INVISIBLE);
+                revealTick.setVisibility(left ? View.INVISIBLE : View.VISIBLE);
+            }
         }
 
         void bind(final Task t) {
@@ -2536,8 +2741,11 @@ public class MainActivity extends Activity {
             armed = false;
             card.animate().cancel();
             card.setTranslationX(0);
+            card.setScaleX(1f);
+            card.setScaleY(1f);
             card.setVisibility(View.VISIBLE);
             reveal.setVisibility(View.INVISIBLE);
+            fx.setVisibility(View.GONE);
 
             emojiView.setText(t.emoji);
             emojiView.setAlpha(t.done ? 0.45f : 1f);

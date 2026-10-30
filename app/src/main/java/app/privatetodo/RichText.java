@@ -1375,25 +1375,37 @@ final class RichText {
 
     /** Rebuilds every fold from the toggle markers (closed ▸ hides its children). */
     static void refold(Editable e) {
-        for (Hide h : e.getSpans(0, e.length(), Hide.class)) e.removeSpan(h);
-        String all = e.toString();
-        if (all.indexOf('\u25B8') < 0) return;
+        java.util.ArrayList<int[]> want = new java.util.ArrayList<>();
         int n = e.length();
-        int p = 0;
-        while (p <= n) {
-            if (prefixAt(e, p) == P_TOGGLE_CLOSED) {
-                int a = lineEnd(e, p) + 1;
-                int b = childEnd(e, p);
-                if (a < b) {
-                    e.setSpan(new Hide(), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                    p = b;
-                    continue;
+        if (e.toString().indexOf('\u25B8') >= 0) {
+            int p = 0;
+            while (p <= n) {
+                if (prefixAt(e, p) == P_TOGGLE_CLOSED) {
+                    int a = lineEnd(e, p) + 1;
+                    int b = childEnd(e, p);
+                    if (a < b) {
+                        want.add(new int[]{a, b});
+                        p = b;
+                        continue;
+                    }
                 }
+                int le = lineEnd(e, p);
+                if (le >= n) break;
+                p = le + 1;
             }
-            int le = lineEnd(e, p);
-            if (le >= n) break;
-            p = le + 1;
         }
+        Hide[] have = e.getSpans(0, n, Hide.class);
+        boolean same = have.length == want.size();
+        if (same) {
+            java.util.Arrays.sort(have, (x, y) -> e.getSpanStart(x) - e.getSpanStart(y));
+            for (int k = 0; k < have.length && same; k++) {
+                if (e.getSpanStart(have[k]) != want.get(k)[0] || e.getSpanEnd(have[k]) != want.get(k)[1]) same = false;
+            }
+        }
+        if (same) return;
+        layoutDirty = true;
+        for (Hide h : have) e.removeSpan(h);
+        for (int[] r : want) e.setSpan(new Hide(), r[0], r[1], Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     /** Opens / closes the toggle at line start {@code ls}. */
@@ -1435,7 +1447,16 @@ final class RichText {
         if (a < 0) return;
         e.removeSpan(t);
         e.setSpan(t, a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        layoutDirty = true;
     }
+
+    /**
+     * Set whenever a span changed the HEIGHT of lines without any text changing (a table gained a row, a
+     * paragraph became a callout / code block, a toggle folded). Android's text layout keeps cached drawing of
+     * the lines below such a change, which is what drew a grown table over the text under it and left the
+     * text of a callout blank until the next key press. The editor rebuilds its layout when it sees this.
+     */
+    static boolean layoutDirty;
 
     /** Text of every table's cells, for search. */
     static String tablesPlain(CharSequence text) {
@@ -1564,7 +1585,22 @@ final class RichText {
             }
             if (on) e.setSpan(make(type, arg), s, en, FLAGS);
         }
-        if (type == BLOCK && !on) apply(e, CODE, s, en, 0, false); // notes saved earlier had inline code inside blocks
+        // a code block is monospace already: inline code inside one is never wanted (it broke the block)
+        if (type == BLOCK) apply(e, CODE, s, en, 0, false);
+        if (type == BLOCK || type == CALLOUT || type == QUOTE) layoutDirty = true;
+    }
+
+    /** True when any part of [s, en) (or the line holding s when s == en) sits inside a code block. */
+    static boolean inBlock(Spanned e, int s, int en) {
+        int n = e.length();
+        int a = Math.max(0, Math.min(s, n));
+        int b = Math.max(a, Math.min(en, n));
+        for (Block bl : e.getSpans(a, b, Block.class)) {
+            int bs = e.getSpanStart(bl);
+            int be = e.getSpanEnd(bl);
+            if (a == b ? (a >= bs && a <= be) : (bs < b && be > a)) return true;
+        }
+        return false;
     }
 
     // ------------------------------------------------------------------ paragraph styles
@@ -1676,6 +1712,13 @@ final class RichText {
             }
         }
         for (int j = 0; j < PARA_TYPES.length; j++) rebuildParas(e, PARA_TYPES[j], by[PARA_TYPES[j]], st, en, val[j], n);
+        if (by[CODE] != null) { // inline code and a code block never mix
+            for (Block bl : e.getSpans(0, e.length(), Block.class)) {
+                int a = e.getSpanStart(bl);
+                int z = e.getSpanEnd(bl);
+                if (a >= 0 && z > a) apply(e, CODE, a, z, 0, false);
+            }
+        }
     }
 
     /** Merges touching spans of one character style with the same value into single spans. */
@@ -1775,6 +1818,7 @@ final class RichText {
             }
         }
         if (same) return;
+        layoutDirty = true;
         if (spans != null) for (Object o : spans) e.removeSpan(o);
         for (int[] r : runs) e.setSpan(make(type, margin ? r[2] : 0), r[0], r[1], FLAGS);
     }
@@ -2331,6 +2375,21 @@ final class RichText {
             out.clear();
             out.append(json);
         }
+    }
+
+    /** True when the stored note {@code json} has a link span pointing at note {@code id}. */
+    static boolean linksTo(String json, int id) {
+        try {
+            JSONArray arr = new JSONObject(json).optJSONArray("s");
+            if (arr == null) return false;
+            for (int i = 0; i < arr.length(); i++) {
+                JSONArray r = arr.getJSONArray(i);
+                if (r.getInt(0) == LINK && r.optInt(3) == id) return true;
+            }
+        } catch (JSONException ignored) {
+            // not our JSON: no links
+        }
+        return false;
     }
 
     static String plain(String json) {

@@ -16,6 +16,39 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.47
+- **Kanban:** boards of columns (To do / Doing / Done by default; add, rename, delete columns). Long-press a card and drag it to another column or place; tap to edit.
+  A card can link to one task and one note (tap the chip to open it). Find it under the new **More** icon on the main screen.
+- **Countdowns:** events with a date (and optional time), days left, a progress bar, and reminders (on the day, 1 day, 3 days, 1 week before) as notifications that show on the lock screen. Widget: *Countdowns*.
+- **More icon** on the main screen (the grid) opens Lent, Countdowns and Kanban. Lent moved in there to keep the header from getting crowded.
+- **Daily backup** (Settings -> Backup): pick a folder once with Android's folder picker; a copy is written around 3 am, the last 3/7/14/30 are kept, and opening the app catches up a missed night. No storage permission, no network. Kanban and Countdowns are in backups too.
+- **Now widget:** a swipeable stack of your next tasks, each with a live countdown, **Done** and **+1 hour**.
+- **Backlinks:** a "Linked from" list at the bottom of a note shows the notes that link to it.
+- Counter +/- (in notes and table cells) now give a small tick.
+- **App lock** (Settings -> App lock): uses the phone's fingerprint, face or screen lock (no separate PIN). Choose Notebook, Lent and/or the whole app,
+  and how soon it locks again (right away, 1, 5 or 15 min after leaving the app). Optional: blank preview in recent apps and no screenshots of locked screens.
+  Settings is locked whenever the lock is on, so it cannot be switched off from outside. Alarms and reminders still ring. Needs a screen lock set on the phone.
+
+## Home-screen widgets (v3.46)
+Eight widgets, all drawn from the local databases (nothing leaves the phone). The list ones really scroll.
+- **Tasks:** scrolling list with a priority bar, due chip (red when late) and repeat label. Tap the title to cycle Today / Tomorrow / Upcoming / Active / Priority / All;
+  tick the circle to finish a task; "+" adds one. Long-press the widget to reconfigure the starting filter.
+- **Shortcuts:** one-tap buttons for a new task, new note, habits, lent and focus timer.
+- **Today:** a progress ring of today's tasks, how many are left and what is next.
+- **Notebook:** scrolling notes, pinned first, with a one-line preview. Tap a note to open it.
+- **Plan:** today in time order with the free stretches between, scrolling.
+- **Habits:** each habit with a progress bar, streak and a one-tap "+" (or tick for yes/no habits).
+- **Water:** a ring plus one-tap +ml buttons for your water habit.
+- **Lent:** who owes you what, overdue first.
+Taps on rows go through a small invisible screen (`WidgetActionActivity`) that does the action and closes at once.
+
+## Other changes in v3.46
+- Notebook tool buttons now always have a soft rounded background.
+- "Edited ..." time sits under the note title (the read-mode button moved up beside undo/redo), saving a row.
+- Alert screens are truly full-screen: system bars hidden (swipe from the edge to peek), drawn under the camera cut-out.
+- Random title look re-rolls every time the main screen is shown and on tap, not just once per app launch.
+- While you drag a task, the reveal behind it already uses the look you picked (or the random roll that will play on release).
+
 ## Notebook
 - Open it from the **notebook icon** in the header, next to the bell. Searchable list of notes, newest edit first.
 - **Editor toolbar:** heading, **bold**, *italic*, underline, ~~strikethrough~~, **highlight colours** (5 + none),
@@ -342,3 +375,15 @@ v3.44:
   - **Title**: 20 animations for the "Tasks" heading on the main screen (Typewriter, Wave, Shimmer, Drop bounce, Rainbow, Neon pulse, Glitch, Card flip, Underline draw, Breathing, Spotlight, Domino, Sparkle, Ink fill, Tick draw, Slide in, Zoom in, Strike and rewrite, Rubber, Scramble). It plays when the screen opens and then every few seconds; between plays nothing runs.
   - If an animation fails for any reason, the app falls back to the default behaviour.
 - New files: AnimPrefs, TitleFx. Lab classes can now also play on top of a real task row.
+
+v3.45:
+- **Lent** (new section; the coin-with-arrow icon in the main-screen header, next to Habit). Keep track of money and things you lent out or borrowed. Everything stays on the phone; there is still no internet permission.
+  - **List**: a summary card ("You are owed 24,500" with how many people, things out and overdue), filter chips Lent out / Borrowed / Returned / All, and one card per person with their amount still owed, a progress bar for part-payments ("3,000 of 11,000 back"), and a return-by chip (turns red when overdue, with a **Remind** button that opens the share sheet with a polite message; nothing is sent by the app). The **123 / currency sign** button at the top sets the sign (defaults to your phone's).
+  - **Person page**: what they still owe, progress, one card per open entry with **+ Got money back** (type an amount or tap "All of it"), **Mark returned**, **Edit**, the return-by date (tap to change or clear) and a "Remind me to ask" switch; a **History** timeline (lent, got back, returned; press and hold a payment to remove it); **Mark everything returned**; and a menu to rename or delete a person.
+  - **Add / edit**: I lent / I borrowed, Money / A thing (with a few emoji), name chips of people used before, amount with +100 +500 +1,000 +5,000 chips, note, date lent, return by (No date / 1 week / 2 weeks / 1 month / pick), and a reminder (same day, 1 or 3 days before, at a time you choose).
+  - **Reminders** arrive as a notification with your notification sound and open that person. They are re-armed after a reboot and are included in backups (Settings backup / restore).
+- **Fix: code block + inline Code.** The two can no longer be mixed. Switching a paragraph to a code block removes inline Code from it, the Code button does nothing inside a code block (with a short message), and any inline Code found inside a block (an old note, a paste) is cleaned up.
+- **Fix: table grew over the text under it / callout blank after a code block.** When a style changes the height of lines without any text changing (a table getting a row or column, a paragraph becoming a callout, quote or code block, a toggle folding), Android kept its cached drawing of the lines below, so they stayed where they were or drew blank until you typed. The editor now starts its text layout over in those cases (RichText.layoutDirty / RichEditText.rebuildLayout). Folding toggles only does this when the folded range really changed.
+- **Fix: To-do and Callout menu icons missing.** The icons were drawn through a text span, which some font passes replace with plain text. They are now drawn by their own view (GlyphView), so they cannot be lost; Date+time uses it too.
+- Header icons on the main screen are a little narrower (35dp) so seven fit.
+- New files: LentDb, LentUi, LentActivity, LentPersonActivity, LentEditActivity, LentRemind, LentReceiver.

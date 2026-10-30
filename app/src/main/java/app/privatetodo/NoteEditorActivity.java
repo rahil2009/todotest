@@ -148,11 +148,19 @@ public class NoteEditorActivity extends Activity {
             dateLabel.setText("Edited " + Reminders.when(this, n.updated));
         }
         dirty = false;
+        refreshBacklinks();
         refreshToolbar();
         hist.clear();
         histSel.clear();
         histPos = -1;
         commitNow(); // the opening state is the first step of the history
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Lock.guard(this, Lock.NOTES);
+        refreshBacklinks(); // coming back from a linked note: the list may have changed
     }
 
     @Override
@@ -210,42 +218,47 @@ public class NoteEditorActivity extends Activity {
                 dirty = true;
             }
         });
-        header.addView(title, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        // the "Edited ..." line lives under the title, so it no longer needs a row of its own
+        dateLabel = new TextView(this);
+        dateLabel.setTextSize(12);
+        dateLabel.setTextColor(Pal.muted);
+        dateLabel.setSingleLine(true);
+        dateLabel.setPadding(dp(4), 0, 0, 0);
+        LinearLayout titleBox = new LinearLayout(this);
+        titleBox.setOrientation(LinearLayout.VERTICAL);
+        titleBox.setGravity(Gravity.CENTER_VERTICAL);
+        titleBox.addView(title, new LinearLayout.LayoutParams(-1, dp(34)));
+        titleBox.addView(dateLabel, new LinearLayout.LayoutParams(-1, -2));
+        header.addView(titleBox, new LinearLayout.LayoutParams(0, dp(48), 1f));
 
         undoBtn = new IconView(this, IconView.UNDO);
         undoBtn.setContentDescription("Undo");
         undoBtn.setOnClickListener(v -> { Hap.tick(v); undo(); });
-        header.addView(undoBtn, new LinearLayout.LayoutParams(dp(40), dp(48)));
+        header.addView(undoBtn, new LinearLayout.LayoutParams(dp(36), dp(48)));
         redoBtn = new IconView(this, IconView.REDO);
         redoBtn.setContentDescription("Redo");
         redoBtn.setOnClickListener(v -> { Hap.tick(v); redo(); });
-        header.addView(redoBtn, new LinearLayout.LayoutParams(dp(40), dp(48)));
+        header.addView(redoBtn, new LinearLayout.LayoutParams(dp(36), dp(48)));
 
         IconView histBtn = new IconView(this, IconView.CLOCK);
         histBtn.setContentDescription("Note history");
         histBtn.setOnClickListener(v -> { Hap.tick(v); openHistory(); });
-        header.addView(histBtn, new LinearLayout.LayoutParams(dp(40), dp(48)));
+        header.addView(histBtn, new LinearLayout.LayoutParams(dp(36), dp(48)));
+
+        IconView readBtn = new IconView(this, IconView.FULLSCREEN);
+        readBtn.setContentDescription("Full screen reading");
+        readBtn.setOnClickListener(v -> { Hap.tick(v); enterReading(); });
+        header.addView(readBtn, new LinearLayout.LayoutParams(dp(36), dp(48)));
 
         IconView trash = new IconView(this, IconView.TRASH);
         trash.setContentDescription("Delete note");
         trash.setOnClickListener(v -> confirmDelete());
-        header.addView(trash, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        header.addView(trash, new LinearLayout.LayoutParams(dp(44), dp(48)));
         root.addView(header);
         headerView = header;
 
-        dateLabel = new TextView(this);
-        dateLabel.setTextSize(13);
-        dateLabel.setTextColor(Pal.muted);
-        dateLabel.setPadding(dp(64), 0, dp(8), dp(4));
-        dateRow = new LinearLayout(this);
-        dateRow.setOrientation(LinearLayout.HORIZONTAL);
-        dateRow.setGravity(Gravity.CENTER_VERTICAL);
-        dateRow.addView(dateLabel, new LinearLayout.LayoutParams(0, -2, 1f));
-        IconView readBtn = new IconView(this, IconView.FULLSCREEN);
-        readBtn.setContentDescription("Full screen reading");
-        readBtn.setOnClickListener(v -> { Hap.tick(v); enterReading(); });
-        dateRow.addView(readBtn, new LinearLayout.LayoutParams(dp(44), dp(32)));
-        root.addView(dateRow);
+        dateRow = new LinearLayout(this); // kept (never shown) so the reading mode code keeps working
+        dateRow.setVisibility(View.GONE);
 
         readTitle = new TextView(this);
         readTitle.setTextSize(24);
@@ -323,7 +336,15 @@ public class NoteEditorActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         noteScroll = scroll;
         scroll.setFillViewport(true);
-        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        col.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
+        backBox = new LinearLayout(this);
+        backBox.setOrientation(LinearLayout.VERTICAL);
+        backBox.setVisibility(View.GONE);
+        backBox.setPadding(dp(16), dp(10), dp(16), dp(28));
+        col.addView(backBox, new LinearLayout.LayoutParams(-1, -2));
+        scroll.addView(col, new ScrollView.LayoutParams(-1, -2));
         FrameLayout area = new FrameLayout(this);
         area.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
         paintHint = new TextView(this);
@@ -799,13 +820,16 @@ public class NoteEditorActivity extends Activity {
         @Override
         public void draw(android.graphics.Canvas c, CharSequence text, int start, int end, float x, int top,
                          int y, int bottom, android.graphics.Paint p) {
+            float u = p.getTextSize();
+            float w = u * (kind == 1 ? 1.15f : 1.3f);
+            paintGlyph(c, p, kind, x + w / 2f, y - u * 0.34f, u);
+        }
+
+        /** Draws icon {@code kind} centred on (cx, cy); u is the text size the icon is scaled to. */
+        static void paintGlyph(android.graphics.Canvas c, android.graphics.Paint p, int kind, float cx, float cy, float u) {
             int oldC = p.getColor();
             android.graphics.Paint.Style oldS = p.getStyle();
             float oldW = p.getStrokeWidth();
-            float u = p.getTextSize();
-            float w = u * (kind == 1 ? 1.15f : 1.3f);
-            float cx = x + w / 2f;
-            float cy = y - u * 0.34f;
             float h = u * 0.5f; // half size of the box
             p.setStyle(android.graphics.Paint.Style.STROKE);
             p.setStrokeWidth(Math.max(1.6f, u * 0.1f));
@@ -849,6 +873,33 @@ public class NoteEditorActivity extends Activity {
             p.setColor(oldC);
             p.setStyle(oldS);
             p.setStrokeWidth(oldW);
+        }
+    }
+
+    /** Toolbar icon drawn directly (a TextView only so the toolbar can colour it like the other glyphs). */
+    private static final class GlyphView extends TextView {
+        private final int kind;
+        private final android.graphics.Paint gp = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+        GlyphView(android.content.Context ctx, int kind) {
+            super(ctx);
+            this.kind = kind;
+            setText(" ");
+            setTextSize(18);
+        }
+
+        @Override
+        protected void onMeasure(int w, int h) {
+            super.onMeasure(w, h);
+            float d = getResources().getDisplayMetrics().density;
+            setMeasuredDimension(Math.round(34 * d), Math.max(getMeasuredHeight(), Math.round(26 * d)));
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas c) {
+            gp.setColor(getCurrentTextColor());
+            gp.setTextSize(getTextSize());
+            GlyphSpan.paintGlyph(c, gp, kind, getWidth() / 2f, getHeight() / 2f, getTextSize());
         }
     }
 
@@ -1055,16 +1106,15 @@ public class NoteEditorActivity extends Activity {
         t.box.setMinimumWidth(dp(58));
         t.box.setPadding(dp(8), dp(2), dp(8), dp(2));
         t.box.setContentDescription(desc);
-        t.glyph = new TextView(this);
-        t.glyph.setText(glyph);
-        t.glyph.setTextSize(18);
-        t.glyph.setTypeface(Typeface.DEFAULT, style);
-        t.glyph.setGravity(Gravity.CENTER);
-        t.glyph.setSingleLine(true);
         if (key == CHECK_KEY || key == DATETIME_KEY || key == RichText.CALLOUT) {
-            android.text.SpannableString gs = new android.text.SpannableString("\uFFFC");
-            gs.setSpan(new GlyphSpan(key == CHECK_KEY ? 0 : key == RichText.CALLOUT ? 2 : 1), 0, 1, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            t.glyph.setText(gs);
+            t.glyph = new GlyphView(this, key == CHECK_KEY ? 0 : key == RichText.CALLOUT ? 2 : 1);
+        } else {
+            t.glyph = new TextView(this);
+            t.glyph.setText(glyph);
+            t.glyph.setTextSize(18);
+            t.glyph.setTypeface(Typeface.DEFAULT, style);
+            t.glyph.setGravity(Gravity.CENTER);
+            t.glyph.setSingleLine(true);
         }
         if (key == RichText.UNDER) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.UNDERLINE_TEXT_FLAG);
         if (key == RichText.STRIKE) t.glyph.setPaintFlags(t.glyph.getPaintFlags() | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG);
@@ -1308,6 +1358,7 @@ public class NoteEditorActivity extends Activity {
             return;
         }
         long v = RichText.counterValue(e, c) + (zone == 2 ? 1L : -1L) * c.step * mult;
+        Hap.tick(body);
         commitNow();
         busy = true;
         RichText.setCounter(e, c, v, c.step);
@@ -1320,6 +1371,7 @@ public class NoteEditorActivity extends Activity {
         if (r == 0 || r >= t.rows() || c >= t.cols()) return;
         long[] cv = RichText.Tbl.counterOf(t.cells[r][c]);
         if (cv == null) return;
+        Hap.tick(body);
         commitNow();
         t.cells[r][c] = RichText.Tbl.counterCell(cv[0] + (zone == 2 ? 1L : -1L) * cv[1] * mult, cv[1]);
         RichText.refresh(body.getText(), t);
@@ -2202,6 +2254,10 @@ public class NoteEditorActivity extends Activity {
             refreshToolbar();
             return;
         }
+        if (key == RichText.CODE && RichText.inBlock(e, s, en)) { // a code block is monospace already
+            Toast.makeText(this, "Inline code isn't used inside a code block", Toast.LENGTH_SHORT).show();
+            return;
+        }
         boolean lineType = key == RichText.HEAD;
         if (s == en) {
             int a = RichText.lineStart(e, s);
@@ -2514,7 +2570,9 @@ public class NoteEditorActivity extends Activity {
     private void style(Tool t, boolean on, boolean brushed) {
         GradientDrawable g = new GradientDrawable();
         g.setCornerRadius(dp(12));
-        g.setColor(brushed ? Pal.accent : on ? Pal.sel : 0);
+        // every tool is a soft button all the time (the toolbar's own colour, a little darker or lighter);
+        // the lit ones are the full selected colour
+        g.setColor(brushed ? Pal.accent : on ? Pal.sel : Pal.chip);
         if (paintMode && !brushed) g.setStroke(dp(1), Pal.chip);
         t.box.setBackground(g);
         int col = brushed ? Pal.onAccent : on ? Pal.onSel : Pal.ink;
@@ -2659,6 +2717,10 @@ public class NoteEditorActivity extends Activity {
             busy = false;
             typing = false;
             insCount = 0;
+        }
+        if (RichText.layoutDirty) { // a style changed line heights without a text change: draw the layout afresh
+            RichText.layoutDirty = false;
+            body.rebuildLayout();
         }
         refreshToolbar();
     }
@@ -2823,6 +2885,50 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
+    private LinearLayout backBox;
+
+    /** "Linked from": the other notes that have a link to this one, as tappable chips under the text. */
+    private void refreshBacklinks() {
+        if (backBox == null) return;
+        backBox.removeAllViews();
+        java.util.List<Note> from = noteId > 0 ? db.backlinks(noteId) : new java.util.ArrayList<Note>();
+        if (from.isEmpty()) {
+            backBox.setVisibility(View.GONE);
+            return;
+        }
+        TextView head = new TextView(this);
+        head.setText("LINKED FROM \u00B7 " + from.size());
+        head.setTextSize(11);
+        head.setLetterSpacing(0.08f);
+        head.setTypeface(Typeface.DEFAULT_BOLD);
+        head.setTextColor(Pal.muted);
+        head.setPadding(dp(4), 0, 0, dp(6));
+        backBox.addView(head);
+        for (final Note n : from) {
+            TextView t = new TextView(this);
+            t.setText("\u21B3  " + (n.title.isEmpty() ? "Untitled" : n.title));
+            t.setTextSize(15);
+            t.setTypeface(Typeface.DEFAULT_BOLD);
+            t.setTextColor(Pal.ink);
+            t.setSingleLine(true);
+            t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            t.setPadding(dp(14), dp(10), dp(14), dp(10));
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(14));
+            g.setColor(Pal.chip);
+            t.setBackground(g);
+            t.setOnClickListener(v -> {
+                Hap.tick(v);
+                openNoteLink((int) n.id);
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+            lp.bottomMargin = dp(6);
+            backBox.addView(t, lp);
+        }
+        backBox.setVisibility(View.VISIBLE);
+        Fonts.apply(backBox);
+    }
+
     /** A tap on a note link: save this note, then open the linked one. */
     private void openNoteLink(int id) {
         flushCell();
@@ -2846,6 +2952,10 @@ public class NoteEditorActivity extends Activity {
     /** A body change happened: mark it for saving and take an undo step once typing pauses. */
     private void changed() {
         dirty = true;
+        if (body != null && RichText.layoutDirty) {
+            RichText.layoutDirty = false;
+            body.rebuildLayout();
+        }
         if (restoring || body == null) return;
         body.removeCallbacks(commitTask);
         body.postDelayed(commitTask, 700);

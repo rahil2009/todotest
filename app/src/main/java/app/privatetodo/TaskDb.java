@@ -615,6 +615,23 @@ final class TaskDb extends SQLiteOpenHelper {
         return out;
     }
 
+    /** Notes (not in the Bin) that contain a link to note {@code id}. */
+    List<Note> backlinks(long id) {
+        List<Note> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().query("notes", NOTE_COLS, "deleted = 0 AND id != ? AND body LIKE ?",
+                new String[]{String.valueOf(id), "%[" + RichText.LINK + ",%," + id + "]%"}, null, null,
+                "updated DESC");
+        try {
+            while (c.moveToNext()) {
+                Note n = mapNote(c);
+                if (RichText.linksTo(n.body, (int) id)) out.add(n);
+            }
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
     Note note(long id) {
         Cursor c = getReadableDatabase().query("notes", NOTE_COLS, "id = ?",
                 new String[]{String.valueOf(id)}, null, null, null);

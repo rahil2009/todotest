@@ -55,6 +55,9 @@ final class Backup {
                 root.put(table, rows);
             }
             root.put("habitData", HabitDb.export(ctx));
+            root.put("lentData", LentDb.export(ctx));
+            root.put("countdownData", CountdownDb.export(ctx));
+            root.put("kanbanData", KanbanDb.export(ctx));
             JSONObject prefs = new JSONObject();
             prefs.put("settings", exportPrefs(ctx.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE), null));
             prefs.put("pomodoro", exportPrefs(ctx.getApplicationContext().getSharedPreferences("pomodoro", Context.MODE_PRIVATE), POMO_LIVE));
@@ -172,6 +175,9 @@ final class Backup {
                 db.endTransaction();
             }
             if (root.optJSONObject("habitData") != null) HabitDb.restore(ctx, root.optJSONObject("habitData"));
+            if (root.optJSONObject("lentData") != null) LentDb.restore(ctx, root.optJSONObject("lentData"));
+            if (root.optJSONObject("countdownData") != null) CountdownDb.restore(ctx, root.optJSONObject("countdownData"));
+            if (root.optJSONObject("kanbanData") != null) KanbanDb.restore(ctx, root.optJSONObject("kanbanData"));
             JSONObject prefs = root.optJSONObject("prefs");
             if (prefs != null) {
                 restorePrefs(ctx.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE),

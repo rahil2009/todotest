@@ -788,9 +788,34 @@ final class RichEditText extends EditText {
         } else if (p.getStyle() != android.graphics.Paint.Style.FILL) {
             p.setStyle(android.graphics.Paint.Style.FILL);
         }
+        if (RichText.layoutDirty) { // any span change that moved line heights: start the layout over (see rebuildLayout)
+            RichText.layoutDirty = false;
+            rebuildLayout();
+        }
         drawPanels(canvas);
         updateCaret();
         super.onDraw(canvas);
+    }
+
+    private boolean rebuildQueued;
+
+    /**
+     * Throws the text layout away so it is measured and drawn again from scratch. Used after a style
+     * changes the height of lines without any text changing (a table got a row, a paragraph became a
+     * callout or code block, a toggle folded): Android keeps cached drawing of the lines below such a
+     * change, so they stayed where they were, under the grown table, or blank.
+     */
+    void rebuildLayout() {
+        if (rebuildQueued) return;
+        rebuildQueued = true;
+        postOnAnimation(() -> {
+            rebuildQueued = false;
+            float add = getLineSpacingExtra();
+            float mult = getLineSpacingMultiplier();
+            setLineSpacing(add + 0.01f, mult); // a changed value makes TextView drop its layout...
+            setLineSpacing(add, mult);          // ...and the next measure builds a new one with the real values
+            invalidate();
+        });
     }
 
     private final android.graphics.Paint panelPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
