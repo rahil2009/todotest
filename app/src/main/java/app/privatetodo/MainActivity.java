@@ -327,14 +327,6 @@ public class MainActivity extends Activity {
         clearDone = trash;
         header.addView(trash, new LinearLayout.LayoutParams(dp(35), dp(48)));
 
-        IconView spaces = new IconView(this, IconView.SPACES);
-        spaces.setContentDescription("More: Lent, Countdowns, Kanban boards");
-        spaces.setOnClickListener(v -> {
-            Hap.tick(v);
-            showSpaces();
-        });
-        header.addView(spaces, new LinearLayout.LayoutParams(dp(35), dp(48)));
-
         IconView habit = new IconView(this, IconView.HABIT);
         habit.setContentDescription("Habits");
         habit.setOnClickListener(v -> {
@@ -363,6 +355,14 @@ public class MainActivity extends Activity {
         notebook.setContentDescription("Notebook");
         notebook.setOnClickListener(v -> startActivity(new Intent(this, NotesActivity.class)));
         header.addView(notebook, new LinearLayout.LayoutParams(dp(35), dp(48)));
+
+        IconView spaces = new IconView(this, IconView.SPACES);
+        spaces.setContentDescription("More: Lent, Countdowns, Kanban boards");
+        spaces.setOnClickListener(v -> {
+            Hap.tick(v);
+            showSpaces();
+        });
+        header.addView(spaces, new LinearLayout.LayoutParams(dp(35), dp(48)));
 
         bell = new IconView(this, IconView.BELL);
         bell.setContentDescription("Reminder setup");
@@ -1006,6 +1006,7 @@ public class MainActivity extends Activity {
         // true when the repeat is anything other than the Daily / Weekly shortcuts
         final boolean[] custom = {existing != null && existing.repeat > 0 && existing.repeatUnit != 5
                 && !(existing.repeat == 1 && (existing.repeatUnit == 2 || existing.repeatUnit == 3))};
+        final boolean[] dialOpen = {false}; // custom "every N" wheels expanded; closed once confirmed with Done
         final boolean[] alarm = {existing != null && existing.alarm};
         final boolean[] always = {existing != null && existing.always};
         final AlertDialog[] dlgRef = new AlertDialog[1];
@@ -1302,13 +1303,16 @@ public class MainActivity extends Activity {
                     }
                     custom[0] = false;
                 } else {
+                    boolean wasCustom = custom[0] && rep[0] > 0 && rep[1] != 5;
                     custom[0] = true;
                     if (rep[0] == 0 || rep[1] == 5) {
                         rep[0] = 1;
                         rep[1] = 2;
                     }
                     everyDial.setRelative(rep[0], rep[1]);
+                    dialOpen[0] = wasCustom ? !dialOpen[0] : true; // tap again to fold the wheels away
                 }
+                if (r != 4) dialOpen[0] = false;
                 upd[0].run();
             });
         }
@@ -1343,6 +1347,31 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams edlp = new LinearLayout.LayoutParams(-1, -2);
         edlp.topMargin = dp(8);
         repBox.addView(everyDial, edlp);
+        // what the wheels currently mean, and the way out: Done folds them away with the choice kept
+        final TextView repSummary = text("", 14, Pal.accent, true);
+        repSummary.setPadding(dp(4), dp(10), dp(4), dp(2));
+        repSummary.setOnClickListener(v -> {
+            dialOpen[0] = !dialOpen[0];
+            upd[0].run();
+        });
+        repBox.addView(repSummary, new LinearLayout.LayoutParams(-1, -2));
+        final TextView repDone = text("Done", 15, Pal.onAccent, true);
+        repDone.setGravity(Gravity.CENTER);
+        repDone.setPadding(dp(24), dp(11), dp(24), dp(11));
+        GradientDrawable repDoneBg = new GradientDrawable();
+        repDoneBg.setColor(Pal.accent);
+        repDoneBg.setCornerRadius(dp(100));
+        repDone.setBackground(repDoneBg);
+        repDone.setOnClickListener(v -> {
+            Hap.tick(v);
+            rep[0] = everyDial.everyAmount();
+            rep[1] = everyDial.everyUnit();
+            dialOpen[0] = false;
+            upd[0].run();
+        });
+        LinearLayout.LayoutParams rdlp = new LinearLayout.LayoutParams(-1, -2);
+        rdlp.topMargin = dp(8);
+        repBox.addView(repDone, rdlp);
         form.addView(repBox, new LinearLayout.LayoutParams(-1, -2));
 
         // PRIORITY: one segmented bar, the chosen level fills its pill with the priority colour
@@ -1576,7 +1605,10 @@ public class MainActivity extends Activity {
             segState(repChips[2], !custom[0] && !daysMode && weekly, Pal.sel, Pal.onSel);
             segState(repChips[3], daysMode, Pal.sel, Pal.onSel);
             segState(repChips[4], isCustom, Pal.sel, Pal.onSel);
-            everyDial.setVisibility(isCustom ? View.VISIBLE : View.GONE);
+            everyDial.setVisibility(isCustom && dialOpen[0] ? View.VISIBLE : View.GONE);
+            repDone.setVisibility(isCustom && dialOpen[0] ? View.VISIBLE : View.GONE);
+            repSummary.setVisibility(isCustom ? View.VISIBLE : View.GONE);
+            repSummary.setText(Reminders.repeatLabel(rep[0], rep[1]) + (dialOpen[0] ? "" : "   \u00B7  tap to change"));
             daysRow.setVisibility(daysMode ? View.VISIBLE : View.GONE);
             for (int i = 0; i < 7; i++) {
                 boolean on = daysMode && (rep[0] & (1 << i)) != 0;
@@ -1646,6 +1678,10 @@ public class MainActivity extends Activity {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> {
             String s = input.getText().toString().trim();
             if (s.isEmpty()) return;
+            if (custom[0] && rep[0] > 0 && rep[1] != 5) { // whatever the wheels show is what gets saved
+                rep[0] = everyDial.everyAmount();
+                rep[1] = everyDial.everyUnit();
+            }
             // "In 1 hour" is measured from the moment you press Add, not from when you opened the dial.
             long d = dial.getVisibility() == View.VISIBLE ? dial.selectedTime() : due[0];
             due[0] = d;
@@ -2853,24 +2889,37 @@ public class MainActivity extends Activity {
                     boolean allDone = true;
                     java.util.List<Sub> all = db.subs(t.id);
                     for (Sub x : all) allDone &= x.done;
+                    Runnable undo = null; // finishing the last subtask completes the task: that can be undone too
+                    String undoMsg = "Task completed";
                     if (allDone && !all.isEmpty() && !t.done && t.repeat > 0) { // repeating: this round is done
-                        if (startOfDayOf(t.due) > startOfDayOf(System.currentTimeMillis())) {
+                        final long day = startOfDayOf(t.due);
+                        if (day > startOfDayOf(System.currentTimeMillis())) {
                             toast(Reminders.earlyMessage(MainActivity.this, t));
                         } else {
-                            Reminders.toggleDay(MainActivity.this, db, t, startOfDayOf(t.due));
+                            Reminders.toggleDay(MainActivity.this, db, t, day);
                             Hap.complete(v);
                             TickFx.play(MainActivity.this, v, null);
-                            toast("All subtasks done \u00B7 moved to Repeat");
+                            undoMsg = "Done \u00B7 moved to Repeat";
+                            undo = () -> {
+                                Reminders.toggleDay(MainActivity.this, db, db.get(t.id), day);
+                                db.setSubDone(s.id, false);
+                                refresh();
+                            };
                         }
                     } else if (allDone && !all.isEmpty() && !t.done) { // last subtask ticked: the task is done too
                         setDoneAndSchedule(t.id, true); // moves to Done, subtasks stay ticked
                         Hap.complete(v);
                         TickFx.play(MainActivity.this, v, null);
-                        toast("All subtasks done \u00B7 task completed");
+                        undo = () -> {
+                            setDoneAndSchedule(t.id, false);
+                            db.setSubDone(s.id, false);
+                            refresh();
+                        };
                     } else if (!nowDone && t.done) { // un-ticking one re-opens the task
                         setDoneAndSchedule(t.id, false);
                     }
                     refresh();
+                    if (undo != null) showUndo(undoMsg, undo);
                 });
                 subRow.addView(box, new LinearLayout.LayoutParams(dp(40), dp(40)));
 

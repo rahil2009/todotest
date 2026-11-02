@@ -32,4 +32,6 @@
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:colorBackgroundFloating">#1A1E1C</item>
     </style>
+    <!-- Alarm and water screens: the window itself is allowed to run under the camera cut-out (v28+ override below). -->
+    <style name="AppThemeAlert" parent="AppThemeDark" />
 </resources>

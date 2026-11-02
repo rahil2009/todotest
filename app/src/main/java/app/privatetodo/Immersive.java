@@ -33,20 +33,29 @@ final class Immersive {
             w.setAttributes(lp);
         }
         if (Build.VERSION.SDK_INT >= 30) w.setDecorFitsSystemWindows(false);
-        View content = w.getDecorView().findViewById(android.R.id.content);
-        if (content != null && Build.VERSION.SDK_INT >= 28) {
-            content.setOnApplyWindowInsetsListener((v, ins) -> {
-                DisplayCutout dc = ins.getDisplayCutout();
-                if (dc != null) {
-                    v.setPadding(dc.getSafeInsetLeft(), dc.getSafeInsetTop(), dc.getSafeInsetRight(), dc.getSafeInsetBottom());
-                } else {
-                    v.setPadding(0, 0, 0, 0);
-                }
-                return ins;
-            });
-            content.requestApplyInsets();
-        }
         hideBars(a);
+    }
+
+    /**
+     * Keeps {@code content} (the text and buttons) clear of the camera cut-out while the background behind it
+     * still runs full-bleed. Padding the whole window instead is what left a flat strip at the top.
+     */
+    static void inset(final View content) {
+        if (Build.VERSION.SDK_INT < 28) return;
+        final int l = content.getPaddingLeft();
+        final int t = content.getPaddingTop();
+        final int r = content.getPaddingRight();
+        final int b = content.getPaddingBottom();
+        content.setOnApplyWindowInsetsListener((v, ins) -> {
+            DisplayCutout dc = ins.getDisplayCutout();
+            if (dc != null) {
+                v.setPadding(l + dc.getSafeInsetLeft(), t + dc.getSafeInsetTop(), r + dc.getSafeInsetRight(), b + dc.getSafeInsetBottom());
+            } else {
+                v.setPadding(l, t, r, b);
+            }
+            return ins;
+        });
+        content.requestApplyInsets();
     }
 
     /** Call from onWindowFocusChanged(true): the bars come back after a dialog or a swipe from the edge. */

@@ -130,14 +130,20 @@ public class LentActivity extends Activity {
         header.addView(back, new LinearLayout.LayoutParams(dp(48), dp(48)));
         header.addView(LentUi.text(this, "Lent", 30, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
         String sym = LentUi.symbol(this);
-        TextView cur = LentUi.pill(this, sym.isEmpty() ? "123" : sym, Pal.chip, Pal.ink, 15);
-        cur.setMinWidth(dp(44));
+        TextView cur = LentUi.text(this, sym.isEmpty() ? "123" : sym, sym.isEmpty() ? 13 : 19, Pal.ink, true);
+        cur.setGravity(Gravity.CENTER);
+        cur.setIncludeFontPadding(false);
+        android.graphics.drawable.GradientDrawable coin = new android.graphics.drawable.GradientDrawable();
+        coin.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+        coin.setColor(Pal.chip);
+        coin.setStroke(dp(2), Pal.accent);
+        cur.setBackground(coin);
         cur.setContentDescription("Currency sign");
         cur.setOnClickListener(v -> {
             Hap.tick(v);
             chooseCurrency();
         });
-        header.addView(cur, new LinearLayout.LayoutParams(-2, dp(38)));
+        header.addView(cur, new LinearLayout.LayoutParams(dp(42), dp(42))); // a round coin with the sign
         col.addView(header);
 
         // ---- summary
@@ -230,16 +236,28 @@ public class LentActivity extends Activity {
         lp.topMargin = dp(10);
         box.setLayoutParams(lp);
         int soft = (Pal.onAccent & 0x00FFFFFF) | 0xB3000000;
-        box.addView(LentUi.text(this, owed == 0 && things == 0 ? "Nobody owes you anything" : "You are owed", 14, soft, true));
-        if (owed > 0 || things == 0) {
-            TextView big = LentUi.text(this, LentUi.money(this, owed), 36, Pal.onAccent, true);
-            box.addView(big);
-        }
-        if (owe > 0) {
-            TextView o = LentUi.text(this, "You owe " + LentUi.money(this, owe), 15, Pal.onAccent, true);
-            o.setPadding(0, dp(2), 0, 0);
-            box.addView(o);
-        }
+        // one bar: "You are owed" on the left, a line with air above and below, "You owe" on the right
+        LinearLayout both = new LinearLayout(this);
+        both.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout left = new LinearLayout(this);
+        left.setOrientation(LinearLayout.VERTICAL);
+        left.addView(LentUi.text(this, owed == 0 && things == 0 && owe == 0 ? "Nobody owes you" : "You are owed", 14, soft, true));
+        left.addView(fit(LentUi.text(this, LentUi.money(this, owed), 30, Pal.onAccent, true)), new LinearLayout.LayoutParams(-1, -2));
+        both.addView(left, new LinearLayout.LayoutParams(0, -2, 1f));
+        View line = new View(this);
+        line.setBackgroundColor((Pal.onAccent & 0x00FFFFFF) | 0x55000000);
+        LinearLayout.LayoutParams ll = new LinearLayout.LayoutParams(dp(1), -1);
+        ll.topMargin = dp(6);
+        ll.bottomMargin = dp(6);
+        ll.leftMargin = dp(14);
+        ll.rightMargin = dp(14);
+        both.addView(line, ll);
+        LinearLayout right = new LinearLayout(this);
+        right.setOrientation(LinearLayout.VERTICAL);
+        right.addView(LentUi.text(this, "You owe", 14, soft, true));
+        right.addView(fit(LentUi.text(this, LentUi.money(this, owe), 30, Pal.onAccent, true)), new LinearLayout.LayoutParams(-1, -2));
+        both.addView(right, new LinearLayout.LayoutParams(0, -2, 1f));
+        box.addView(both);
         LinearLayout row = new LinearLayout(this);
         row.setPadding(0, dp(12), 0, 0);
         row.addView(summaryChip(people.size() + (people.size() == 1 ? " person" : " people"), false));
@@ -247,6 +265,13 @@ public class LentActivity extends Activity {
         if (late > 0) row.addView(summaryChip(late + " overdue", true));
         box.addView(row);
         return box;
+    }
+
+    /** One line that shrinks to fit its half of the bar, so big amounts never wrap. */
+    private TextView fit(TextView t) {
+        t.setSingleLine(true);
+        t.setAutoSizeTextTypeUniformWithConfiguration(14, 30, 1, android.util.TypedValue.COMPLEX_UNIT_SP);
+        return t;
     }
 
     private View summaryChip(String s, boolean alert) {

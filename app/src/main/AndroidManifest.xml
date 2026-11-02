@@ -259,7 +259,7 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:taskAffinity=""
-            android:theme="@style/AppThemeDark" />
+            android:theme="@style/AppThemeAlert" />
 
         <receiver
             android:name=".WaterReceiver"
@@ -278,7 +278,7 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:taskAffinity=""
-            android:theme="@style/AppThemeDark" />
+            android:theme="@style/AppThemeAlert" />
 
         <activity
             android:name=".HabitActivity"

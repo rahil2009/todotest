@@ -82,6 +82,7 @@ public class AlarmActivity extends Activity {
             frame.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));
             content.setBackgroundColor(Color.TRANSPARENT);
         }
+        Immersive.inset(content); // text stays clear of the camera, the background does not
         frame.addView(content, new android.widget.FrameLayout.LayoutParams(-1, -1));
         if (fx != null && mode == AlertFx.EDGE) { // the edge glow frames everything, on top
             frame.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));

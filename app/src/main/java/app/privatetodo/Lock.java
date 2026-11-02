@@ -40,8 +40,25 @@ final class Lock {
         return c.getApplicationContext().getSharedPreferences("applock", Context.MODE_PRIVATE);
     }
 
+    /** On, and the unlock has been proven to work on this phone (Settings -> App lock -> Test unlock). */
     static boolean enabled(Context c) {
-        return sp(c).getBoolean("on", false);
+        return sp(c).getBoolean("on", false) && tested(c);
+    }
+
+    static boolean tested(Context c) {
+        return sp(c).getBoolean("tested", false);
+    }
+
+    static void setTested(Context c, boolean v) {
+        sp(c).edit().putBoolean("tested", v).apply();
+    }
+
+    static String lastError(Context c) {
+        return sp(c).getString("error", "");
+    }
+
+    static void setError(Context c, String e) {
+        sp(c).edit().putString("error", e == null ? "" : e).apply();
     }
 
     static void setEnabled(Context c, boolean on) {

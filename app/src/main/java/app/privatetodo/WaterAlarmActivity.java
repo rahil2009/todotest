@@ -80,6 +80,7 @@ public class WaterAlarmActivity extends Activity {
             frame.addView(fx, new FrameLayout.LayoutParams(-1, -1));
             content.setBackgroundColor(Color.TRANSPARENT);
         }
+        Immersive.inset(content); // text stays clear of the camera, the background does not
         frame.addView(content, new FrameLayout.LayoutParams(-1, -1));
         if (fx != null && mode == AlertFx.EDGE) frame.addView(fx, new FrameLayout.LayoutParams(-1, -1));
         setContentView(frame);

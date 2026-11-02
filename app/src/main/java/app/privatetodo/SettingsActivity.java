@@ -19,6 +19,9 @@ import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.FrameLayout;
+import android.widget.EditText;
+import java.util.List;
 
 /**
  * Settings: appearance (system / light / dark), and for reminder notifications and alarms a sound
@@ -51,7 +54,7 @@ public class SettingsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Lock.guard(this, Lock.ANY);
-        if (resumedOnce && page == 0) { // tiles show live status, so refresh after a sub-page
+        if (resumedOnce && (page == 0 || page == 11)) { // tiles show live status; the lock page shows the test result
             blocks.clear();
             blockWords.clear();
             setContentView(build());
@@ -87,7 +90,7 @@ public class SettingsActivity extends Activity {
         col.setPadding(dp(16), dp(12), dp(16), dp(32));
         scroll.addView(col, new ScrollView.LayoutParams(-1, -2));
 
-        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Tick animation", "Haptics", "Water reminders", "Design lab", "App lock"};
+        String[] titles = {"Settings", "Smart dates", "Habit units", "Full-screen alert", "Backup", "Main screen", "Notebook", "Tick animation", "Haptics", "Water reminders", "Design lab", "App lock", "Office hours"};
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.CENTER_VERTICAL);
@@ -112,6 +115,13 @@ public class SettingsActivity extends Activity {
             col.addView(hapticCard());
         } else if (page == 9) {
             col.addView(waterCard());
+        } else if (page == 12) {
+            col.addView(officeCard());
+            TextView onote = text("While a schedule is active, reminders and alarms play at that schedule's volume instead of the "
+                    + "ones in Settings. 0 keeps them silent (the notification still appears). A volume set on a single task "
+                    + "always wins. Outside every schedule nothing changes.", 13, Pal.muted, false);
+            onote.setPadding(dp(8), dp(16), dp(8), 0);
+            col.addView(onote);
         } else if (page == 11) {
             col.addView(lockCard());
             TextView lnote = text("The lock uses your phone's own fingerprint, face or screen lock, so there is no separate PIN "
@@ -224,6 +234,8 @@ public class SettingsActivity extends Activity {
                         "full screen alert animation glow aurora test lock screen"},
                 {IconView.LOOKS, "Design lab", "Dials \u00b7 slide \u00b7 title animations", 10,
                         "design lab test dial dials time swipe slide delete done animation animations title header default random try variations"},
+                {IconView.CLOCK, "Office hours", OfficeHours.on(this) ? OfficeHours.rules(this).size() + (OfficeHours.rules(this).size() == 1 ? " schedule" : " schedules") : "Off", 12,
+                        "office hours work schedule quiet silent volume days time mute meeting"},
                 {IconView.LOCK, "App lock", Lock.enabled(this) ? "On" : "Off", 11,
                         "lock app lock fingerprint face pin biometric privacy hide recents screenshot secure"},
                 {IconView.LOCK, "Backup", AutoBackup.on(this) ? "Daily \u00b7 Export \u00b7 Import" : "Export \u00b7 Import", 4,
@@ -969,13 +981,253 @@ public class SettingsActivity extends Activity {
         return t;
     }
 
+    // ------------------------------------------------------------- office hours
+
+    private List<OfficeHours.Rule> office;
+
+    /** Office hours: on/off, then one card per schedule with days, time range and its own volumes. */
+    private LinearLayout officeCard() {
+        LinearLayout c = card();
+        office = OfficeHours.rules(this);
+        c.addView(toggleRow("Office hours", "Different volume on the days and times you choose.",
+                OfficeHours.on(this), on -> {
+                    OfficeHours.setOn(this, on);
+                    if (on && office.isEmpty()) {
+                        office.add(new OfficeHours.Rule());
+                        OfficeHours.save(this, office);
+                    }
+                    setContentView(build());
+                    Fonts.apply(getWindow().getDecorView());
+                }));
+        if (!OfficeHours.on(this)) return c;
+
+        OfficeHours.Rule now = OfficeHours.activeNow(this);
+        TextView status = text(now == null ? "Not active right now" : "Active now: " + now.name, 14,
+                now == null ? Pal.muted : Pal.accent, true);
+        status.setPadding(dp(4), dp(4), dp(4), dp(10));
+        c.addView(status);
+
+        for (int i = 0; i < office.size(); i++) {
+            c.addView(ruleView(office.get(i)));
+        }
+        TextView add = text("+  Add schedule", 16, Pal.onAccent, true);
+        add.setGravity(Gravity.CENTER);
+        add.setPadding(dp(20), dp(13), dp(20), dp(13));
+        GradientDrawable ab = new GradientDrawable();
+        ab.setColor(Pal.accent);
+        ab.setCornerRadius(dp(100));
+        add.setBackground(ab);
+        add.setOnClickListener(v -> {
+            Hap.tick(v);
+            OfficeHours.Rule r = new OfficeHours.Rule();
+            r.name = "Schedule " + (office.size() + 1);
+            r.days = 96; // a weekend to start from
+            r.start = 8 * 60;
+            r.end = 20 * 60;
+            r.notif = 0;
+            r.alarm = 0;
+            office.add(r);
+            OfficeHours.save(this, office);
+            setContentView(build());
+            Fonts.apply(getWindow().getDecorView());
+        });
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(-1, -2);
+        alp.topMargin = dp(6);
+        c.addView(add, alp);
+        return c;
+    }
+
+    private View ruleView(final OfficeHours.Rule r) {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(16), dp(14), dp(16), dp(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Pal.chip);
+        bg.setCornerRadius(dp(20));
+        box.setBackground(bg);
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(-1, -2);
+        blp.bottomMargin = dp(12);
+        box.setLayoutParams(blp);
+
+        // name + remove
+        LinearLayout head = new LinearLayout(this);
+        head.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView name = text(r.name, 17, Pal.ink, true);
+        name.setMinHeight(dp(44));
+        name.setGravity(Gravity.CENTER_VERTICAL);
+        name.setOnClickListener(v -> {
+            final EditText et = new EditText(this);
+            et.setText(r.name);
+            et.setSelectAllOnFocus(true);
+            et.setSingleLine(true);
+            et.setTextColor(Pal.ink);
+            LinearLayout wrap = new LinearLayout(this);
+            wrap.setPadding(dp(24), dp(8), dp(24), 0);
+            wrap.addView(et, new LinearLayout.LayoutParams(-1, -2));
+            new Dlg.Builder(this).setTitle("Schedule name").setView(wrap)
+                    .setPositiveButton("Save", (d, w) -> {
+                        String n = et.getText().toString().trim();
+                        r.name = n.isEmpty() ? "Schedule" : n;
+                        OfficeHours.save(this, office);
+                        name.setText(r.name);
+                    }).setNegativeButton("Cancel", null).show();
+        });
+        head.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView remove = text("Remove", 14, Pal.overdue, true);
+        remove.setGravity(Gravity.CENTER);
+        remove.setMinHeight(dp(44));
+        remove.setPadding(dp(8), 0, dp(4), 0);
+        remove.setOnClickListener(v -> new Dlg.Builder(this).setTitle("Remove \"" + r.name + "\"?")
+                .setPositiveButton("Remove", (d, w) -> {
+                    office.remove(r);
+                    OfficeHours.save(this, office);
+                    setContentView(build());
+                    Fonts.apply(getWindow().getDecorView());
+                }).setNegativeButton("Keep", null).show());
+        head.addView(remove);
+        box.addView(head);
+
+        // weekdays
+        final TextView[] dv = new TextView[7];
+        LinearLayout days = new LinearLayout(this);
+        String[] letters = {"M", "T", "W", "T", "F", "S", "S"};
+        String[] full = {"Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"};
+        final Runnable paint = () -> {
+            for (int i = 0; i < 7; i++) {
+                boolean on = (r.days & (1 << i)) != 0;
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColor(on ? Pal.accent : Pal.card);
+                dv[i].setBackground(g);
+                dv[i].setTextColor(on ? Pal.onAccent : Pal.muted);
+            }
+        };
+        for (int i = 0; i < 7; i++) {
+            final int di = i;
+            dv[i] = text(letters[i], 15, Pal.muted, true);
+            dv[i].setGravity(Gravity.CENTER);
+            dv[i].setContentDescription(full[i]);
+            dv[i].setOnClickListener(v -> {
+                Hap.tick(v);
+                int m = r.days ^ (1 << di);
+                if (m == 0) return; // keep at least one day
+                r.days = m;
+                OfficeHours.save(this, office);
+                paint.run();
+            });
+            FrameLayout cell = new FrameLayout(this);
+            cell.addView(dv[i], new FrameLayout.LayoutParams(dp(38), dp(38), Gravity.CENTER));
+            days.addView(cell, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        }
+        paint.run();
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-1, -2);
+        dlp.topMargin = dp(4);
+        box.addView(days, dlp);
+
+        // from / to
+        LinearLayout times = new LinearLayout(this);
+        times.setGravity(Gravity.CENTER_VERTICAL);
+        final TextView from = timeChip("From  " + OfficeHours.clock(this, r.start));
+        final TextView to = timeChip("To  " + OfficeHours.clock(this, r.end));
+        from.setOnClickListener(v -> new android.app.TimePickerDialog(this, (tp, h, m) -> {
+            r.start = h * 60 + m;
+            OfficeHours.save(this, office);
+            from.setText("From  " + OfficeHours.clock(this, r.start));
+        }, r.start / 60, r.start % 60, android.text.format.DateFormat.is24HourFormat(this)).show());
+        to.setOnClickListener(v -> new android.app.TimePickerDialog(this, (tp, h, m) -> {
+            r.end = h * 60 + m;
+            OfficeHours.save(this, office);
+            to.setText("To  " + OfficeHours.clock(this, r.end));
+        }, r.end / 60, r.end % 60, android.text.format.DateFormat.is24HourFormat(this)).show());
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, dp(44), 1f);
+        tl.rightMargin = dp(8);
+        times.addView(from, tl);
+        times.addView(to, new LinearLayout.LayoutParams(0, dp(44), 1f));
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, -2);
+        tlp.topMargin = dp(6);
+        box.addView(times, tlp);
+
+        box.addView(volumeRow("Notification volume", Prefs.NOTIF, r.notif, v -> {
+            r.notif = v;
+            OfficeHours.save(this, office);
+        }));
+        box.addView(volumeRow("Alarm volume", Prefs.ALARM, r.alarm, v -> {
+            r.alarm = v;
+            OfficeHours.save(this, office);
+        }));
+        return box;
+    }
+
+    private TextView timeChip(String label) {
+        TextView t = text(label, 15, Pal.ink, true);
+        t.setGravity(Gravity.CENTER);
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(Pal.card);
+        g.setCornerRadius(dp(100));
+        t.setBackground(g);
+        return t;
+    }
+
+    private interface IntSink {
+        void put(int v);
+    }
+
+    /** A labelled 0 to 100 slider that plays the sound while you slide, so you hear the level. */
+    private View volumeRow(String label, final int kind, int value, final IntSink sink) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout head = new LinearLayout(this);
+        head.setPadding(0, dp(12), 0, 0);
+        head.addView(text(label, 15, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView pct = text(value == 0 ? "Silent" : value + "%", 14, Pal.muted, true);
+        head.addView(pct);
+        col.addView(head);
+        PillSlider bar = new PillSlider(this);
+        bar.setValue(value);
+        bar.setContentDescription(label);
+        bar.setListener(new PillSlider.Listener() {
+            private int last;
+
+            @Override
+            public void onChange(int v) {
+                last = v;
+                pct.setText(v == 0 ? "Silent" : v + "%");
+                sink.put(v);
+                Sound.setLiveVolume(v);
+            }
+
+            @Override
+            public void onStart() {
+                Sound.play(SettingsActivity.this, kind, true, 6_000L, null, "", last);
+            }
+
+            @Override
+            public void onStop() {
+                Sound.stopPreview();
+            }
+        });
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(48));
+        lp.topMargin = dp(4);
+        col.addView(bar, lp);
+        return col;
+    }
+
     /** App lock: on/off, which parts, how soon it locks again, and hiding in recent apps. */
     private LinearLayout lockCard() {
         LinearLayout c = card();
+        String err = Lock.lastError(this);
+        c.addView(backupRow("Test unlock",
+                Lock.tested(this) ? "\u2713 Works on this phone. Tap to test again."
+                        : "Do this first: checks that your phone's unlock works with the app."
+                        + (err.isEmpty() ? "" : "\nLast problem: " + err),
+                v -> UnlockActivity.test(this)));
         c.addView(toggleRow("Lock the app",
-                "Ask for your fingerprint, face or screen lock to open the locked parts.",
+                Lock.tested(this) ? "Ask for your fingerprint, face or screen lock to open the locked parts."
+                        : "Available after the test above passes.",
                 Lock.enabled(this), on -> {
-                    if (on && !Lock.deviceSecure(this)) {
+                    if (on && !Lock.tested(this)) {
+                        Toast.makeText(this, "Run Test unlock first", Toast.LENGTH_LONG).show();
+                    } else if (on && !Lock.deviceSecure(this)) {
                         Toast.makeText(this, "Set a screen lock in your phone's settings first", Toast.LENGTH_LONG).show();
                     } else {
                         Lock.setEnabled(this, on);
@@ -1103,7 +1355,7 @@ public class SettingsActivity extends Activity {
             @Override
             public void onStart() {
                 // Plays the sound while you slide so you hear the level.
-                Sound.play(SettingsActivity.this, kind, true, 6_000L, null);
+                Sound.play(SettingsActivity.this, kind, true, 6_000L, null, "", Prefs.volume(SettingsActivity.this, kind));
             }
 
             @Override
@@ -1119,7 +1371,7 @@ public class SettingsActivity extends Activity {
         TextView test = text("Play test sound", 15, Pal.accent, true);
         test.setGravity(Gravity.CENTER_VERTICAL);
         test.setMinHeight(dp(48));
-        test.setOnClickListener(v -> Sound.play(this, kind, false, 6_000L, null));
+        test.setOnClickListener(v -> Sound.play(this, kind, false, 6_000L, null, "", Prefs.volume(this, kind)));
         card.addView(test);
         return card;
     }
@@ -1471,7 +1723,7 @@ public class SettingsActivity extends Activity {
     private void applySound(int kind, String value) {
         Prefs.setSound(this, kind, value);
         soundName[kind].setText(Sound.describe(this, kind));
-        Sound.play(this, kind, false, 6_000L, null); // preview what was just chosen
+        Sound.play(this, kind, false, 6_000L, null, "", Prefs.volume(this, kind)); // preview what was just chosen
     }
 
     // ------------------------------------------------------------- helpers

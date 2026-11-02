@@ -99,7 +99,7 @@ final class Sound {
             if (done != null) done.run();
             return;
         }
-        float vol = (volumeOverride >= 0 ? volumeOverride : Prefs.volume(app, kind)) / 100f;
+        float vol = (volumeOverride >= 0 ? volumeOverride : OfficeHours.volume(app, kind)) / 100f;
         MediaPlayer mp = open(app, uri, kind, loop, vol);
         if (mp == null && !uri.equals(defaultUri(kind))) { // chosen file unreadable: use the default
             mp = open(app, defaultUri(kind), kind, loop, vol);

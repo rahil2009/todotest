@@ -16,6 +16,22 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.48
+
+- **App lock test.** Settings -> App lock -> *Test unlock* runs the phone's fingerprint / face / screen-lock check and
+  shows what happened, without ever closing the app. The lock cannot be switched on until the test has passed once, and
+  it opens instead of locking you out if the phone cannot do the check.
+- **Office hours** (Settings -> Office hours). Schedules with weekdays, a start and end time, and their own notification
+  and alarm volume (0 = silent). A volume set on a single task still wins; outside every schedule nothing changes.
+- **Subtasks:** ticking the last subtask now offers Undo, like ticking the task itself.
+- **Notes:** the title is no longer cropped at the top. **Tables:** long cell text wraps and rows grow as you type.
+- **Full-screen alerts:** the black strip at the top is gone (the window now draws into the camera cut-out).
+- **Home screen:** the Spaces icon sits with the other header icons, on the right.
+- **Lent:** the add screen sits at the bottom for one-hand use; "You are owed" and "You owe" share one bar with a divider;
+  the currency button is a round coin.
+- **Custom repeat:** the "every N" wheels now have a summary line and a Done button, and the value is read again when
+  you press Save.
+
 ## v3.47
 - **Kanban:** boards of columns (To do / Doing / Done by default; add, rename, delete columns). Long-press a card and drag it to another column or place; tap to edit.
   A card can link to one task and one note (tap the chip to open it). Find it under the new **More** icon on the main screen.

@@ -1074,9 +1074,91 @@ final class RichText {
             tp.setFakeBoldText(oldFake);
         }
 
-        /** Row height in px for the paint the table is drawn with. */
+        /** Height of a one-line row in px for the paint the table is drawn with. */
         int rowH(Paint p) {
             return Math.round(p.getTextSize() * 1.25f + p.getTextSize() * 1.0f);
+        }
+
+        // ---- wrapping: a cell's text breaks into lines and its row grows to fit
+
+        private float[] rowHs;
+        private int rowKey;
+
+        float lineH(Paint p) {
+            return p.getTextSize() * 1.25f;
+        }
+
+        /** Space above and below the text of a row. */
+        float vpad(Paint p) {
+            return p.getTextSize() * 0.5f;
+        }
+
+        /** The lines {@code s} breaks into when only {@code room} px are free. */
+        static java.util.List<String> wrapLines(String s, android.text.TextPaint tp, float room) {
+            java.util.ArrayList<String> out = new java.util.ArrayList<>();
+            if (s.isEmpty() || tp.measureText(s) <= room) {
+                out.add(s);
+                return out;
+            }
+            android.text.StaticLayout sl = android.text.StaticLayout.Builder
+                    .obtain(s, 0, s.length(), tp, Math.max(10, Math.round(room)))
+                    .setBreakStrategy(android.text.Layout.BREAK_STRATEGY_SIMPLE)
+                    .setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE)
+                    .setIncludePad(false).build();
+            int n = Math.min(sl.getLineCount(), 20);
+            for (int i = 0; i < n; i++) {
+                out.add(s.substring(sl.getLineStart(i), sl.getLineEnd(i)).replaceAll("\\s+$", ""));
+            }
+            return out;
+        }
+
+        /** Height of every row: one line, or more when a cell's text wraps. */
+        float[] heights(Paint p) {
+            int rows = rows();
+            int cols = cols();
+            int key = java.util.Arrays.deepHashCode(cells);
+            key = key * 31 + Float.floatToIntBits(p.getTextSize());
+            key = key * 31 + width();
+            if (rowHs != null && rowKey == key && rowHs.length == rows) return rowHs;
+            float[] h = new float[rows];
+            android.text.TextPaint tp = new android.text.TextPaint(p);
+            tp.setStyle(Paint.Style.FILL);
+            Typeface base = p.getTypeface();
+            for (int r = 0; r < rows; r++) {
+                tp.setFakeBoldText(r == 0);
+                tp.setTypeface(r == 0 ? Typeface.create(base, Typeface.BOLD) : base);
+                int lines = 1;
+                for (int k = 0; k < cols; k++) {
+                    String raw = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
+                    if (r > 0 && counterOf(raw) != null) continue;
+                    String cell = label(raw);
+                    if (cell.isEmpty()) continue;
+                    float room = colW() - textInset(p, r, k) - padX(p);
+                    lines = Math.max(lines, wrapLines(cell, tp, Math.max(10, room)).size());
+                }
+                h[r] = lineH(p) * lines + 2 * vpad(p);
+            }
+            rowHs = h;
+            rowKey = key;
+            return h;
+        }
+
+        float rowTop(int r, Paint p) {
+            float[] h = heights(p);
+            float t = 0;
+            for (int i = 0; i < r && i < h.length; i++) t += h[i];
+            return t;
+        }
+
+        float rowHeight(int r, Paint p) {
+            float[] h = heights(p);
+            return r >= 0 && r < h.length ? h[r] : rowH(p);
+        }
+
+        float totalH(Paint p) {
+            float t = 0;
+            for (float v : heights(p)) t += v;
+            return t;
         }
 
         float colW() {
@@ -1100,9 +1182,18 @@ final class RichText {
             int rows = rows();
             int cols = cols();
             if (rows == 0 || cols == 0) return null;
-            int r = (int) (yl / rowH(p));
+            float[] hs = heights(p);
+            int r = -1;
+            float acc = 0;
+            for (int i = 0; i < hs.length; i++) {
+                if (yl < acc + hs[i]) {
+                    r = i;
+                    break;
+                }
+                acc += hs[i];
+            }
             int k = (int) (xl / colW());
-            if (yl < 0 || xl < 0 || r >= rows || k >= cols) return null;
+            if (yl < 0 || xl < 0 || r < 0 || r >= rows || k >= cols) return null;
             return new int[]{r, k};
         }
 
@@ -1195,7 +1286,7 @@ final class RichText {
         @Override
         public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
             if (fm != null) {
-                int h = rowH(p) * rows();
+                int h = (int) Math.ceil(totalH(p));
                 fm.ascent = -h;
                 fm.top = -h;
                 fm.descent = 0;
@@ -1211,9 +1302,11 @@ final class RichText {
             int cols = cols();
             if (rows == 0 || cols == 0 || hiddenAt(text, start, end)) return;
             float w = width();
-            float rh = rowH(p);
+            float[] hs = heights(p);
+            float[] tops = new float[rows + 1];
+            for (int i = 0; i < rows; i++) tops[i + 1] = tops[i] + hs[i];
             float colW = w / cols;
-            float t0 = y - rh * rows;
+            float t0 = y - tops[rows];
             float pad = p.getTextSize() * 0.5f;
             float rad = 10 * density;
             int oldColor = p.getColor();
@@ -1237,13 +1330,13 @@ final class RichText {
             c.clipPath(clip);
             // header row: clearly different from the body rows
             fill.setColor((Pal.accent & 0x00FFFFFF) | (Pal.dark ? 0x38000000 : 0x2E000000));
-            c.drawRect(x, t0, x + w, t0 + rh, fill);
+            c.drawRect(x, t0, x + w, t0 + hs[0], fill);
             // body rows sit on a slightly raised card colour
             fill.setColor(Pal.card);
-            c.drawRect(x, t0 + rh, x + w, y, fill);
+            c.drawRect(x, t0 + hs[0], x + w, y, fill);
             c.restore();
 
-            for (int r = 1; r < rows; r++) c.drawLine(x, t0 + r * rh, x + w, t0 + r * rh, r == 1 ? line : sep);
+            for (int r = 1; r < rows; r++) c.drawLine(x, t0 + tops[r], x + w, t0 + tops[r], r == 1 ? line : sep);
             for (int k = 1; k < cols; k++) c.drawLine(x + k * colW, t0, x + k * colW, y, sep);
             c.drawRoundRect(box, rad, rad, line);
 
@@ -1254,12 +1347,16 @@ final class RichText {
                 tp.setFakeBoldText(r == 0);
                 tp.setTypeface(r == 0 ? Typeface.create(oldFace, Typeface.BOLD) : oldFace);
                 Paint.FontMetrics fm = tp.getFontMetrics();
-                float base = t0 + r * rh + rh / 2f - (fm.ascent + fm.descent) / 2f;
+                float lh = lineH(p);
+                float rowTop = t0 + tops[r];
+                float rowMid = rowTop + hs[r] / 2f;
+                float firstMid = rowTop + vpad(p) + lh / 2f; // the first line of a wrapped cell
+                float base = firstMid - (fm.ascent + fm.descent) / 2f;
                 for (int k = 0; k < cols; k++) {
                     String raw = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
                     float[] pg = r == 0 ? null : pill(tp, raw);
                     if (pg != null) { // a counter cell: [-] 20 [+]
-                        drawPill(c, tp, x + k * colW + pg[0], t0 + r * rh + rh / 2f, pg[1], pg[2],
+                        drawPill(c, tp, x + k * colW + pg[0], rowMid, pg[1], pg[2],
                                 counterOf(raw)[0]);
                         continue;
                     }
@@ -1270,7 +1367,7 @@ final class RichText {
                         float size = tp.getTextSize();
                         float rad2 = size * 0.42f;
                         float cx2 = tx + rad2;
-                        float cy2 = t0 + r * rh + rh / 2f;
+                        float cy2 = firstMid;
                         Paint ring = new Paint(Paint.ANTI_ALIAS_FLAG);
                         ring.setStrokeCap(Paint.Cap.ROUND);
                         ring.setStrokeJoin(Paint.Join.ROUND);
@@ -1298,9 +1395,11 @@ final class RichText {
                     tp.setStrikeThruText(st == 2);
                     tp.setColor(st == 2 ? Pal.muted : Pal.ink);
                     float room = x + (k + 1) * colW - pad - tx;
-                    CharSequence cut = android.text.TextUtils.ellipsize(cell, tp, Math.max(10, room),
-                            android.text.TextUtils.TruncateAt.END);
-                    c.drawText(cut, 0, cut.length(), tx, base, tp);
+                    java.util.List<String> lines = wrapLines(cell, tp, Math.max(10, room));
+                    for (int li = 0; li < lines.size(); li++) {
+                        String ln = lines.get(li);
+                        c.drawText(ln, 0, ln.length(), tx, base + li * lh, tp);
+                    }
                     tp.setStrikeThruText(false);
                     tp.setColor(Pal.ink);
                 }

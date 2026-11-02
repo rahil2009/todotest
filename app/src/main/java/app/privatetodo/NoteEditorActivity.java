@@ -202,9 +202,13 @@ public class NoteEditorActivity extends Activity {
         title.setHint("Title");
         title.setHintTextColor(Pal.muted);
         title.setTextColor(Pal.ink);
-        title.setTextSize(22);
+        title.setTextSize(21);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setBackground(null);
+        title.setMinHeight(0);
+        title.setMinimumHeight(0);
+        title.setIncludeFontPadding(true);
+        title.setPadding(dp(4), dp(2), dp(4), dp(2)); // room for the tall glyphs: nothing is clipped at the top
         title.setSingleLine(true);
         title.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         title.setImeOptions(EditorInfo.IME_ACTION_NEXT);
@@ -227,9 +231,10 @@ public class NoteEditorActivity extends Activity {
         LinearLayout titleBox = new LinearLayout(this);
         titleBox.setOrientation(LinearLayout.VERTICAL);
         titleBox.setGravity(Gravity.CENTER_VERTICAL);
-        titleBox.addView(title, new LinearLayout.LayoutParams(-1, dp(34)));
+        titleBox.addView(title, new LinearLayout.LayoutParams(-1, -2));
         titleBox.addView(dateLabel, new LinearLayout.LayoutParams(-1, -2));
-        header.addView(titleBox, new LinearLayout.LayoutParams(0, dp(48), 1f));
+        titleBox.setMinimumHeight(dp(48));
+        header.addView(titleBox, new LinearLayout.LayoutParams(0, -2, 1f));
 
         undoBtn = new IconView(this, IconView.UNDO);
         undoBtn.setContentDescription("Undo");
@@ -1690,12 +1695,23 @@ public class NoteEditorActivity extends Activity {
         areaView = area;
         cellEdit = new EditText(this);
         cellEdit.setTag("keepfont");
-        cellEdit.setSingleLine(true);
+        // wraps like the table does (the row grows as you type) but Enter still means "next cell"
+        cellEdit.setSingleLine(false);
+        cellEdit.setHorizontallyScrolling(false);
+        cellEdit.setMaxLines(20);
+        cellEdit.setBreakStrategy(android.text.Layout.BREAK_STRATEGY_SIMPLE);
+        cellEdit.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE);
         cellEdit.setIncludeFontPadding(false);
-        cellEdit.setGravity(Gravity.CENTER_VERTICAL);
+        cellEdit.setGravity(Gravity.TOP);
         cellEdit.setTextColor(Pal.ink);
         cellEdit.setImeOptions(EditorInfo.IME_ACTION_NEXT);
-        cellEdit.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        cellEdit.setRawInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        cellEdit.addTextChangedListener(new SimpleWatcher() {
+            @Override
+            public void afterTextChanged(Editable e) {
+                liveCell();
+            }
+        });
         cellEdit.setVisibility(View.GONE);
         cellEdit.setOnEditorActionListener((tv, a, ev) -> {
             nextCell();
@@ -1755,6 +1771,7 @@ public class NoteEditorActivity extends Activity {
         curR = r;
         curC = c;
         cellOpen = true;
+        cellStepTaken = false;
         String lab = RichText.Tbl.label(t.cells[r][c]);
         cellEdit.setText(lab);
         GradientDrawable g = new GradientDrawable();
@@ -1791,7 +1808,8 @@ public class NoteEditorActivity extends Activity {
         android.graphics.Paint p = body.getPaint();
         float top = l.getLineTop(line) + body.getTotalPaddingTop() + body.getTop();
         float left = body.getTotalPaddingLeft();
-        float rh = curTbl.rowH(p);
+        float rh = curTbl.rowHeight(curR, p);
+        float rowTop = curTbl.rowTop(curR, p);
         float cw = curTbl.colW();
         float pad = curTbl.padX(p);
         float size = p.getTextSize();
@@ -1799,7 +1817,7 @@ public class NoteEditorActivity extends Activity {
         float ax = left + curC * cw;
         float ox = tick ? ax + pad + size * 1.25f : ax;
         float padL = tick ? size * 0.05f : pad;
-        return new float[]{ox, top + curR * rh, cw - (ox - ax) - 1, rh - 1, padL, pad};
+        return new float[]{ox, top + rowTop, cw - (ox - ax) - 1, rh - 1, padL, pad};
     }
 
     private void placeCell() {
@@ -1817,7 +1835,9 @@ public class NoteEditorActivity extends Activity {
             lp.height = h;
             cellEdit.setLayoutParams(lp);
         }
-        cellEdit.setPadding(Math.round(g[4]), 0, Math.round(g[5]), 0);
+        float tsz = body.getPaint().getTextSize();
+        cellEdit.setPadding(Math.round(g[4]), Math.round(tsz * 0.5f), Math.round(g[5]), Math.round(tsz * 0.5f));
+        if (android.os.Build.VERSION.SDK_INT >= 28) cellEdit.setLineHeight(Math.round(tsz * 1.25f));
         cellEdit.setTranslationX(g[0]);
         cellEdit.setTranslationY(g[1] - noteScroll.getScrollY());
     }
@@ -1831,6 +1851,26 @@ public class NoteEditorActivity extends Activity {
         if (y < dp(8)) noteScroll.scrollBy(0, Math.round(y - dp(8)));
         else if (ah > 0 && y + g[3] > ah - dp(8)) noteScroll.scrollBy(0, Math.round(y + g[3] - ah + dp(8)));
         placeCell();
+    }
+
+    private boolean cellStepTaken;
+
+    /** While typing in a cell the table follows, so the row grows as the text wraps. */
+    private void liveCell() {
+        if (!cellOpen || cellBusy || curTbl == null) return;
+        if (body.getText().getSpanStart(curTbl) < 0 || curR >= curTbl.rows() || curC >= curTbl.cols()) return;
+        String txt = cellEdit.getText().toString().replace('\n', ' ');
+        String old = curTbl.cells[curR][curC];
+        String neu = RichText.Tbl.compose(RichText.Tbl.tick(old), txt);
+        if (neu.equals(old)) return;
+        if (!cellStepTaken) {
+            commitNow(); // one undo step for the whole edit of this cell
+            cellStepTaken = true;
+        }
+        curTbl.cells[curR][curC] = neu;
+        RichText.refresh(body.getText(), curTbl);
+        changed();
+        cellEdit.post(this::placeCell);
     }
 
     /** Writes the open cell's text back into the table (one undo step). */

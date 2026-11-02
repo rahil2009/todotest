@@ -187,6 +187,8 @@ public class LentEditActivity extends Activity {
         String title = editing != null ? "Edit" : dir == 0 ? "Lent something" : "Borrowed something";
         header.addView(LentUi.text(this, title, 26, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
         col.addView(header);
+        // push the form to the bottom of the screen so everything is under the thumb; a tall form just scrolls
+        col.addView(new View(this), new LinearLayout.LayoutParams(-1, 0, 1f));
 
         // who the money / thing went to
         col.addView(chips(
