@@ -16,6 +16,12 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.51
+
+- **20 more clock faces** for full-screen alerts (31 in all, Settings > Full-screen alert): Glass, Compact,
+  Stretch thin and Tinted glass (iOS); Horizontal, Adaptive, Outline and Corner (One UI); Long, Word art, Blur and
+  Geometry (ColorOS); Side, Top left, Span and Heavy (OxygenOS); Outline, Split, Neon and Playful (HyperOS).
+
 ## v3.50
 
 - **App lock:** adds the `USE_BIOMETRIC` permission the fingerprint / face prompt needs (the Test unlock caught the
