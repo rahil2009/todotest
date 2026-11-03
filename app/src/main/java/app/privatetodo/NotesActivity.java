@@ -345,6 +345,7 @@ public class NotesActivity extends Activity {
         LinearLayout add = chip();
         IconView plus = new IconView(this, IconView.PLUS);
         plus.setClickable(false);
+        plus.setTint(Pal.accent); // the default plus is white (made for filled buttons): invisible on a white chip
         add.addView(plus, new LinearLayout.LayoutParams(dp(26), dp(26)));
         TextView lab = text("Folder", 14, Pal.ink, true);
         lab.setPadding(dp(4), 0, 0, 0);
@@ -697,9 +698,13 @@ public class NotesActivity extends Activity {
 
     // ------------------------------------------------------------ looks
 
-    private static final int[] LOOK_IDS = {1, 2, 3, 4, 5, 6, 7, 8, 10};
+    private static final int[] LOOK_IDS = {1, 2, 3, 4, 5, 6, 7, 8, 10,
+            21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40};
     private static final String[] LOOK_NAMES = {"Current style", "Expanded", "Grid, 2 columns", "Big title cards",
-            "Compact rows", "Titles only", "Grouped by date", "Checklist previews", "Pinned strip + list"};
+            "Compact rows", "Titles only", "Grouped by date", "Checklist previews", "Pinned strip + list",
+            "Soft cards", "Square tiles", "Pastel", "Outlined", "Three across", "Tiny titles", "Accent cap",
+            "Side stripe", "Bold titles", "Sticky notes", "Dark tiles", "Tall cards", "Polaroid", "Bubbles", "Paper",
+            "Typewriter", "Time first", "Gradient", "Checklist grid", "Glass"};
     private static final String[] LOOK_DESC = {
             "Title, two lines of text and the edit time.",
             "Longer previews, up to six lines.",
@@ -709,7 +714,18 @@ public class NotesActivity extends Activity {
             "Just the title. Fits the most notes.",
             "Today, Yesterday, This week, Earlier.",
             "To-do items shown as a checklist.",
-            "Pinned notes as tiles on top, a compact list below."};
+            "Pinned notes as tiles on top, a compact list below.",
+            // grids 21 to 40
+            "Grid: soft white cards, four lines.", "Grid: square tiles of equal size.",
+            "Grid: each card a different soft colour.", "Grid: outlined cards, no fill.",
+            "Grid: three small cards per row.", "Grid: three per row, titles only.",
+            "Grid: a coloured cap on top of each card.", "Grid: a coloured stripe down the side.",
+            "Grid: large bold titles.", "Grid: sticky notes in warm colours.",
+            "Grid: dark tiles, light text.", "Grid: tall cards with long previews.",
+            "Grid: a colour block with the first letter, title below.", "Grid: very round bubble cards.",
+            "Grid: paper cards with a serif title.", "Grid: typewriter text for the preview.",
+            "Grid: the edit time big and first.", "Grid: accent gradient cards.",
+            "Grid: to-dos shown as round ticks.", "Grid: tinted glass with a thin edge."};
 
     /** Pinned tiles shown across the top in look 10. */
     private static final class PinStrip {
@@ -729,6 +745,12 @@ public class NotesActivity extends Activity {
         for (int i = 0; i < LOOK_IDS.length; i++) {
             final int id = LOOK_IDS[i];
             boolean on = cur == id;
+            if (id == 21) {
+                TextView gh = text("GRIDS  \u00b7  21 TO 40", 12, Pal.muted, true);
+                gh.setLetterSpacing(0.08f);
+                gh.setPadding(dp(10), dp(16), 0, dp(6));
+                box.addView(gh);
+            }
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -857,6 +879,15 @@ public class NotesActivity extends Activity {
     }
 
     private void addItems(List<Note> list, int look) {
+        if (look >= 21 && look <= 40) { // grids: 2 or 3 per row
+            int cols = (look == 25 || look == 26) ? 3 : 2;
+            for (int i = 0; i < list.size(); i += cols) {
+                Note[] r = new Note[cols];
+                for (int k = 0; k < cols; k++) r[k] = i + k < list.size() ? list.get(i + k) : null;
+                rows.add(r);
+            }
+            return;
+        }
         if (look == 3) { // two per row
             for (int i = 0; i < list.size(); i += 2) {
                 rows.add(new Note[]{list.get(i), i + 1 < list.size() ? list.get(i + 1) : null});
@@ -1000,6 +1031,16 @@ public class NotesActivity extends Activity {
         }
         names.add("Move to folder…");
         acts.add(() -> moveDialog(n));
+        names.add("Opens at: " + NoteOpen.label(this, n.id));
+        acts.add(() -> {
+            String[] items = new String[5];
+            int own = NoteOpen.own(this, n.id);
+            items[0] = (own == NoteOpen.FOLLOW ? "\u2713  " : "") + "Follow Settings (" + NoteOpen.NAMES[NoteOpen.universal(this)] + ")";
+            for (int i = 0; i < 4; i++) items[i + 1] = (own == i ? "\u2713  " : "") + NoteOpen.NAMES[i];
+            new Dlg.Builder(this).setTitle("This note opens at")
+                    .setItems(items, (d, w) -> NoteOpen.setOwn(this, n.id, w == 0 ? NoteOpen.FOLLOW : w - 1))
+                    .show();
+        });
         names.add("Move to Bin");
         acts.add(() -> confirmDelete(n));
         new Dlg.Builder(this)
@@ -1040,12 +1081,16 @@ public class NotesActivity extends Activity {
                 v = pinStrip(((PinStrip) o).notes);
             } else if (o instanceof Note[]) {
                 Note[] pair = (Note[]) o;
+                int look = Prefs.noteLook(NotesActivity.this);
                 LinearLayout row = new LinearLayout(NotesActivity.this);
-                row.setPadding(dp(16), 0, dp(16), 0);
-                for (int k = 0; k < 2; k++) {
+                row.setPadding(dp(look >= 21 ? 12 : 16), 0, dp(look >= 21 ? 12 : 16), 0);
+                for (int k = 0; k < pair.length; k++) {
                     LinearLayout cell = new LinearLayout(NotesActivity.this);
                     cell.setOrientation(LinearLayout.VERTICAL);
-                    if (pair[k] != null) cell.addView(card(pair[k], 5, 12, 14, false, false, dp(4), true));
+                    if (pair[k] != null) {
+                        cell.addView(look >= 21 ? gridCell(pair[k], look - 21, i * pair.length + k)
+                                : card(pair[k], 5, 12, 14, false, false, dp(4), true));
+                    }
                     LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(0, -2, 1f);
                     row.addView(cell, cp);
                 }
@@ -1226,6 +1271,196 @@ public class NotesActivity extends Activity {
         plp.topMargin = dp(2);
         plp.rightMargin = dp(2);
         return plp;
+    }
+
+    // ------------------------------------------------------------- grids 21 to 40
+
+    private static final int[] PASTEL_L = {0xFFFDE7C8, 0xFFD9F2E6, 0xFFDCE8FB, 0xFFF6DDEB, 0xFFEDE4FB, 0xFFFFF4B8};
+    private static final int[] PASTEL_D = {0xFF3D3424, 0xFF233A31, 0xFF24314A, 0xFF3C2632, 0xFF302742, 0xFF3B3820};
+    private static final int[] STICKY_L = {0xFFFFF0A0, 0xFFFFD9A8, 0xFFC9F0D2, 0xFFC4E4FF, 0xFFFFC9D6};
+    private static final int[] STICKY_D = {0xFF4A4420, 0xFF4A3622, 0xFF25402C, 0xFF223A4C, 0xFF4A2632};
+
+    /** A frame whose height follows its width (square or tall tiles). */
+    private static final class Ratio extends FrameLayout {
+        private final float r;
+
+        Ratio(Context c, float r) {
+            super(c);
+            this.r = r;
+        }
+
+        @Override
+        protected void onMeasure(int w, int h) {
+            int width = View.MeasureSpec.getSize(w);
+            super.onMeasure(w, View.MeasureSpec.makeMeasureSpec(Math.round(width * r), View.MeasureSpec.EXACTLY));
+        }
+    }
+
+    /** One note in a grid; {@code s} is the grid style 0 to 19 (looks 21 to 40). */
+    private View gridCell(final Note n, int s, int idx) {
+        Context c = this;
+        int[] pastel = Pal.dark ? PASTEL_D : PASTEL_L;
+        int[] sticky = Pal.dark ? STICKY_D : STICKY_L;
+        int radius = new int[]{18, 16, 20, 16, 14, 12, 14, 12, 20, 6, 18, 18, 10, 28, 3, 10, 16, 20, 16, 20}[s];
+        int titleSp = new int[]{15, 16, 15, 15, 13, 13, 15, 15, 21, 15, 15, 15, 14, 15, 16, 15, 15, 16, 15, 15}[s];
+        int lines = new int[]{4, 4, 4, 3, 3, 0, 3, 3, 2, 5, 3, 9, 2, 3, 4, 5, 2, 3, 4, 3}[s];
+        boolean time = s == 0 || s == 2 || s == 3 || s == 5 || s == 7 || s == 10 || s == 12 || s == 14;
+        float ratio = s == 1 ? 1f : s == 5 ? 0.85f : s == 11 ? 1.45f : 0f;
+
+        int bg = Pal.card;
+        int fg = Pal.ink;
+        int sub = Pal.muted;
+        int stroke = 0;
+        int strokeColor = 0;
+        GradientDrawable g = new GradientDrawable();
+        switch (s) {
+            case 2:
+                bg = pastel[idx % pastel.length];
+                break;
+            case 3:
+                bg = 0;
+                stroke = 2;
+                strokeColor = Pal.chip;
+                break;
+            case 9:
+                bg = sticky[idx % sticky.length];
+                if (!Pal.dark) {
+                    fg = 0xFF2A2410;
+                    sub = 0xB32A2410;
+                }
+                break;
+            case 10:
+                bg = Pal.dark ? 0xFF2A3331 : 0xFF17201E;
+                fg = 0xFFF2F5F4;
+                sub = 0xB3F2F5F4;
+                break;
+            case 13:
+                bg = Pal.chip;
+                break;
+            case 14:
+                stroke = 1;
+                strokeColor = Pal.chip;
+                break;
+            case 17:
+                g.setOrientation(GradientDrawable.Orientation.TL_BR);
+                g.setColors(new int[]{Pal.accent, mix(Pal.accent, 0xFF000000, 0.35f)});
+                fg = Pal.onAccent;
+                sub = (Pal.onAccent & 0x00FFFFFF) | 0xC0000000;
+                break;
+            case 19:
+                bg = (Pal.accent & 0x00FFFFFF) | 0x1F000000;
+                stroke = 1;
+                strokeColor = (Pal.accent & 0x00FFFFFF) | 0x66000000;
+                break;
+            default:
+                break;
+        }
+        // pinned notes keep their chosen pinned colour
+        int ps = PinTint.of(c, n);
+        if (n.pinned > 0 && PinTint.solid(ps)) {
+            bg = PinTint.bg(ps, n.id);
+            fg = PinTint.fg(ps, n.id);
+            sub = (fg & 0x00FFFFFF) | 0xC0000000;
+        }
+        if (s != 17 || (n.pinned > 0 && PinTint.solid(ps))) g.setColor(bg);
+        if (n.pinned > 0 && PinTint.isGradient(ps)) PinTint.paint(g, ps, n.id);
+        g.setCornerRadius(dp(radius));
+        if (stroke > 0) g.setStroke(dp(stroke), strokeColor);
+
+        FrameLayout wrap = ratio > 0 ? new Ratio(c, ratio) : new FrameLayout(c);
+        wrap.setPadding(dp(4), dp(4), dp(4), dp(4));
+        LinearLayout card = new LinearLayout(c);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackground(g);
+        int pad = s == 4 || s == 5 ? 10 : 14;
+        card.setPadding(dp(pad), dp(pad), dp(pad), dp(pad));
+
+        String titleText = n.title.isEmpty() ? "Untitled" : n.title;
+        if (s == 6 || s == 7) { // accent cap on top, or stripe down the side
+            card.setPadding(0, 0, 0, 0);
+            LinearLayout outer = new LinearLayout(c);
+            outer.setOrientation(s == 6 ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+            View bar = new View(c);
+            bar.setBackgroundColor(n.pinned > 0 && PinTint.solid(ps) ? fg : Pal.accent);
+            outer.addView(bar, s == 6 ? new LinearLayout.LayoutParams(-1, dp(6)) : new LinearLayout.LayoutParams(dp(5), -1));
+            LinearLayout inner = new LinearLayout(c);
+            inner.setOrientation(LinearLayout.VERTICAL);
+            inner.setPadding(dp(14), dp(12), dp(14), dp(14));
+            outer.addView(inner, new LinearLayout.LayoutParams(s == 6 ? -1 : 0, -2, s == 6 ? 0f : 1f));
+            card.addView(outer, new LinearLayout.LayoutParams(-1, -1));
+            card.setClipToOutline(true);
+            fillGrid(inner, n, titleText, titleSp, lines, time, fg, sub, s);
+        } else if (s == 12) { // polaroid: colour block with the first letter, title under it
+            card.setPadding(dp(8), dp(8), dp(8), dp(12));
+            TextView block = text(titleText.substring(0, 1).toUpperCase(Locale.getDefault()), 30,
+                    Pal.dark ? Pal.ink : 0xFF2A2410, true);
+            block.setGravity(Gravity.CENTER);
+            GradientDrawable bb = new GradientDrawable();
+            bb.setColor(pastel[idx % pastel.length]);
+            bb.setCornerRadius(dp(6));
+            block.setBackground(bb);
+            card.addView(block, new LinearLayout.LayoutParams(-1, dp(76)));
+            LinearLayout inner = new LinearLayout(c);
+            inner.setOrientation(LinearLayout.VERTICAL);
+            inner.setPadding(dp(4), dp(10), dp(4), 0);
+            card.addView(inner);
+            fillGrid(inner, n, titleText, titleSp, lines, time, fg, sub, s);
+        } else {
+            fillGrid(card, n, titleText, titleSp, lines, time, fg, sub, s);
+        }
+        card.setOnClickListener(v -> openNote(n.id));
+        card.setOnLongClickListener(v -> {
+            noteMenu(n);
+            return true;
+        });
+        wrap.addView(card, new FrameLayout.LayoutParams(-1, ratio > 0 ? -1 : -2));
+        if (s != 5 && s != 4) wrap.addView(pinButton(n, fg == Pal.ink ? 0 : fg, 38), pinLp(38));
+        else if (n.pinned > 0) wrap.addView(pinButton(n, fg == Pal.ink ? 0 : fg, 32), pinLp(32));
+        return wrap;
+    }
+
+    private void fillGrid(LinearLayout box, Note n, String titleText, int titleSp, int lines, boolean time, int fg,
+                          int sub, int s) {
+        if (s == 16) { // time first
+            TextView big = text(shortWhen(n.updated), 22, n.pinned > 0 ? fg : Pal.accent, true);
+            big.setPadding(0, 0, dp(28), dp(2));
+            box.addView(big);
+        }
+        TextView title = text(titleText, titleSp, n.title.isEmpty() ? sub : fg, true);
+        title.setMaxLines(s == 8 ? 3 : 2);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        if (s == 14) title.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
+        if (s != 4 && s != 5) title.setPadding(0, 0, s == 16 ? 0 : dp(26), 0);
+        box.addView(title);
+        if (lines > 0) {
+            boolean check = s == 18;
+            String preview = previewOf(n, check);
+            if (!preview.isEmpty()) {
+                if (check && (preview.startsWith("☐") || preview.startsWith("☑"))) {
+                    box.addView(tickList(preview, 12, sub, fg == Pal.ink ? Pal.accent : fg, fg != Pal.ink));
+                } else {
+                    TextView p = text(preview, s == 4 ? 12 : 13, sub, false);
+                    if (s == 15) p.setTypeface(Typeface.MONOSPACE);
+                    p.setMaxLines(lines);
+                    p.setEllipsize(TextUtils.TruncateAt.END);
+                    p.setLineSpacing(0, 1.08f);
+                    p.setPadding(0, dp(5), 0, 0);
+                    box.addView(p);
+                }
+            }
+        }
+        if (time) {
+            TextView w = text(shortWhen(n.updated), 11, sub, false);
+            w.setPadding(0, dp(8), 0, 0);
+            box.addView(w);
+        }
+    }
+
+    private static int mix(int a, int b, float t) {
+        int ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+        int br = (b >> 16) & 255, bgc = (b >> 8) & 255, bb = b & 255;
+        return 0xFF000000 | (Math.round(ar + (br - ar) * t) << 16) | (Math.round(ag + (bgc - ag) * t) << 8)
+                | Math.round(ab + (bb - ab) * t);
     }
 
     /** Look 4: a coloured card with a large title. */

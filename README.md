@@ -16,6 +16,26 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.50
+
+- **App lock:** adds the `USE_BIOMETRIC` permission the fingerprint / face prompt needs (the Test unlock caught the
+  missing permission instead of crashing). It is an on-device permission only; the app still has no network access.
+- **Tables:** the cell editor and taps now follow where the table is really drawn and with which text size, so the
+  selected cell lines up on every row, also in long notes and inside sized, heading or block text.
+
+## v3.49
+
+- **Notes:** the "+ Folder" plus is visible again (it was white on a white chip).
+- **Jump arrow:** while you scroll a long note (over two screens), a small arrow shows above the finger button: down
+  jumps to the end, up jumps to the top (it flips to up near the end). It shows only while your finger moves the page
+  and fades 1.6 s after it stops. Toggle in Settings > Notebook.
+- **Open notes at:** Smart (long notes where you left off, short ones at the top), Where I left off, Top or Bottom.
+  One setting for all notes (Settings > Notebook); any note can override it (hold it in the list, or hold the jump arrow).
+- **20 grid styles** for the notebook (looks 21 to 40 under Note previews).
+- **Kanban:** narrower columns (about one and a half on screen), tighter cards.
+- **Clock faces** for full-screen alerts (Settings > Full-screen alert): 10 faces after the lock-screen clocks of iOS,
+  One UI, ColorOS, OxygenOS and HyperOS, drawn with the phone's own fonts.
+
 ## v3.48
 
 - **App lock test.** Settings -> App lock -> *Test unlock* runs the phone's fingerprint / face / screen-lock check and

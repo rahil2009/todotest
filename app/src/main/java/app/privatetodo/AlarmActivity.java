@@ -102,14 +102,11 @@ public class AlarmActivity extends Activity {
         label.setLetterSpacing(0.18f);
         root.addView(label);
 
-        TextClock clock = new TextClock(this);
-        clock.setFormat12Hour("h:mm");
-        clock.setFormat24Hour("HH:mm");
-        clock.setTextSize(72);
-        clock.setTextColor(Color.WHITE);
-        clock.setGravity(Gravity.CENTER);
-        clock.setPadding(0, dp(8), 0, dp(24));
-        root.addView(clock);
+        ClockFace clock = new ClockFace(this, ClockFace.chosen(this)); // Settings > Full-screen alert > Clock face
+        LinearLayout.LayoutParams clockLp = new LinearLayout.LayoutParams(-1, -2);
+        clockLp.topMargin = dp(8);
+        clockLp.bottomMargin = dp(24);
+        root.addView(clock, clockLp);
 
         TextView title = label(t.title, 28, Color.WHITE, true);
         title.setGravity(Gravity.CENTER);

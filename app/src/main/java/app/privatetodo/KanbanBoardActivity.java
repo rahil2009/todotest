@@ -99,12 +99,13 @@ public class KanbanBoardActivity extends Activity {
         hs.setHorizontalScrollBarEnabled(false);
         hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout cols = new LinearLayout(this);
-        cols.setPadding(dp(14), dp(4), dp(14), dp(16));
-        int colW = Math.round(getResources().getDisplayMetrics().widthPixels * 0.80f);
+        cols.setPadding(dp(12), dp(4), dp(12), dp(16));
+        // narrower columns: about one and a half on screen, so the next one always peeks in
+        int colW = Math.min(Math.round(getResources().getDisplayMetrics().widthPixels * 0.62f), dp(264));
         List<KanbanDb.Col> list = db.columns(boardId);
         for (KanbanDb.Col c : list) {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(colW, -1);
-            lp.rightMargin = dp(10);
+            lp.rightMargin = dp(8);
             cols.addView(column(c, list), lp);
         }
         TextView addCol = LentUi.pill(this, "+  Add column", Pal.chip, Pal.ink, 15);
@@ -134,19 +135,19 @@ public class KanbanBoardActivity extends Activity {
     private View column(final KanbanDb.Col col, final List<KanbanDb.Col> all) {
         final LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(LentUi.round(this, Pal.chip, 22));
-        box.setPadding(dp(10), dp(10), dp(10), dp(10));
+        box.setBackground(LentUi.round(this, Pal.chip, 18));
+        box.setPadding(dp(7), dp(8), dp(7), dp(6));
 
         List<KanbanDb.Card> cards = db.cards(col.id);
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        head.setPadding(dp(6), 0, dp(6), dp(8));
-        TextView name = LentUi.text(this, col.name, 17, Pal.ink, true);
+        head.setPadding(dp(5), 0, dp(3), dp(6));
+        TextView name = LentUi.text(this, col.name, 15, Pal.ink, true);
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         head.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
-        TextView n = LentUi.text(this, String.valueOf(cards.size()), 14, Pal.muted, true);
-        n.setPadding(dp(10), dp(2), dp(10), dp(2));
+        TextView n = LentUi.text(this, String.valueOf(cards.size()), 12, Pal.muted, true);
+        n.setPadding(dp(8), dp(1), dp(8), dp(1));
         n.setBackground(LentUi.round(this, Pal.card, 100));
         head.addView(n);
         head.setOnClickListener(v -> {
@@ -164,8 +165,8 @@ public class KanbanBoardActivity extends Activity {
         for (KanbanDb.Card k : cards) list.addView(cardView(k));
         box.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        TextView add = LentUi.text(this, "+  Add card", 15, Pal.muted, true);
-        add.setPadding(dp(8), dp(12), dp(8), dp(4));
+        TextView add = LentUi.text(this, "+  Add card", 14, Pal.muted, true);
+        add.setPadding(dp(6), dp(8), dp(6), dp(4));
         add.setOnClickListener(v -> {
             Hap.tick(v);
             KanbanDb.Card k = new KanbanDb.Card();
@@ -230,14 +231,14 @@ public class KanbanBoardActivity extends Activity {
     private View cardView(final KanbanDb.Card k) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(14), dp(12), dp(14), dp(12));
-        c.setBackground(LentUi.round(this, Pal.card, 16));
+        c.setPadding(dp(11), dp(9), dp(11), dp(10));
+        c.setBackground(LentUi.round(this, Pal.card, 13));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = dp(8);
+        lp.bottomMargin = dp(6);
         c.setLayoutParams(lp);
-        c.addView(LentUi.text(this, k.title, 16, Pal.ink, true));
+        c.addView(LentUi.text(this, k.title, 14.5f, Pal.ink, true));
         if (!k.note.isEmpty()) {
-            TextView nt = LentUi.text(this, k.note, 14, Pal.muted, false);
+            TextView nt = LentUi.text(this, k.note, 12.5f, Pal.muted, false);
             nt.setMaxLines(2);
             nt.setEllipsize(android.text.TextUtils.TruncateAt.END);
             nt.setPadding(0, dp(3), 0, 0);
@@ -245,7 +246,7 @@ public class KanbanBoardActivity extends Activity {
         }
         if (k.taskId > 0 || k.noteId > 0) {
             LinearLayout links = new LinearLayout(this);
-            links.setPadding(0, dp(8), 0, 0);
+            links.setPadding(0, dp(6), 0, 0);
             if (k.taskId > 0) {
                 TaskDb tdb = new TaskDb(this);
                 Task t;

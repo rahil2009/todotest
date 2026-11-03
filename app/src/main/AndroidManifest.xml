@@ -10,6 +10,8 @@
     <!-- Only so an alarm you mark "show even when unlocked" can open full screen over other apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- App lock: lets the app ask the phone for fingerprint / face. A normal on-device permission: no network, no data shared. -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Lets an alarm keep ringing (your chosen sound, looping) while the screen is off. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />

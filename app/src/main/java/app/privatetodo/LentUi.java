@@ -110,6 +110,12 @@ final class LentUi {
 
     // ------------------------------------------------------------------ building blocks
 
+    static TextView text(Context c, String s, float sp, int color, boolean bold) {
+        TextView t = text(c, s, 14, color, bold);
+        t.setTextSize(sp);
+        return t;
+    }
+
     static TextView text(Context c, String s, int sp, int color, boolean bold) {
         TextView t = new TextView(c);
         t.setText(s);

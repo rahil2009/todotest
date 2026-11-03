@@ -271,17 +271,20 @@ final class RichEditText extends EditText {
         int ls = l.getLineStart(line);
         RichText.Tbl t = RichText.tableOnLine(getText(), ls);
         if (t == null || RichText.hiddenAt(getText(), ls, ls + 1)) return false;
-        float xl = x - getTotalPaddingLeft() + getScrollX();
-        float lineTop = l.getLineTop(line);
+        // measured from where the table was really drawn (a size or heading span can move and resize it)
+        float ox = t.drawX >= 0 ? t.drawX : 0;
+        float lineTop = t.drawTop >= 0 ? t.drawTop : l.getLineTop(line);
+        float xl = x - getTotalPaddingLeft() + getScrollX() - ox;
         float yl = y - (lineTop + getTotalPaddingTop() - getScrollY());
-        int[] rc = t.cellAt(xl, yl, getPaint());
+        android.graphics.Paint tpaint = t.sized(getPaint());
+        int[] rc = t.cellAt(xl, yl, tpaint);
         if (rc == null) return false;
         tblDown = t;
         tblR = rc[0];
         tblC = rc[1];
-        tblTick = t.onTick(xl, yl, getPaint());
-        tblZone = t.counterZone(xl, yl, getPaint());
-        tblLeft = getTotalPaddingLeft() - getScrollX();
+        tblTick = t.onTick(xl, yl, tpaint);
+        tblZone = t.counterZone(xl, yl, tpaint);
+        tblLeft = getTotalPaddingLeft() - getScrollX() + ox;
         tblTop = lineTop + getTotalPaddingTop() - getScrollY();
         tblMoved = false;
         return true;

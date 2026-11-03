@@ -528,6 +528,35 @@ public class SettingsActivity extends Activity {
         row.addView(plus, new LinearLayout.LayoutParams(dp(52), dp(52)));
         card.addView(row);
 
+        // ---- where notes open
+        TextView otitle = text("Open notes at", 16, Pal.ink, true);
+        otitle.setPadding(0, dp(20), 0, 0);
+        card.addView(otitle);
+        final TextView odesc = text(NoteOpen.DESC[NoteOpen.universal(this)]
+                + " A note can have its own choice: hold it in the list, or hold the jump arrow inside it.", 13, Pal.muted, false);
+        odesc.setPadding(0, dp(2), 0, dp(8));
+        card.addView(odesc);
+        android.widget.HorizontalScrollView ohs = new android.widget.HorizontalScrollView(this);
+        ohs.setHorizontalScrollBarEnabled(false);
+        LinearLayout orow = new LinearLayout(this);
+        for (int i = 0; i < NoteOpen.NAMES.length; i++) {
+            final int k = i;
+            TextView t = chip(NoteOpen.NAMES[i], NoteOpen.universal(this) == i, v -> {
+                Hap.tick(v);
+                NoteOpen.setUniversal(this, k);
+                setContentView(build());
+                Fonts.apply(getWindow().getDecorView());
+            });
+            LinearLayout.LayoutParams olp = new LinearLayout.LayoutParams(-2, -2);
+            olp.rightMargin = dp(8);
+            orow.addView(t, olp);
+        }
+        ohs.addView(orow);
+        card.addView(ohs);
+        card.addView(toggleRow("Jump arrow in long notes",
+                "While you scroll a long note, a small arrow jumps to the end (or back to the top). It hides when you stop.",
+                NoteOpen.jumpButton(this), on -> NoteOpen.setJumpButton(this, on)));
+
         // ---- note history
         TextView htitle = text("Note history", 16, Pal.ink, true);
         htitle.setPadding(0, dp(20), 0, 0);
@@ -891,6 +920,59 @@ public class SettingsActivity extends Activity {
         plp2.bottomMargin = dp(6);
         alertCard.addView(preview, plp2);
         showFx.run();
+
+        // ---- clock face
+        TextView cft = text("Clock face", 16, Pal.ink, true);
+        cft.setPadding(0, dp(18), 0, 0);
+        alertCard.addView(cft);
+        alertCard.addView(text("The clock on the alarm screen. Faces follow the lock-screen clocks of iPhone, "
+                + "Samsung, OPPO, OnePlus and Xiaomi, drawn with your phone's own fonts.", 13, Pal.muted, false));
+        final ClockFace face = new ClockFace(this, ClockFace.chosen(this));
+        face.setScale(0.62f);
+        android.widget.FrameLayout fbox = new android.widget.FrameLayout(this);
+        GradientDrawable fbg = new GradientDrawable();
+        fbg.setColor(0xFF111513);
+        fbg.setCornerRadius(dp(18));
+        fbox.setBackground(fbg);
+        fbox.setPadding(dp(22), dp(18), dp(22), dp(18));
+        fbox.addView(face, new android.widget.FrameLayout.LayoutParams(-1, -2));
+        final TextView[] faceChips = new TextView[ClockFace.NAMES.length];
+        final Runnable paintFaces = () -> {
+            int cur = ClockFace.chosen(this);
+            for (int i = 0; i < faceChips.length; i++) {
+                boolean on = i == cur;
+                faceChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                faceChips[i].setBackground(cg);
+            }
+        };
+        FlowLayout faceRow = new FlowLayout(this, dp(6), dp(6));
+        for (int i = 0; i < ClockFace.NAMES.length; i++) {
+            final int f = i;
+            TextView chip = text(ClockFace.NAMES[i], 14, Pal.muted, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(14), 0, dp(14), 0);
+            chip.setMinHeight(dp(40));
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                ClockFace.setChosen(this, f);
+                face.setFace(f);
+                paintFaces.run();
+            });
+            faceChips[i] = chip;
+            faceRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(40)));
+        }
+        paintFaces.run();
+        LinearLayout.LayoutParams frl = new LinearLayout.LayoutParams(-1, -2);
+        frl.topMargin = dp(10);
+        alertCard.addView(faceRow, frl);
+        LinearLayout.LayoutParams fbl = new LinearLayout.LayoutParams(-1, -2);
+        fbl.topMargin = dp(10);
+        fbl.bottomMargin = dp(6);
+        alertCard.addView(fbox, fbl);
+
         alertCard.addView(backupRow("Test full-screen alert",
                 "Shows the alarm screen right now with sample data", v -> testAlert(0)));
         alertCard.addView(backupRow("Test on the lock screen",

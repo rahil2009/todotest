@@ -154,6 +154,7 @@ public class NoteEditorActivity extends Activity {
         histSel.clear();
         histPos = -1;
         commitNow(); // the opening state is the first step of the history
+        applyOpenAt();
     }
 
     @Override
@@ -165,6 +166,7 @@ public class NoteEditorActivity extends Activity {
 
     @Override
     protected void onPause() {
+        rememberSpot();
         saveNow();
         super.onPause();
     }
@@ -427,6 +429,18 @@ public class NoteEditorActivity extends Activity {
         flp.bottomMargin = dp(16);
         area.addView(fab, flp);
         styleFab();
+        jump = new JumpButton(this);
+        jump.attach(scroll);
+        FrameLayout.LayoutParams jlp = new FrameLayout.LayoutParams(dp(44), dp(44));
+        jlp.gravity = Gravity.BOTTOM | Gravity.END;
+        jlp.rightMargin = dp(22);
+        jlp.bottomMargin = dp(16 + 56 + 12); // just above the finger-mode button
+        area.addView(jump, jlp);
+        jump.setOnLongClickListener(v -> {
+            Hap.tick(v);
+            openAtDialog();
+            return true;
+        });
         root.addView(area, new LinearLayout.LayoutParams(-1, 0, 1f));
 
         buildCellEdit(area);
@@ -1781,7 +1795,7 @@ public class NoteEditorActivity extends Activity {
         cellEdit.setBackground(g);
         Typeface base = body.getTypeface() == null ? Typeface.DEFAULT : body.getTypeface();
         cellEdit.setTypeface(r == 0 ? Typeface.create(base, Typeface.BOLD) : base);
-        cellEdit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, body.getTextSize());
+        cellEdit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, curTbl != null ? curTbl.sized(body.getPaint()).getTextSize() : body.getTextSize());
         cellEdit.setHint(r == 0 ? "Header" : "");
         cellEdit.setHintTextColor(Pal.muted);
         cellEdit.setVisibility(View.VISIBLE);
@@ -1805,9 +1819,9 @@ public class NoteEditorActivity extends Activity {
         int st = body.getText().getSpanStart(curTbl);
         if (st < 0) return null;
         int line = l.getLineForOffset(st);
-        android.graphics.Paint p = body.getPaint();
-        float top = l.getLineTop(line) + body.getTotalPaddingTop() + body.getTop();
-        float left = body.getTotalPaddingLeft();
+        android.graphics.Paint p = curTbl.sized(body.getPaint()); // the paint the table was really drawn with
+        float top = (curTbl.drawTop >= 0 ? curTbl.drawTop : l.getLineTop(line)) + body.getTotalPaddingTop() + body.getTop();
+        float left = body.getTotalPaddingLeft() + body.getLeft() + Math.max(0, curTbl.drawX);
         float rh = curTbl.rowHeight(curR, p);
         float rowTop = curTbl.rowTop(curR, p);
         float cw = curTbl.colW();
@@ -1835,7 +1849,8 @@ public class NoteEditorActivity extends Activity {
             lp.height = h;
             cellEdit.setLayoutParams(lp);
         }
-        float tsz = body.getPaint().getTextSize();
+        float tsz = curTbl.sized(body.getPaint()).getTextSize();
+        if (Math.abs(cellEdit.getTextSize() - tsz) > 0.5f) cellEdit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, tsz);
         cellEdit.setPadding(Math.round(g[4]), Math.round(tsz * 0.5f), Math.round(g[5]), Math.round(tsz * 0.5f));
         if (android.os.Build.VERSION.SDK_INT >= 28) cellEdit.setLineHeight(Math.round(tsz * 1.25f));
         cellEdit.setTranslationX(g[0]);
@@ -2140,6 +2155,55 @@ public class NoteEditorActivity extends Activity {
     }
 
     private ScrollView noteScroll;
+    private JumpButton jump;
+
+    /** Puts a freshly opened note at its chosen spot: Smart, where you left off, the top or the bottom. */
+    private void applyOpenAt() {
+        if (noteId <= 0 || noteScroll == null) return;
+        final int mode = NoteOpen.effective(this, noteId);
+        if (mode == NoteOpen.TOP) return;
+        final int offset = NoteOpen.lastOffset(this, noteId);
+        Runnable go = () -> {
+            ScrollView sv = noteScroll;
+            View child = sv.getChildAt(0);
+            if (child == null || body.getLayout() == null) return;
+            int max = Math.max(0, child.getHeight() - sv.getHeight());
+            int m = mode;
+            if (m == NoteOpen.SMART) m = child.getHeight() > sv.getHeight() * 2.5f ? NoteOpen.LAST : NoteOpen.TOP;
+            if (m == NoteOpen.BOTTOM) {
+                sv.scrollTo(0, max);
+            } else if (m == NoteOpen.LAST) {
+                android.text.Layout l = body.getLayout();
+                int off = Math.min(offset, body.length());
+                int y = body.getTop() + body.getTotalPaddingTop() + l.getLineTop(l.getLineForOffset(off));
+                sv.scrollTo(0, Math.min(max, Math.max(0, y)));
+            }
+        };
+        // rich spans (tables, images) settle over a few frames, so place it again as they do
+        noteScroll.post(go);
+        noteScroll.postDelayed(go, 120);
+        noteScroll.postDelayed(go, 320);
+    }
+
+    /** Remembers the first line on screen, for "where I left off". */
+    private void rememberSpot() {
+        if (noteId <= 0 || noteScroll == null || body == null || body.getLayout() == null) return;
+        android.text.Layout l = body.getLayout();
+        int y = Math.max(0, noteScroll.getScrollY() - body.getTop() - body.getTotalPaddingTop());
+        NoteOpen.setLastOffset(this, noteId, l.getLineStart(l.getLineForVertical(y)));
+    }
+
+    /** This note's own "opens at" choice (hold the jump button). */
+    private void openAtDialog() {
+        if (noteId <= 0) return;
+        String[] items = new String[5];
+        int own = NoteOpen.own(this, noteId);
+        items[0] = (own == NoteOpen.FOLLOW ? "\u2713  " : "") + "Follow Settings (" + NoteOpen.NAMES[NoteOpen.universal(this)] + ")";
+        for (int i = 0; i < 4; i++) items[i + 1] = (own == i ? "\u2713  " : "") + NoteOpen.NAMES[i];
+        new Dlg.Builder(this).setTitle("This note opens at")
+                .setItems(items, (d, w) -> NoteOpen.setOwn(this, noteId, w == 0 ? NoteOpen.FOLLOW : w - 1))
+                .show();
+    }
 
     /** Runs a note edit and puts the page back where it was: the editor otherwise jumps to the cursor after every tick or toolbar change. */
     private void keepScroll(Runnable edit) {

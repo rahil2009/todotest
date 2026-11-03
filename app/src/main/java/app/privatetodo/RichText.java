@@ -1084,6 +1084,23 @@ final class RichText {
         private float[] rowHs;
         private int rowKey;
 
+        // Where and how the table was really drawn last time (layout coordinates). Spans around the table
+        // (text size, heading, callout, block) can change its paint and line, so the cell editor and taps use
+        // these instead of the plain note paint.
+        float drawX = -1;
+        float drawTop = -1;
+        float drawSize;
+        Typeface drawFace;
+
+        /** The paint the table was drawn with: same as {@code p} until it has been drawn once. */
+        Paint sized(Paint p) {
+            if (drawSize <= 0 || (p.getTextSize() == drawSize && p.getTypeface() == drawFace)) return p;
+            android.text.TextPaint tp = new android.text.TextPaint(p);
+            tp.setTextSize(drawSize);
+            tp.setTypeface(drawFace);
+            return tp;
+        }
+
         float lineH(Paint p) {
             return p.getTextSize() * 1.25f;
         }
@@ -1307,6 +1324,10 @@ final class RichText {
             for (int i = 0; i < rows; i++) tops[i + 1] = tops[i] + hs[i];
             float colW = w / cols;
             float t0 = y - tops[rows];
+            drawX = x;
+            drawTop = t0;
+            drawSize = p.getTextSize();
+            drawFace = p.getTypeface();
             float pad = p.getTextSize() * 0.5f;
             float rad = 10 * density;
             int oldColor = p.getColor();
