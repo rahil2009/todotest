@@ -65,7 +65,13 @@ public class NotesActivity extends Activity {
             return;
         }
         refresh();
+        if (getIntent().getBooleanExtra(EXTRA_LOOKS, false)) { // opened from Settings > Notebook > List look
+            getIntent().removeExtra(EXTRA_LOOKS);
+            getWindow().getDecorView().post(this::lookDialog);
+        }
     }
+
+    static final String EXTRA_LOOKS = "open_looks";
 
     @Override
     protected void onDestroy() {
@@ -783,7 +789,7 @@ public class NotesActivity extends Activity {
         ScrollView sv = new ScrollView(this);
         sv.addView(box);
         dlg[0] = new Dlg.Builder(this)
-                .setTitle("Note previews")
+                .setTitle("Notebook look \u00b7 lists and grids")
                 .setView(sv)
                 .setNegativeButton("Close", null)
                 .create();

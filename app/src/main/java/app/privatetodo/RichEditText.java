@@ -193,6 +193,13 @@ final class RichEditText extends EditText {
                 if (ls == a) top = RichText.Block.topPad();
                 if (z <= le) bot = RichText.Block.botPad();
             }
+            for (RichText.Box b : sp.getSpans(ls, Math.max(ls, Math.min(t.length(), ls + 1)), RichText.Box.class)) {
+                int a3 = sp.getSpanStart(b);
+                int z3 = sp.getSpanEnd(b);
+                if (a3 < 0 || ls < a3 || ls >= Math.max(z3, a3 + 1)) continue;
+                if (ls == a3) top = RichText.Box.pad();
+                if (z3 <= le) bot = RichText.Box.pad();
+            }
             for (RichText.Callout b : sp.getSpans(ls, Math.max(ls, Math.min(t.length(), ls + 1)), RichText.Callout.class)) {
                 int a2 = sp.getSpanStart(b);
                 int z2 = sp.getSpanEnd(b);
@@ -795,10 +802,18 @@ final class RichEditText extends EditText {
             RichText.layoutDirty = false;
             rebuildLayout();
         }
+        if (paper > 0) {
+            android.graphics.Rect clip = canvas.getClipBounds();
+            Paper.draw(canvas, paper, clip, getLineHeight(), getTotalPaddingTop(), getCompoundPaddingLeft(),
+                    getWidth() - getCompoundPaddingRight(), getResources().getDisplayMetrics().density);
+        }
         drawPanels(canvas);
         updateCaret();
         super.onDraw(canvas);
     }
+
+    /** The page background (see Paper), 0 = plain. */
+    int paper;
 
     private boolean rebuildQueued;
 
@@ -843,7 +858,8 @@ final class RichEditText extends EditText {
         int ext = RichText.panelExt();
         float left = getCompoundPaddingLeft() - ext;
         float right = getWidth() - getCompoundPaddingRight() + ext;
-        Object[][] groups = {sp.getSpans(from, to, RichText.Callout.class), sp.getSpans(from, to, RichText.Block.class)};
+        Object[][] groups = {sp.getSpans(from, to, RichText.Box.class), sp.getSpans(from, to, RichText.Callout.class),
+                sp.getSpans(from, to, RichText.Block.class)};
         for (Object[] group : groups) {
             for (Object span : group) {
                 int s = sp.getSpanStart(span);

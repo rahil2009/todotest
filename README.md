@@ -16,6 +16,22 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.52
+
+- **Jump arrow** appears on the first pixel of scrolling (it waited for a touch signal that arrived late).
+- **Notes:** tapping into a note no longer throws the cursor (and the page) to the bottom.
+- **Reading mode:** draws into the camera cut-out, no black strip at the top.
+- **Box:** a new soft squircle box in the editor's insert row. Low-opacity dark over light pages, light over dark ones.
+- **Selection:** hold a selection handle near the top or bottom edge and the note scrolls, so you can select past the
+  screen; the toolbar refreshes once per frame while you drag (smoother).
+- **Page background:** 20 papers for the inside of notes (grid, dots, lined, Cornell, isometric, hex, music, legal pad,
+  kraft, blueprint ...) in Settings > Notebook. The list grids (looks 21 to 40) are in Settings > Notebook > Notebook look,
+  or the four-squares icon at the top of the Notebook.
+- **Kanban:** narrower again: two columns on screen, the third peeking in.
+- **Swipe haptics** play as the swipe animation starts, not after it ends.
+- **Clock faces:** one list of 37: Classic, the 6 you kept, and 30 new ones. Size (60-140%), main colour, accent
+  colour and the date line can be changed in Settings > Full-screen alert.
+
 ## v3.51
 
 - **20 more clock faces** for full-screen alerts (31 in all, Settings > Full-screen alert): Glass, Compact,

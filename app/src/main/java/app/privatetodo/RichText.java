@@ -57,6 +57,8 @@ final class RichText {
     static final int LINK = 18;
     /** A number with - and + buttons; the span covers the digits themselves, the arg is the step. */
     static final int COUNTER = 19;
+    /** A soft squircle box around paragraphs: a quieter callout without the icon. */
+    static final int BOX = 20;
     static final char RULE_CHAR = '\u2500';
     static final int MAX_INDENT = 5;
     static final int MIN_SIZE = 8;
@@ -241,7 +243,7 @@ final class RichText {
     }
 
     static boolean isPanel(Object o) {
-        return o instanceof Callout || o instanceof Block;
+        return o instanceof Callout || o instanceof Block || o instanceof Box;
     }
 
     /** True when the line starting at {@code start} is the first line of {@code span}. */
@@ -278,6 +280,11 @@ final class RichText {
      */
     static void paintPanel(Canvas c, Paint p, Object span, android.graphics.RectF r) {
         p.setStyle(Paint.Style.FILL);
+        if (span instanceof Box) { // low-opacity ink: dark over light pages, light over dark ones
+            p.setColor(Pal.dark ? 0x17FFFFFF : 0x0F000000);
+            c.drawPath(squircle(r, 20 * density), p);
+            return;
+        }
         if (span instanceof Callout) {
             p.setColor(Pal.dark ? 0xFF1E1B30 : 0xFFEEEBF9);
             c.drawRoundRect(r, 18 * density, 18 * density, p);
@@ -516,6 +523,48 @@ final class RichText {
             c.drawLine(cx - 2.6f * d, cy + 5.4f * d, cx + 2.6f * d, cy + 5.4f * d, p);
             c.drawLine(cx - 1.4f * d, cy + 7.6f * d, cx + 1.4f * d, cy + 7.6f * d, p);
             p.setStyle(Paint.Style.FILL);
+        }
+    }
+
+    private static final android.graphics.Path SQ = new android.graphics.Path();
+
+    /** A rounded rectangle with smooth (continuous) corners, the squircle look, inside {@code r}. */
+    static android.graphics.Path squircle(android.graphics.RectF r, float rad) {
+        float k = Math.min(rad * 1.28f, Math.min(r.width(), r.height()) / 2f);
+        float c = k * 0.35f; // how close to the corner the curve's handles sit: lower is softer
+        float l = r.left, t = r.top, rt = r.right, b = r.bottom;
+        SQ.reset();
+        SQ.moveTo(l + k, t);
+        SQ.lineTo(rt - k, t);
+        SQ.cubicTo(rt - c, t, rt, t + c, rt, t + k);
+        SQ.lineTo(rt, b - k);
+        SQ.cubicTo(rt, b - c, rt - c, b, rt - k, b);
+        SQ.lineTo(l + k, b);
+        SQ.cubicTo(l + c, b, l, b - c, l, b - k);
+        SQ.lineTo(l, t + k);
+        SQ.cubicTo(l, t + c, l + c, t, l + k, t);
+        SQ.close();
+        return SQ;
+    }
+
+    /** The squircle box: a soft tinted panel (drawn by the editor, see {@link #paintPanel}) with room above and below. */
+    static final class Box extends MetricAffectingSpan implements android.text.style.LineHeightSpan {
+        static int pad() {
+            return Math.round(12 * density);
+        }
+
+        @Override
+        public void updateMeasureState(TextPaint p) {
+        }
+
+        @Override
+        public void updateDrawState(TextPaint p) {
+        }
+
+        @Override
+        public void chooseHeight(CharSequence text, int start, int end, int spanstartv, int lineHeight,
+                                 Paint.FontMetricsInt fm) {
+            panelPadding(text, this, start, end, pad(), fm);
         }
     }
 
@@ -1635,6 +1684,8 @@ final class RichText {
                 return new Rule();
             case CALLOUT:
                 return new Callout();
+            case BOX:
+                return new Box();
             case ALIGN:
                 return new Align(arg);
             case LINK:
@@ -1665,6 +1716,7 @@ final class RichText {
         if (o instanceof Hide) return HIDE;
         if (o instanceof Rule) return RULE;
         if (o instanceof Callout) return CALLOUT;
+        if (o instanceof Box) return BOX;
         if (o instanceof Align) return ALIGN;
         if (o instanceof NoteLink) return LINK;
         if (o instanceof Counter) return COUNTER;
@@ -1707,7 +1759,7 @@ final class RichText {
         }
         // a code block is monospace already: inline code inside one is never wanted (it broke the block)
         if (type == BLOCK) apply(e, CODE, s, en, 0, false);
-        if (type == BLOCK || type == CALLOUT || type == QUOTE) layoutDirty = true;
+        if (type == BLOCK || type == CALLOUT || type == QUOTE || type == BOX) layoutDirty = true;
     }
 
     /** True when any part of [s, en) (or the line holding s when s == en) sits inside a code block. */
@@ -1732,7 +1784,7 @@ final class RichText {
     // span is written per run of neighbouring paragraphs with the same value.
 
     private static final int[] CHAR_TYPES = {BOLD, ITALIC, UNDER, STRIKE, HILITE, CODE, HEAD, SIZE, FG, FONT};
-    private static final int[] PARA_TYPES = {BLOCK, CALLOUT, QUOTE, ALIGN, INDENT};
+    private static final int[] PARA_TYPES = {BLOCK, CALLOUT, QUOTE, BOX, ALIGN, INDENT};
 
     private static boolean isMargin(int type) {
         return type == ALIGN || type == INDENT;
@@ -2058,7 +2110,7 @@ final class RichText {
         int end = Math.min(n, b == lastStart ? b + 1 : b);
         if (end > a) {
             if (on) {
-                for (int other : new int[]{QUOTE, CALLOUT, BLOCK}) {
+                for (int other : new int[]{QUOTE, CALLOUT, BLOCK, BOX}) {
                     if (other != type) apply(e, other, a, end, 0, false);
                 }
             }
@@ -2076,14 +2128,14 @@ final class RichText {
         if (nl != ps) return false;
         int q = nl + 1;
         boolean styled = false;
-        for (int ty : new int[]{BLOCK, CALLOUT, QUOTE}) {
+        for (int ty : new int[]{BLOCK, CALLOUT, QUOTE, BOX}) {
             if (paraArg(e, ty, ps) >= 0 || paraArg(e, ty, q) >= 0) styled = true;
         }
         if (!styled) return false;
         e.delete(nl, nl + 1);
         int end = Math.min(e.length(), ps + 1);
         if (end > ps) {
-            for (int ty : new int[]{BLOCK, CALLOUT, QUOTE}) apply(e, ty, ps, end, 0, false);
+            for (int ty : new int[]{BLOCK, CALLOUT, QUOTE, BOX}) apply(e, ty, ps, end, 0, false);
         }
         normalize(e);
         return true;
@@ -2097,7 +2149,7 @@ final class RichText {
         if (nl <= ps) return false;
         int q = nl + 1;
         boolean added = false;
-        for (int ty : new int[]{BLOCK, CALLOUT, QUOTE}) {
+        for (int ty : new int[]{BLOCK, CALLOUT, QUOTE, BOX}) {
             if (paraArg(e, ty, ps) < 0 || paraArg(e, ty, q) >= 0) continue;
             if (q >= e.length()) {
                 e.insert(q, "\n");

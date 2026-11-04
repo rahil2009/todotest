@@ -1926,7 +1926,7 @@ public class MainActivity extends Activity {
         final TaskDb.Snap snap = db.snapshot("id = ?", new String[]{String.valueOf(t.id)});
         Reminders.cancel(this, t.id);
         db.delete(t.id);
-        Hap.confirm(listView);
+        if (!takeHapDone()) Hap.confirm(listView);
         refresh();
         showUndo("Task deleted", () -> {
             db.restore(snap);
@@ -1958,6 +1958,8 @@ public class MainActivity extends Activity {
             final Bitmap shown = pic;
             decor.addView(fx, new FrameLayout.LayoutParams(-1, -1));
             row.hideCard(true);
+            Hap.confirm(listView); // the feel lands with the motion, not after it
+            hapDone = true;
             fx.playOver(shown, at[0], at[1], 0f, () -> {
                 fxBusy = false;
                 row.hideCard(false);
@@ -1994,6 +1996,8 @@ public class MainActivity extends Activity {
             fxBusy = true;
             decor.addView(fx, new FrameLayout.LayoutParams(-1, -1));
             row.hideCard(true);
+            if (t.done) Hap.confirm(listView); else Hap.complete(listView); // in step with the animation starting
+            hapDone = true;
             fx.playOver(before, after, at[0], at[1], () -> {
                 fxBusy = false;
                 row.hideCard(false);
@@ -2040,12 +2044,22 @@ public class MainActivity extends Activity {
         TickFx.play(this, a, r);
     }
 
+    /** Set when the haptic was already played as an animation started, so the action after it stays quiet. */
+    private boolean hapDone;
+
+    private boolean takeHapDone() {
+        boolean was = hapDone;
+        hapDone = false;
+        return was;
+    }
+
     private void toggleDone(final Task t) {
+        final boolean quiet = takeHapDone();
         if (t.repeat > 0) { // a repeating task: tick this round only, the series carries on
             final long today = startOfDayOf(System.currentTimeMillis());
             if (t.done) { // Repeat-tab row: bring today's round back to Active
                 Reminders.toggleDay(this, db, t, today);
-                Hap.confirm(listView);
+                if (!quiet) Hap.confirm(listView);
                 refresh();
                 return;
             }
@@ -2056,10 +2070,10 @@ public class MainActivity extends Activity {
             }
             boolean nowDone = Reminders.toggleDay(this, db, t, day);
             if (nowDone) {
-                Hap.complete(listView);
+                if (!quiet) Hap.complete(listView);
                 playTick();
             } else {
-                Hap.confirm(listView);
+                if (!quiet) Hap.confirm(listView);
             }
             refresh();
             if (nowDone) {
@@ -2072,10 +2086,10 @@ public class MainActivity extends Activity {
         }
         setDoneAndSchedule(t.id, !t.done);
         if (!t.done) {
-            Hap.complete(listView);
+            if (!quiet) Hap.complete(listView);
             playTick();
         } else {
-            Hap.confirm(listView);
+            if (!quiet) Hap.confirm(listView);
         }
         refresh();
         if (!t.done) {

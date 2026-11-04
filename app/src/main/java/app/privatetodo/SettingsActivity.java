@@ -557,6 +557,69 @@ public class SettingsActivity extends Activity {
                 "While you scroll a long note, a small arrow jumps to the end (or back to the top). It hides when you stop.",
                 NoteOpen.jumpButton(this), on -> NoteOpen.setJumpButton(this, on)));
 
+        // ---- notebook list look (lists and the 20 grids)
+        card.addView(backupRow("Notebook look", "How the list of notes looks: 9 lists and 20 grids (looks 21 to 40). "
+                + "Also the four-squares icon at the top of the Notebook.", v -> startActivity(
+                new Intent(this, NotesActivity.class).putExtra(NotesActivity.EXTRA_LOOKS, true))));
+
+        // ---- page background inside every note
+        TextView ptitle = text("Page background", 16, Pal.ink, true);
+        ptitle.setPadding(0, dp(20), 0, 0);
+        card.addView(ptitle);
+        TextView psub = text("The paper behind the text of your notes: grid, dots, lines and more.", 13, Pal.muted, false);
+        psub.setPadding(0, dp(2), 0, dp(8));
+        card.addView(psub);
+        android.widget.HorizontalScrollView phs = new android.widget.HorizontalScrollView(this);
+        phs.setHorizontalScrollBarEnabled(false);
+        LinearLayout prow = new LinearLayout(this);
+        final int curPaper = Paper.chosen(this);
+        final View[] pTiles = new View[Paper.NAMES.length];
+        final TextView[] pNames = new TextView[Paper.NAMES.length];
+        for (int i = 0; i < Paper.NAMES.length; i++) {
+            final int k = i;
+            LinearLayout cell = new LinearLayout(this);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            View tile = new View(this) {
+                private final android.graphics.Rect rr = new android.graphics.Rect();
+
+                @Override
+                protected void onDraw(android.graphics.Canvas cv) {
+                    rr.set(0, 0, getWidth(), getHeight());
+                    Paper.draw(cv, k, rr, dp(14), 0, dp(10), getWidth() - dp(4), getResources().getDisplayMetrics().density);
+                }
+            };
+            GradientDrawable tg = new GradientDrawable();
+            tg.setColor(Pal.bg);
+            tg.setCornerRadius(dp(12));
+            tg.setStroke(dp(k == curPaper ? 2 : 1), k == curPaper ? Pal.accent : Pal.chip);
+            tile.setBackground(tg);
+            tile.setClipToOutline(true);
+            cell.addView(tile, new LinearLayout.LayoutParams(dp(64), dp(80)));
+            TextView nm = text(Paper.NAMES[i], 11, k == curPaper ? Pal.accent : Pal.muted, true);
+            nm.setPadding(0, dp(4), 0, 0);
+            cell.addView(nm);
+            pTiles[i] = tile;
+            pNames[i] = nm;
+            cell.setOnClickListener(v -> { // repaint in place, so the page does not jump back to the top
+                Hap.tick(v);
+                Paper.setChosen(this, k);
+                for (int j = 0; j < pTiles.length; j++) {
+                    GradientDrawable g2 = new GradientDrawable();
+                    g2.setColor(Pal.bg);
+                    g2.setCornerRadius(dp(12));
+                    g2.setStroke(dp(j == k ? 2 : 1), j == k ? Pal.accent : Pal.chip);
+                    pTiles[j].setBackground(g2);
+                    pNames[j].setTextColor(j == k ? Pal.accent : Pal.muted);
+                }
+            });
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(72), -2);
+            clp.rightMargin = dp(4);
+            prow.addView(cell, clp);
+        }
+        phs.addView(prow);
+        card.addView(phs);
+
         // ---- note history
         TextView htitle = text("Note history", 16, Pal.ink, true);
         htitle.setPadding(0, dp(20), 0, 0);
@@ -925,8 +988,7 @@ public class SettingsActivity extends Activity {
         TextView cft = text("Clock face", 16, Pal.ink, true);
         cft.setPadding(0, dp(18), 0, 0);
         alertCard.addView(cft);
-        alertCard.addView(text("The clock on the alarm screen. Faces follow the lock-screen clocks of iPhone, "
-                + "Samsung, OPPO, OnePlus and Xiaomi, drawn with your phone's own fonts.", 13, Pal.muted, false));
+        alertCard.addView(text("The clock on the alarm screen. Pick a face, then size it and colour it.", 13, Pal.muted, false));
         final ClockFace face = new ClockFace(this, ClockFace.chosen(this));
         face.setScale(0.62f);
         android.widget.FrameLayout fbox = new android.widget.FrameLayout(this);
@@ -936,6 +998,10 @@ public class SettingsActivity extends Activity {
         fbox.setBackground(fbg);
         fbox.setPadding(dp(22), dp(18), dp(22), dp(18));
         fbox.addView(face, new android.widget.FrameLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams fbl = new LinearLayout.LayoutParams(-1, -2);
+        fbl.topMargin = dp(10);
+        fbl.bottomMargin = dp(6);
+        alertCard.addView(fbox, fbl); // preview first, so it stays in view while you pick
         final TextView[] faceChips = new TextView[ClockFace.NAMES.length];
         final Runnable paintFaces = () -> {
             int cur = ClockFace.chosen(this);
@@ -966,18 +1032,104 @@ public class SettingsActivity extends Activity {
         }
         paintFaces.run();
         LinearLayout.LayoutParams frl = new LinearLayout.LayoutParams(-1, -2);
-        frl.topMargin = dp(10);
+        frl.topMargin = dp(6);
         alertCard.addView(faceRow, frl);
-        LinearLayout.LayoutParams fbl = new LinearLayout.LayoutParams(-1, -2);
-        fbl.topMargin = dp(10);
-        fbl.bottomMargin = dp(6);
-        alertCard.addView(fbox, fbl);
+
+        // size
+        LinearLayout szHead = new LinearLayout(this);
+        szHead.setPadding(0, dp(16), 0, 0);
+        szHead.addView(text("Size", 15, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView szPct = text(ClockFace.sizePct(this) + "%", 14, Pal.muted, true);
+        szHead.addView(szPct);
+        alertCard.addView(szHead);
+        PillSlider szBar = new PillSlider(this);
+        szBar.setValue(Math.round((ClockFace.sizePct(this) - 60) / 0.8f)); // 0..100 on the bar = 60..140 %
+        szBar.setContentDescription("Clock size");
+        szBar.setListener(new PillSlider.Listener() {
+            @Override
+            public void onChange(int value) {
+                int pct = 60 + Math.round(value * 0.8f);
+                ClockFace.setSizePct(SettingsActivity.this, pct);
+                szPct.setText(pct + "%");
+                face.refresh();
+            }
+
+            @Override
+            public void onStart() {
+            }
+
+            @Override
+            public void onStop() {
+            }
+        });
+        LinearLayout.LayoutParams szl = new LinearLayout.LayoutParams(-1, dp(44));
+        szl.topMargin = dp(4);
+        alertCard.addView(szBar, szl);
+
+        // colours
+        alertCard.addView(colourRow("Main colour", false, face));
+        alertCard.addView(colourRow("Accent colour", true, face));
+        alertCard.addView(toggleRow("Show the date", "The date line under or above the time, on faces that have one.",
+                ClockFace.showDate(this), on -> {
+                    ClockFace.setShowDate(this, on);
+                    face.refresh();
+                }));
 
         alertCard.addView(backupRow("Test full-screen alert",
                 "Shows the alarm screen right now with sample data", v -> testAlert(0)));
         alertCard.addView(backupRow("Test on the lock screen",
                 "Rings in 10 seconds: press the power button to lock the phone first", v -> testAlert(10)));
         return alertCard;
+    }
+
+    /** A row of round colour swatches for the alarm clock face (accent rows start with "Auto"). */
+    private View colourRow(String label, final boolean accent, final ClockFace face) {
+        LinearLayout col = new LinearLayout(this);
+        col.setOrientation(LinearLayout.VERTICAL);
+        TextView h = text(label, 15, Pal.ink, true);
+        h.setPadding(0, dp(14), 0, dp(6));
+        col.addView(h);
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout row = new LinearLayout(this);
+        final int n = ClockFace.COLORS.length + (accent ? 1 : 0);
+        final View[] sw = new View[n];
+        final Runnable paint = () -> {
+            int cur = accent ? ClockFace.accentColor(this) : ClockFace.mainColor(this);
+            for (int i = 0; i < n; i++) {
+                int colr = accent ? (i == 0 ? 0 : ClockFace.COLORS[i - 1]) : ClockFace.COLORS[i];
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                if (colr == 0) {
+                    g.setColors(new int[]{0xFF8FD6C8, 0xFFFFC56B, 0xFFFF6B5E});
+                    g.setGradientType(GradientDrawable.SWEEP_GRADIENT);
+                } else {
+                    g.setColor(colr);
+                }
+                g.setStroke(dp(colr == cur ? 3 : 1), colr == cur ? Pal.accent : Pal.chip);
+                sw[i].setBackground(g);
+            }
+        };
+        for (int i = 0; i < n; i++) {
+            final int colr = accent ? (i == 0 ? 0 : ClockFace.COLORS[i - 1]) : ClockFace.COLORS[i];
+            View v = new View(this);
+            v.setContentDescription(colr == 0 ? "Auto: the face's own accent" : label);
+            v.setOnClickListener(x -> {
+                Hap.tick(x);
+                if (accent) ClockFace.setAccentColor(this, colr);
+                else ClockFace.setMainColor(this, colr);
+                paint.run();
+                face.refresh();
+            });
+            sw[i] = v;
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(36), dp(36));
+            lp.rightMargin = dp(8);
+            row.addView(v, lp);
+        }
+        paint.run();
+        hs.addView(row);
+        col.addView(hs);
+        return col;
     }
 
     private LinearLayout backupCard() {

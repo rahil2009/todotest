@@ -99,13 +99,13 @@ public class KanbanBoardActivity extends Activity {
         hs.setHorizontalScrollBarEnabled(false);
         hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
         LinearLayout cols = new LinearLayout(this);
-        cols.setPadding(dp(12), dp(4), dp(12), dp(16));
+        cols.setPadding(dp(10), dp(2), dp(10), dp(12));
         // narrower columns: about one and a half on screen, so the next one always peeks in
-        int colW = Math.min(Math.round(getResources().getDisplayMetrics().widthPixels * 0.62f), dp(264));
+        int colW = Math.min(Math.round(getResources().getDisplayMetrics().widthPixels * 0.47f), dp(196)); // two columns on screen, the third peeks
         List<KanbanDb.Col> list = db.columns(boardId);
         for (KanbanDb.Col c : list) {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(colW, -1);
-            lp.rightMargin = dp(8);
+            lp.rightMargin = dp(6);
             cols.addView(column(c, list), lp);
         }
         TextView addCol = LentUi.pill(this, "+  Add column", Pal.chip, Pal.ink, 15);
@@ -135,14 +135,14 @@ public class KanbanBoardActivity extends Activity {
     private View column(final KanbanDb.Col col, final List<KanbanDb.Col> all) {
         final LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(LentUi.round(this, Pal.chip, 18));
-        box.setPadding(dp(7), dp(8), dp(7), dp(6));
+        box.setBackground(LentUi.round(this, Pal.chip, 16));
+        box.setPadding(dp(5), dp(6), dp(5), dp(4));
 
         List<KanbanDb.Card> cards = db.cards(col.id);
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
         head.setPadding(dp(5), 0, dp(3), dp(6));
-        TextView name = LentUi.text(this, col.name, 15, Pal.ink, true);
+        TextView name = LentUi.text(this, col.name, 14, Pal.ink, true);
         name.setSingleLine(true);
         name.setEllipsize(android.text.TextUtils.TruncateAt.END);
         head.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
@@ -165,7 +165,7 @@ public class KanbanBoardActivity extends Activity {
         for (KanbanDb.Card k : cards) list.addView(cardView(k));
         box.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
 
-        TextView add = LentUi.text(this, "+  Add card", 14, Pal.muted, true);
+        TextView add = LentUi.text(this, "+ Add card", 13, Pal.muted, true);
         add.setPadding(dp(6), dp(8), dp(6), dp(4));
         add.setOnClickListener(v -> {
             Hap.tick(v);
@@ -231,14 +231,14 @@ public class KanbanBoardActivity extends Activity {
     private View cardView(final KanbanDb.Card k) {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(11), dp(9), dp(11), dp(10));
-        c.setBackground(LentUi.round(this, Pal.card, 13));
+        c.setPadding(dp(9), dp(7), dp(9), dp(8));
+        c.setBackground(LentUi.round(this, Pal.card, 12));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.bottomMargin = dp(6);
+        lp.bottomMargin = dp(5);
         c.setLayoutParams(lp);
-        c.addView(LentUi.text(this, k.title, 14.5f, Pal.ink, true));
+        c.addView(LentUi.text(this, k.title, 13.5f, Pal.ink, true));
         if (!k.note.isEmpty()) {
-            TextView nt = LentUi.text(this, k.note, 12.5f, Pal.muted, false);
+            TextView nt = LentUi.text(this, k.note, 12f, Pal.muted, false);
             nt.setMaxLines(2);
             nt.setEllipsize(android.text.TextUtils.TruncateAt.END);
             nt.setPadding(0, dp(3), 0, 0);
@@ -298,11 +298,11 @@ public class KanbanBoardActivity extends Activity {
     }
 
     private TextView linkChip(String s, boolean done) {
-        TextView t = LentUi.text(this, s, 12, done ? Pal.muted : Pal.ink, true);
+        TextView t = LentUi.text(this, s, 11, done ? Pal.muted : Pal.ink, true);
         t.setSingleLine(true);
         t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        t.setMaxWidth(dp(150));
-        t.setPadding(dp(10), dp(4), dp(10), dp(4));
+        t.setMaxWidth(dp(120));
+        t.setPadding(dp(8), dp(3), dp(8), dp(3));
         t.setBackground(LentUi.round(this, Pal.chip, 100));
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
         lp.rightMargin = dp(6);

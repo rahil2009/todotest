@@ -49,23 +49,23 @@ final class JumpButton extends View {
     }
 
     /** Watches this scroll view. Call once after it is built. */
-    @SuppressWarnings("ClickableViewAccessibility")
     void attach(ScrollView s) {
         sv = s;
-        s.setOnTouchListener((v, e) -> {
-            lastTouch = System.currentTimeMillis();
-            return false;
-        });
         s.setOnScrollChangeListener((v, x, y, ox, oy) -> onScrolled(y, oy));
+    }
+
+    /** Fed every touch of the screen by the activity, so a finger on the text counts too. */
+    void touched() {
+        lastTouch = System.currentTimeMillis();
     }
 
     private void onScrolled(int y, int oy) {
         if (sv == null || sv.getChildAt(0) == null) return;
         if (!NoteOpen.jumpButton(getContext())) return;
-        if (System.currentTimeMillis() - lastTouch > 1500) return; // the editor moved itself: stay hidden
+        if (System.currentTimeMillis() - lastTouch > 3000) return; // the editor moved itself: stay hidden
         int content = sv.getChildAt(0).getHeight();
         int view = sv.getHeight();
-        if (content < view * 2) return; // short note: nothing to jump over
+        if (content < view * 1.5f) return; // short note: nothing to jump over
         int max = content - view;
         boolean nearEnd = y > max - view / 3;
         boolean nearStart = y < view / 3;
@@ -77,17 +77,14 @@ final class JumpButton extends View {
         }
         fade(true);
         removeCallbacks(hide);
-        postDelayed(hide, 1600);
+        postDelayed(hide, 1800);
     }
 
     private void fade(boolean show) {
-        if (show) {
-            if (getVisibility() != VISIBLE) {
-                setVisibility(VISIBLE);
-                setAlpha(0f);
-            }
+        if (show) { // at once, on the first pixel of scroll: a late arrow is no use
             animate().cancel();
-            animate().alpha(1f).setDuration(140).start();
+            setVisibility(VISIBLE);
+            setAlpha(1f);
         } else {
             animate().cancel();
             animate().alpha(0f).setDuration(260).withEndAction(() -> setVisibility(GONE)).start();
