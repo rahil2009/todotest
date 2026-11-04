@@ -53,7 +53,9 @@ final class RichEditText extends EditText {
             float size = p.getTextSize();
             float r = size * 0.42f;
             float cx = x + size * 0.5f;
-            float cy = (top + bottom) / 2f;
+            // centred on the text itself: the line's top and bottom include the extra room a box or callout adds
+            Paint.FontMetrics fmc = p.getFontMetrics();
+            float cy = y + (fmc.ascent + fmc.descent) / 2f;
             int old = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             float oldW = p.getStrokeWidth();
@@ -802,6 +804,12 @@ final class RichEditText extends EditText {
             RichText.layoutDirty = false;
             rebuildLayout();
         }
+        if (paperColor != 0) { // the paper's own tint, under the pattern and the text
+            android.graphics.Rect clip = canvas.getClipBounds();
+            android.graphics.Paint f = new android.graphics.Paint();
+            f.setColor(paperColor);
+            canvas.drawRect(clip, f);
+        }
         if (paper > 0) {
             android.graphics.Rect clip = canvas.getClipBounds();
             Paper.draw(canvas, paper, clip, getLineHeight(), getTotalPaddingTop(), getCompoundPaddingLeft(),
@@ -814,6 +822,8 @@ final class RichEditText extends EditText {
 
     /** The page background (see Paper), 0 = plain. */
     int paper;
+    /** The paper colour (0 = none), see Paper.tint. */
+    int paperColor;
 
     private boolean rebuildQueued;
 

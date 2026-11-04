@@ -16,6 +16,20 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.54
+
+- **Reading mode:** the space under the camera is used for the note; smaller top, side and bottom margins.
+- **Page colours:** 10 paper tints (Cream, Sand, Lemon, Peach, Rose, Lavender, Sky, Mint, Sage, Slate) on top of the
+  20 styles, light and dark versions.
+- **Three dots inside a note:** Page style & colour (for this note or all notes), Opens at, Move to Bin. The trash
+  icon moved in here.
+- **Settings > Notebook:** Notebook look is picked right in Settings now (no popup, no jump into the Notebook);
+  Page background uses the same picker as the note.
+- **Selection scrolling:** starts slow and speeds up the longer you hold at the edge (full speed after ~2.5 s);
+  with the keyboard up, the edge is the top of the keyboard.
+- **To-dos inside a Box** (and callouts) line up with their text.
+- **Haptics** when ticking a to-do in a note (a stronger one for done, a light one for undone).
+
 ## v3.53
 
 - **Fix:** notes crashed on open in v3.52. The new Box style was one past the end of the list the editor uses to tidy

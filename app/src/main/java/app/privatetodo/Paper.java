@@ -22,12 +22,66 @@ final class Paper {
     private Paper() {
     }
 
+    /** Paper colours: index 0 is none (the page colour), then ten soft tints. Light and dark versions. */
+    static final String[] COLOR_NAMES = {"None", "Cream", "Sand", "Lemon", "Peach", "Rose", "Lavender", "Sky", "Mint",
+            "Sage", "Slate"};
+    private static final int[] LIGHT = {0, 0xFFFBF3DF, 0xFFF3E7D3, 0xFFFFF8D1, 0xFFFDE8DC, 0xFFFBE7EA, 0xFFEEE9FB,
+            0xFFE5F0FB, 0xFFE6F5EC, 0xFFE9EFE2, 0xFFE9ECEF};
+    private static final int[] DARK = {0, 0xFF2A2619, 0xFF2C2519, 0xFF2E2B17, 0xFF2F221B, 0xFF2E1E22, 0xFF241F33,
+            0xFF1A2430, 0xFF1A2A22, 0xFF20271C, 0xFF22262A};
+
+    static int tint(int index) {
+        if (index <= 0 || index >= LIGHT.length) return 0;
+        return Pal.dark ? DARK[index] : LIGHT[index];
+    }
+
+    private static android.content.SharedPreferences sp(Context c) {
+        return c.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE);
+    }
+
+    /** The style for all notes. */
     static int chosen(Context c) {
-        return c.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE).getInt("note_paper", 0);
+        return sp(c).getInt("note_paper", 0);
     }
 
     static void setChosen(Context c, int v) {
-        c.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putInt("note_paper", v).apply();
+        sp(c).edit().putInt("note_paper", v).apply();
+    }
+
+    /** The colour for all notes (index into COLOR_NAMES). */
+    static int chosenColor(Context c) {
+        return sp(c).getInt("note_paper_col", 0);
+    }
+
+    static void setChosenColor(Context c, int v) {
+        sp(c).edit().putInt("note_paper_col", v).apply();
+    }
+
+    /** One note's own style / colour, or -1 to follow the setting for all notes. */
+    static int ownStyle(Context c, long id) {
+        return id <= 0 ? -1 : sp(c).getInt("paper_s" + id, -1);
+    }
+
+    static int ownColor(Context c, long id) {
+        return id <= 0 ? -1 : sp(c).getInt("paper_c" + id, -1);
+    }
+
+    static void setOwn(Context c, long id, int style, int color) {
+        if (id <= 0) return;
+        android.content.SharedPreferences.Editor e = sp(c).edit();
+        if (style < 0) e.remove("paper_s" + id); else e.putInt("paper_s" + id, style);
+        if (color < 0) e.remove("paper_c" + id); else e.putInt("paper_c" + id, color);
+        e.apply();
+    }
+
+    static int styleFor(Context c, long id) {
+        int s = ownStyle(c, id);
+        return s >= 0 ? s : chosen(c);
+    }
+
+    static int colorFor(Context c, long id) {
+        int s = ownColor(c, id);
+        return s >= 0 ? s : chosenColor(c);
     }
 
     private static int ink(int alpha) {

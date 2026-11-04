@@ -704,9 +704,9 @@ public class NotesActivity extends Activity {
 
     // ------------------------------------------------------------ looks
 
-    private static final int[] LOOK_IDS = {1, 2, 3, 4, 5, 6, 7, 8, 10,
+    static final int[] LOOK_IDS = {1, 2, 3, 4, 5, 6, 7, 8, 10,
             21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40};
-    private static final String[] LOOK_NAMES = {"Current style", "Expanded", "Grid, 2 columns", "Big title cards",
+    static final String[] LOOK_NAMES = {"Current style", "Expanded", "Grid, 2 columns", "Big title cards",
             "Compact rows", "Titles only", "Grouped by date", "Checklist previews", "Pinned strip + list",
             "Soft cards", "Square tiles", "Pastel", "Outlined", "Three across", "Tiny titles", "Accent cap",
             "Side stripe", "Bold titles", "Sticky notes", "Dark tiles", "Tall cards", "Polaroid", "Bubbles", "Paper",

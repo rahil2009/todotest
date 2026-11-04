@@ -557,68 +557,52 @@ public class SettingsActivity extends Activity {
                 "While you scroll a long note, a small arrow jumps to the end (or back to the top). It hides when you stop.",
                 NoteOpen.jumpButton(this), on -> NoteOpen.setJumpButton(this, on)));
 
-        // ---- notebook list look (lists and the 20 grids)
-        card.addView(backupRow("Notebook look", "How the list of notes looks: 9 lists and 20 grids (looks 21 to 40). "
-                + "Also the four-squares icon at the top of the Notebook.", v -> startActivity(
-                new Intent(this, NotesActivity.class).putExtra(NotesActivity.EXTRA_LOOKS, true))));
+        // ---- notebook list look: chosen right here (lists and the 20 grids), no detour into the Notebook
+        TextView ltitle = text("Notebook look", 16, Pal.ink, true);
+        ltitle.setPadding(0, dp(20), 0, 0);
+        card.addView(ltitle);
+        TextView lsub = text("How the list of notes looks on the Notebook screen: 9 lists, then 20 grids (21 to 40). "
+                + "This does not change the inside of a note.", 13, Pal.muted, false);
+        lsub.setPadding(0, dp(2), 0, dp(8));
+        card.addView(lsub);
+        FlowLayout lookRow = new FlowLayout(this, dp(6), dp(6));
+        final TextView[] lookChips = new TextView[NotesActivity.LOOK_IDS.length];
+        final Runnable paintLooks = () -> {
+            int cur = Prefs.noteLook(this);
+            for (int i = 0; i < lookChips.length; i++) {
+                boolean on = NotesActivity.LOOK_IDS[i] == cur;
+                lookChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                lookChips[i].setBackground(cg);
+            }
+        };
+        for (int i = 0; i < NotesActivity.LOOK_IDS.length; i++) {
+            final int id = NotesActivity.LOOK_IDS[i];
+            TextView chip = text(id + " \u00b7 " + NotesActivity.LOOK_NAMES[i], 13, Pal.muted, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(12), 0, dp(12), 0);
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                Prefs.setNoteLook(this, id);
+                paintLooks.run();
+            });
+            lookChips[i] = chip;
+            lookRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(38)));
+        }
+        paintLooks.run();
+        card.addView(lookRow);
 
         // ---- page background inside every note
         TextView ptitle = text("Page background", 16, Pal.ink, true);
         ptitle.setPadding(0, dp(20), 0, 0);
         card.addView(ptitle);
-        TextView psub = text("The paper behind the text of your notes: grid, dots, lines and more.", 13, Pal.muted, false);
-        psub.setPadding(0, dp(2), 0, dp(8));
+        TextView psub = text("The paper behind the text inside every note. A single note can have its own: "
+                + "the three dots in the note > Page style & colour.", 13, Pal.muted, false);
+        psub.setPadding(0, dp(2), 0, dp(10));
         card.addView(psub);
-        android.widget.HorizontalScrollView phs = new android.widget.HorizontalScrollView(this);
-        phs.setHorizontalScrollBarEnabled(false);
-        LinearLayout prow = new LinearLayout(this);
-        final int curPaper = Paper.chosen(this);
-        final View[] pTiles = new View[Paper.NAMES.length];
-        final TextView[] pNames = new TextView[Paper.NAMES.length];
-        for (int i = 0; i < Paper.NAMES.length; i++) {
-            final int k = i;
-            LinearLayout cell = new LinearLayout(this);
-            cell.setOrientation(LinearLayout.VERTICAL);
-            cell.setGravity(Gravity.CENTER_HORIZONTAL);
-            View tile = new View(this) {
-                private final android.graphics.Rect rr = new android.graphics.Rect();
-
-                @Override
-                protected void onDraw(android.graphics.Canvas cv) {
-                    rr.set(0, 0, getWidth(), getHeight());
-                    Paper.draw(cv, k, rr, dp(14), 0, dp(10), getWidth() - dp(4), getResources().getDisplayMetrics().density);
-                }
-            };
-            GradientDrawable tg = new GradientDrawable();
-            tg.setColor(Pal.bg);
-            tg.setCornerRadius(dp(12));
-            tg.setStroke(dp(k == curPaper ? 2 : 1), k == curPaper ? Pal.accent : Pal.chip);
-            tile.setBackground(tg);
-            tile.setClipToOutline(true);
-            cell.addView(tile, new LinearLayout.LayoutParams(dp(64), dp(80)));
-            TextView nm = text(Paper.NAMES[i], 11, k == curPaper ? Pal.accent : Pal.muted, true);
-            nm.setPadding(0, dp(4), 0, 0);
-            cell.addView(nm);
-            pTiles[i] = tile;
-            pNames[i] = nm;
-            cell.setOnClickListener(v -> { // repaint in place, so the page does not jump back to the top
-                Hap.tick(v);
-                Paper.setChosen(this, k);
-                for (int j = 0; j < pTiles.length; j++) {
-                    GradientDrawable g2 = new GradientDrawable();
-                    g2.setColor(Pal.bg);
-                    g2.setCornerRadius(dp(12));
-                    g2.setStroke(dp(j == k ? 2 : 1), j == k ? Pal.accent : Pal.chip);
-                    pTiles[j].setBackground(g2);
-                    pNames[j].setTextColor(j == k ? Pal.accent : Pal.muted);
-                }
-            });
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(72), -2);
-            clp.rightMargin = dp(4);
-            prow.addView(cell, clp);
-        }
-        phs.addView(prow);
-        card.addView(phs);
+        card.addView(PaperPicker.build(this, 0, null));
 
         // ---- note history
         TextView htitle = text("Note history", 16, Pal.ink, true);
