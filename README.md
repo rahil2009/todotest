@@ -16,6 +16,11 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.53
+
+- **Fix:** notes crashed on open in v3.52. The new Box style was one past the end of the list the editor uses to tidy
+  styles, so every note hit it. The list now sizes itself to the highest style.
+
 ## v3.52
 
 - **Jump arrow** appears on the first pixel of scrolling (it waited for a touch signal that arrived late).

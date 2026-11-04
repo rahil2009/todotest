@@ -1846,10 +1846,11 @@ final class RichText {
     private static void normalizeSpans(Editable e) {
         int n = e.length();
         Object[] all = e.getSpans(0, n, Object.class);
-        java.util.ArrayList<Object>[] by = new java.util.ArrayList[LINK + 1];
+        // one bucket per span type; sized to the highest type so a newly added type can never fall off the end
+        java.util.ArrayList<Object>[] by = new java.util.ArrayList[BOX + 1];
         for (Object o : all) {
             int t = typeOf(o);
-            if (t < 0 || t > LINK) continue;
+            if (t < 0 || t >= by.length || t == COUNTER) continue; // counters are never merged or rebuilt
             if (by[t] == null) by[t] = new java.util.ArrayList<>();
             by[t].add(o);
         }
