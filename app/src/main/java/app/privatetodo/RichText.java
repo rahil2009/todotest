@@ -259,17 +259,31 @@ final class RichText {
     }
 
     /** Same, with separate room above (top) and below (bottom). */
+    /** The editor's line-spacing multiplier (1.15 while editing, 1.3 while reading); see panelPadding. */
+    static float lineMult = 1.15f;
+
     static void panelPadding(CharSequence text, Object span, int start, int end, int top, int bottom,
                              Paint.FontMetricsInt fm) {
         if (!(text instanceof android.text.Spanned)) return;
         android.text.Spanned sp = (android.text.Spanned) text;
-        if (sp.getSpanStart(span) >= start) { // first line
-            fm.ascent -= top;
-            fm.top -= top;
+        boolean first = sp.getSpanStart(span) >= start;
+        boolean last = sp.getSpanEnd(span) <= end;
+        // Line spacing adds (multiplier - 1) x the line's height BELOW every line, the padding included. Left as
+        // it is, a panel gets more room under its text than above it, so the text looks pushed up, and that extra
+        // jumps when a line stops being the last one. Split the text's own extra evenly above and below, and size
+        // the bottom padding so that, after the multiplier, it comes out at the asked value.
+        float m = Math.max(1f, lineMult);
+        float e = (fm.descent - fm.ascent) * (m - 1f); // the text's own extra space
+        float t = first ? top + e / 2f : 0;
+        if (first) {
+            fm.ascent -= Math.round(t);
+            fm.top -= Math.round(t);
         }
-        if (sp.getSpanEnd(span) <= end) { // last line
-            fm.descent += bottom;
-            fm.bottom += bottom;
+        if (last) {
+            float b = (bottom - e / 2f - (first ? t * (m - 1f) : 0)) / m;
+            int bi = Math.max(0, Math.round(b));
+            fm.descent += bi;
+            fm.bottom += bi;
         }
     }
 
@@ -500,7 +514,10 @@ final class RichText {
             p.setStyle(Paint.Style.FILL);
             float size = 36 * density;
             float tx = left;
-            float ty = top + 14 * density;
+            // centred on the first line of text, so the text and the bulb tile sit level
+            Paint.FontMetrics tfm = p.getFontMetrics();
+            float textMid = baseline + (tfm.ascent + tfm.descent) / 2f;
+            float ty = Math.max(top + 4 * density, textMid - size / 2f);
             PANEL_RECT.set(tx, ty, tx + size, ty + size);
             p.setColor(TILE);
             c.drawRoundRect(PANEL_RECT, 12 * density, 12 * density, p);

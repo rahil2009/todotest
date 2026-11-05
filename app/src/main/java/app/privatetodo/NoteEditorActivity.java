@@ -297,6 +297,7 @@ public class NoteEditorActivity extends Activity {
             setScale(scale * f);
         });
         body.setLineSpacing(0, 1.15f);
+        RichText.lineMult = 1.15f;
         body.setBackground(null);
         body.setGravity(Gravity.TOP | Gravity.START);
         body.setMinHeight(dp(420));
@@ -480,6 +481,49 @@ public class NoteEditorActivity extends Activity {
         readClose.setElevation(dp(4));
         readClose.setClickable(true);
         readClose.setOnClickListener(v -> { Hap.tick(v); exitReading(); });
+        readClose.setOnTouchListener(new View.OnTouchListener() { // drag it anywhere; a tap closes
+            private float sx, sy, tx, ty;
+            private boolean moved;
+
+            @Override
+            public boolean onTouch(View v, android.view.MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case android.view.MotionEvent.ACTION_DOWN:
+                        sx = e.getRawX();
+                        sy = e.getRawY();
+                        tx = v.getTranslationX();
+                        ty = v.getTranslationY();
+                        moved = false;
+                        return true;
+                    case android.view.MotionEvent.ACTION_MOVE: {
+                        float dx = e.getRawX() - sx;
+                        float dy = e.getRawY() - sy;
+                        if (!moved && Math.hypot(dx, dy) < dp(8)) return true;
+                        moved = true;
+                        View parent = (View) v.getParent();
+                        // keep the whole button on screen
+                        float minX = -v.getLeft();
+                        float maxX = parent.getWidth() - v.getRight();
+                        float minY = -v.getTop();
+                        float maxY = parent.getHeight() - v.getBottom();
+                        v.setTranslationX(Math.max(minX, Math.min(maxX, tx + dx)));
+                        v.setTranslationY(Math.max(minY, Math.min(maxY, ty + dy)));
+                        return true;
+                    }
+                    case android.view.MotionEvent.ACTION_UP:
+                        if (moved) { // remember where it was put, for the next time
+                            getSharedPreferences("settings", MODE_PRIVATE).edit()
+                                    .putFloat("read_x_tx", v.getTranslationX())
+                                    .putFloat("read_x_ty", v.getTranslationY()).apply();
+                        } else {
+                            v.performClick();
+                        }
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+        });
         readClose.setVisibility(View.GONE);
         FrameLayout.LayoutParams xlp = new FrameLayout.LayoutParams(dp(48), dp(48));
         xlp.gravity = Gravity.TOP | Gravity.END;
@@ -2104,6 +2148,7 @@ public class NoteEditorActivity extends Activity {
         readClose.setVisibility(View.VISIBLE);
         body.setPadding(dp(24), dp(t.isEmpty() ? 40 : 12), dp(24), dp(48));
         body.setLineSpacing(0, 1.3f);
+        RichText.lineMult = 1.3f;
         // draw into the camera cut-out too, or the hidden status bar leaves a black strip at the top
         if (android.os.Build.VERSION.SDK_INT >= 28) {
             WindowManager.LayoutParams wl = getWindow().getAttributes();
@@ -2123,14 +2168,33 @@ public class NoteEditorActivity extends Activity {
             android.view.WindowInsets wi = getWindow().getDecorView().getRootWindowInsets();
             if (wi != null && wi.getDisplayCutout() != null) cut = wi.getDisplayCutout().getSafeInsetTop();
         }
-        FrameLayout.LayoutParams rcl = (FrameLayout.LayoutParams) readClose.getLayoutParams();
-        rcl.topMargin = dp(16) + cut;
-        readClose.setLayoutParams(rcl);
+        floatClose(cut);
         // the space the hidden bars leave is used for the note: content starts just under the camera cut-out
         int topGap = Math.max(cut, dp(8)) + dp(8);
         body.setPadding(dp(18), t.isEmpty() ? topGap : dp(4), dp(18), dp(24));
         readTitle.setPadding(dp(18), topGap, dp(64), dp(2));
         keepAwakeFor();
+    }
+
+    /** Full screen reading: the X floats over the whole screen, just under the camera, where you last put it. */
+    private void floatClose(int cut) {
+        View content = findViewById(android.R.id.content);
+        if (!(content instanceof FrameLayout)) return;
+        FrameLayout top = (FrameLayout) content;
+        if (readClose.getParent() != top) {
+            ((android.view.ViewGroup) readClose.getParent()).removeView(readClose);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(48), dp(48));
+            lp.gravity = Gravity.TOP | Gravity.END;
+            top.addView(readClose, lp);
+        }
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) readClose.getLayoutParams();
+        lp.topMargin = cut + dp(10);
+        lp.rightMargin = dp(12);
+        readClose.setLayoutParams(lp);
+        android.content.SharedPreferences sp = getSharedPreferences("settings", MODE_PRIVATE);
+        readClose.setTranslationX(sp.getFloat("read_x_tx", 0f));
+        readClose.setTranslationY(sp.getFloat("read_x_ty", 0f));
+        readClose.bringToFront();
     }
 
     private void exitReading() {
@@ -2144,9 +2208,6 @@ public class NoteEditorActivity extends Activity {
             wl.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
             getWindow().setAttributes(wl);
         }
-        FrameLayout.LayoutParams rcl = (FrameLayout.LayoutParams) readClose.getLayoutParams();
-        rcl.topMargin = dp(16);
-        readClose.setLayoutParams(rcl);
         headerView.setVisibility(View.VISIBLE);
         dateRow.setVisibility(View.VISIBLE);
         toolbarView.setVisibility(View.VISIBLE);
@@ -2155,6 +2216,7 @@ public class NoteEditorActivity extends Activity {
         readClose.setVisibility(View.GONE);
         body.setPadding(dp(24), dp(8), dp(24), dp(24));
         body.setLineSpacing(0, 1.15f);
+        RichText.lineMult = 1.15f;
         body.setFocusable(true);
         body.setFocusableInTouchMode(true);
         body.setCursorVisible(true);
@@ -2186,7 +2248,6 @@ public class NoteEditorActivity extends Activity {
                 if (off >= 0 && off <= body.length()) body.setSelection(off);
             }
         }
-        selectionDrag(ev);
         return super.dispatchTouchEvent(ev);
     }
 
@@ -2219,137 +2280,7 @@ public class NoteEditorActivity extends Activity {
                 || key == RichText.FG || key == CLEAR_KEY;
     }
 
-    // ------------------------------------------------- selection: scroll the page while a handle is dragged
-
     private boolean toolbarQueued;
-    private boolean selDrag;
-    private boolean selDragEnd;
-    private float selX;
-    private float selY;
-    private int selDir;        // -1 up, 0 still, 1 down
-    private float selDepth;    // 0..1, how far into the edge zone the finger is
-    private long selSince;     // when the finger entered the edge zone
-    private long selLastFrame;
-    private float selCarry;    // sub-pixel scroll left over from the last frame
-    private final android.graphics.Rect selVis = new android.graphics.Rect();
-
-    /**
-     * Speed in px per second: starts slow (about three lines a second) and builds up the longer the finger stays
-     * at the edge, reaching full speed after about two and a half seconds; deeper into the edge goes a bit faster.
-     */
-    private float selSpeed() {
-        float t = (android.os.SystemClock.uptimeMillis() - selSince) / 1000f;
-        float slow = dp(70);
-        float fast = dp(900);
-        float ramp = Math.min(1f, t / 2.5f);
-        ramp = ramp * ramp; // ease in: stays gentle for the first second
-        float v = slow + (fast - slow) * ramp;
-        return v * (0.55f + 0.45f * selDepth);
-    }
-
-    private final Runnable selScroll = new Runnable() {
-        @Override
-        public void run() {
-            if (!selDrag || selDir == 0 || noteScroll == null || !body.hasSelection()) return;
-            long now = android.os.SystemClock.uptimeMillis();
-            float dt = Math.min(0.05f, (now - selLastFrame) / 1000f);
-            selLastFrame = now;
-            selCarry += selSpeed() * dt * selDir;
-            int step = (int) selCarry;
-            selCarry -= step;
-            if (step != 0) {
-                int before = noteScroll.getScrollY();
-                noteScroll.scrollBy(0, step);
-                if (noteScroll.getScrollY() != before) extendSelection();
-            }
-            noteScroll.postOnAnimation(this);
-        }
-    };
-
-    /** Moves the dragged end of the selection to the text now under the finger. */
-    private void extendSelection() {
-        int[] loc = new int[2];
-        body.getLocationOnScreen(loc);
-        int off = body.getOffsetForPosition(selX - loc[0], selY - loc[1]);
-        if (off < 0) return;
-        int a = body.getSelectionStart();
-        int b = body.getSelectionEnd();
-        int lo = Math.min(a, b);
-        int hi = Math.max(a, b);
-        if (selDragEnd) {
-            int e = Math.max(lo + 1, off);
-            if (e != hi) body.setSelection(lo, e);
-        } else {
-            int st = Math.min(off, hi - 1);
-            if (st != lo) body.setSelection(st, hi);
-        }
-    }
-
-    /** Lets a selection run past the screen: holding a handle near the top or bottom edge scrolls the note. */
-    private void selectionDrag(android.view.MotionEvent ev) {
-        if (body == null || noteScroll == null || reading) return;
-        switch (ev.getActionMasked()) {
-            case android.view.MotionEvent.ACTION_DOWN: {
-                selDrag = false;
-                selDir = 0;
-                if (!body.hasSelection() || body.getLayout() == null) return;
-                android.text.Layout l = body.getLayout();
-                int[] loc = new int[2];
-                body.getLocationOnScreen(loc);
-                int a = Math.min(body.getSelectionStart(), body.getSelectionEnd());
-                int b = Math.max(body.getSelectionStart(), body.getSelectionEnd());
-                float base = loc[1] + body.getTotalPaddingTop();
-                float ya = base + l.getLineBottom(l.getLineForOffset(a));
-                float yb = base + l.getLineBottom(l.getLineForOffset(b));
-                float y = ev.getRawY();
-                float da = Math.abs(y - ya);
-                float db = Math.abs(y - yb);
-                if (Math.min(da, db) > dp(64)) return; // not on a handle
-                selDrag = true;
-                selDragEnd = db <= da;
-                break;
-            }
-            case android.view.MotionEvent.ACTION_MOVE: {
-                if (!selDrag) return;
-                selX = ev.getRawX();
-                selY = ev.getRawY();
-                int[] sl = new int[2];
-                noteScroll.getLocationOnScreen(sl);
-                // the edge is where the text stops being visible: above the keyboard when it is up
-                getWindow().getDecorView().getWindowVisibleDisplayFrame(selVis);
-                float top = Math.max(sl[1], selVis.top);
-                float bottom = Math.min(sl[1] + noteScroll.getHeight(), selVis.bottom);
-                float zone = dp(64);
-                int dir = 0;
-                float depth = 0;
-                if (selY > bottom - zone) {
-                    dir = 1;
-                    depth = Math.min(1f, (selY - (bottom - zone)) / zone);
-                } else if (selY < top + zone) {
-                    dir = -1;
-                    depth = Math.min(1f, ((top + zone) - selY) / zone);
-                }
-                selDepth = depth;
-                if (dir != selDir) { // entering, leaving or switching edge: start slow again
-                    selDir = dir;
-                    selSince = android.os.SystemClock.uptimeMillis();
-                    selLastFrame = selSince;
-                    selCarry = 0;
-                    noteScroll.removeCallbacks(selScroll);
-                    if (dir != 0) noteScroll.postOnAnimation(selScroll);
-                }
-                break;
-            }
-            case android.view.MotionEvent.ACTION_UP:
-            case android.view.MotionEvent.ACTION_CANCEL:
-                selDrag = false;
-                selDir = 0;
-                noteScroll.removeCallbacks(selScroll);
-                break;
-            default:
-                break;
-        }
-    }
 
     private ScrollView noteScroll;
     private JumpButton jump;

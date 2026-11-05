@@ -32,6 +32,10 @@ final class RichEditText extends EditText {
     private CheckTapListener checkListener;
     private float downX;
     private float downY;
+    private SelectionDrag selDrag;
+    // first tap into an unfocused note: where it landed, so nothing can move the cursor (and the page) elsewhere
+    private int tapOff = -1;
+    private long tapAt;
 
     /** Draws the to-do box as a circle: empty ring when open, filled with a tick when done. */
     private static final class CircleSpan extends ReplacementSpan {
@@ -88,6 +92,7 @@ final class RichEditText extends EditText {
 
     RichEditText(Context c) {
         super(c);
+        selDrag = new SelectionDrag(this);
         scaler = new android.view.ScaleGestureDetector(c,
                 new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override
@@ -633,6 +638,11 @@ final class RichEditText extends EditText {
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        if (selDrag != null && selDrag.onTouch(e)) return true; // dragging one of our selection handles
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN && !isFocused() && getLayout() != null) {
+            tapOff = getOffsetForPosition(e.getX(), e.getY());
+            tapAt = android.os.SystemClock.uptimeMillis();
+        }
         scaler.onTouchEvent(e);
         if (scaler.isInProgress() || e.getPointerCount() > 1) {
             zooming = true;
@@ -818,6 +828,7 @@ final class RichEditText extends EditText {
         drawPanels(canvas);
         updateCaret();
         super.onDraw(canvas);
+        if (selDrag != null) selDrag.draw(canvas);
     }
 
     /** The page background (see Paper), 0 = plain. */
@@ -883,9 +894,36 @@ final class RichEditText extends EditText {
         }
     }
 
+    private boolean freshTap() {
+        return tapOff >= 0 && android.os.SystemClock.uptimeMillis() - tapAt < 1500;
+    }
+
+    @Override
+    protected void onFocusChanged(boolean focused, int direction, android.graphics.Rect previous) {
+        super.onFocusChanged(focused, direction, previous);
+        if (focused && freshTap()) setSelection(Math.max(0, Math.min(length(), tapOff)));
+        if (!focused && selDrag != null) selDrag.stop();
+    }
+
+    /** Taking focus from a tap: anything that tries to park the cursor at the very end is put back. */
+    @Override
+    public boolean bringPointIntoView(int offset) {
+        if (freshTap() && offset == length() && tapOff != length()) return super.bringPointIntoView(tapOff);
+        return super.bringPointIntoView(offset);
+    }
+
     @Override
     protected void onSelectionChanged(int selStart, int selEnd) {
+        if (freshTap() && selStart == selEnd && selStart == length() && tapOff != length() && length() > 0) {
+            final int t = tapOff;
+            super.onSelectionChanged(selStart, selEnd);
+            post(() -> {
+                if (getSelectionStart() == length() && getSelectionEnd() == length()) setSelection(Math.min(t, length()));
+            });
+            return;
+        }
         super.onSelectionChanged(selStart, selEnd);
+        if (selStart != selEnd) invalidate(); // our handles follow the selection
         if (listener != null) listener.onSelection(selStart, selEnd);
     }
 }

@@ -16,6 +16,21 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.55
+
+- **Selection, rewritten (Android 10+):** the note draws its own selection handles. Android's handles live in separate
+  little windows, so the note never saw the finger dragging them and they could not scroll the page. Now the note owns
+  the drag: the selection follows the finger, a magnifier shows the spot, and resting near the top or bottom edge of
+  what is visible (the top of the keyboard when it is up) scrolls the page: about 2 lines a second at first, easing up
+  to about 25 lines a second after 3 seconds. Moving off the edge or switching direction starts slow again.
+- **First tap into a note** keeps the cursor where you tapped: a guard inside the text view puts it back if anything
+  tries to park it at the end (that was what scrolled the page to the bottom).
+- **Light theme with the phone in dark mode:** Android's force-dark is switched off for every window at runtime, and
+  Settings re-checks the theme each time it comes back.
+- **Reading mode X** floats over the whole screen just under the camera; drag it anywhere, it remembers the spot.
+- **Callouts:** the text and the bulb tile line up; space above and below the text is even.
+- **Box:** spacing no longer shifts by a few pixels when a to-do line leaves the box.
+
 ## v3.54
 
 - **Reading mode:** the space under the camera is used for the note; smaller top, side and bottom margins.

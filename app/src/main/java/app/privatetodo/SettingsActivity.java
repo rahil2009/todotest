@@ -34,6 +34,7 @@ public class SettingsActivity extends Activity {
     private static final int REQ_FONT = 4103;
     private static final int REQ_TREE = 4104;
     private boolean enableAfterPick;
+    private int builtTheme;
     private int pickKind;
     private final TextView[] soundName = new TextView[3];
 
@@ -41,6 +42,7 @@ public class SettingsActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
         setTheme(Pal.themeRes());
+        builtTheme = Pal.themeRes();
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         page = getIntent().getIntExtra("page", 0);
@@ -54,6 +56,12 @@ public class SettingsActivity extends Activity {
     protected void onResume() {
         super.onResume();
         Lock.guard(this, Lock.ANY);
+        int was = Pal.themeRes();
+        Pal.init(this); // another screen may have read the palette differently: always match the chosen theme here
+        if (Pal.themeRes() != was || builtTheme != Pal.themeRes()) {
+            recreate();
+            return;
+        }
         if (resumedOnce && (page == 0 || page == 11)) { // tiles show live status; the lock page shows the test result
             blocks.clear();
             blockWords.clear();
