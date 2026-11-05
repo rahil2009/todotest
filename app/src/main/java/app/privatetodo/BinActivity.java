@@ -15,6 +15,12 @@ import java.util.List;
 
 /** The notes Bin: deleted notes wait here for 30 days, then go for good. */
 public class BinActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private TaskDb db;
     private float density;
     private int builtDark;

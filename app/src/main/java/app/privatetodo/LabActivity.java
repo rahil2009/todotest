@@ -18,6 +18,12 @@ import android.widget.TextView;
  * by hand. "Keep" marks a shortlist; "Use in the app" (or Default / Random) picks what the app really uses.
  */
 public class LabActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private float density;
     private int builtTheme;
     private int tab;

@@ -75,4 +75,41 @@ final class Pal {
     static int themeRes() {
         return amoled ? R.style.AppThemeAmoled : dark ? R.style.AppThemeDark : R.style.AppTheme;
     }
+
+    /**
+     * Tells Android which mode the app is in, the way apps with their own Light / Dark / Auto setting do
+     * (AndroidX calls this setDefaultNightMode). Android 12+: the system itself treats the app as light or dark,
+     * so force-dark, "make more apps dark", system dialogs, pickers and the text bar all follow the app's choice.
+     */
+    static void applyNight(Context c) {
+        if (android.os.Build.VERSION.SDK_INT < 31) return;
+        int mode = Prefs.theme(c);
+        int m = mode == Prefs.THEME_LIGHT ? android.app.UiModeManager.MODE_NIGHT_NO
+                : mode == Prefs.THEME_SYSTEM ? android.app.UiModeManager.MODE_NIGHT_AUTO
+                : android.app.UiModeManager.MODE_NIGHT_YES;
+        try {
+            android.app.UiModeManager um = c.getSystemService(android.app.UiModeManager.class);
+            if (um != null) um.setApplicationNightMode(m);
+        } catch (RuntimeException ignored) {
+            // older or unusual system: the per-screen override below still applies
+        }
+    }
+
+    /**
+     * Every screen is created with the night flag set to the app's choice (Android 8 to 11, and as a second
+     * guard on newer ones). Called from each activity's attachBaseContext, before anything is drawn.
+     */
+    static void override(android.app.Activity a, Context base) {
+        int mode = Prefs.theme(base);
+        if (mode == Prefs.THEME_SYSTEM) return;
+        Configuration cur = base.getResources().getConfiguration();
+        Configuration o = new Configuration();
+        int night = mode == Prefs.THEME_LIGHT ? Configuration.UI_MODE_NIGHT_NO : Configuration.UI_MODE_NIGHT_YES;
+        o.uiMode = (cur.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | night;
+        try {
+            a.applyOverrideConfiguration(o);
+        } catch (IllegalStateException ignored) {
+            // resources were already created: the palette alone still paints the right colours
+        }
+    }
 }

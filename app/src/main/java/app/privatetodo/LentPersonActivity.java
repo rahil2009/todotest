@@ -20,6 +20,12 @@ import java.util.List;
 
 /** One person: what is still out, how much came back, the return-by dates and the history. */
 public class LentPersonActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private int builtTheme;
     private LentDb db;
     private String person = "";

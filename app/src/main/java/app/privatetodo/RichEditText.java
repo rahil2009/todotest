@@ -32,7 +32,7 @@ final class RichEditText extends EditText {
     private CheckTapListener checkListener;
     private float downX;
     private float downY;
-    private SelectionDrag selDrag;
+    private SelectKit sel;
     // first tap into an unfocused note: where it landed, so nothing can move the cursor (and the page) elsewhere
     private int tapOff = -1;
     private long tapAt;
@@ -92,7 +92,7 @@ final class RichEditText extends EditText {
 
     RichEditText(Context c) {
         super(c);
-        selDrag = new SelectionDrag(this);
+        sel = new SelectKit(this);
         scaler = new android.view.ScaleGestureDetector(c,
                 new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override
@@ -110,6 +110,7 @@ final class RichEditText extends EditText {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int d) { }
             @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
             @Override public void afterTextChanged(Editable e) {
+                if (sel != null) sel.onTextChanged();
                 syncCircles(e);
                 RichText.healCounters(e);
                 RichText.highlight(e);
@@ -638,7 +639,7 @@ final class RichEditText extends EditText {
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
-        if (selDrag != null && selDrag.onTouch(e)) return true; // dragging one of our selection handles
+        if (sel != null && sel.onTouch(e)) return true; // the note's own selection (handles, long-press, double-tap)
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN && !isFocused() && getLayout() != null) {
             tapOff = getOffsetForPosition(e.getX(), e.getY());
             tapAt = android.os.SystemClock.uptimeMillis();
@@ -761,6 +762,7 @@ final class RichEditText extends EditText {
                 return true;
             }
         }
+        if (sel != null) sel.armLongPress(e); // only plain text gets here: to-dos, tables, counters were handled above
         boolean handled = super.onTouchEvent(e);
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
             downX = e.getX();
@@ -828,7 +830,7 @@ final class RichEditText extends EditText {
         drawPanels(canvas);
         updateCaret();
         super.onDraw(canvas);
-        if (selDrag != null) selDrag.draw(canvas);
+        if (sel != null) sel.draw(canvas);
     }
 
     /** The page background (see Paper), 0 = plain. */
@@ -894,6 +896,20 @@ final class RichEditText extends EditText {
         }
     }
 
+    /** The plain TextView touch handling, for SelectKit to cancel a gesture it took over. */
+    void superTouch(MotionEvent e) {
+        super.onTouchEvent(e);
+    }
+
+    /** SelectKit is choosing the selection itself: the first-tap guard must not put a cursor back. */
+    void clearTapGuard() {
+        tapOff = -1;
+    }
+
+    void clearSelectionUi() {
+        if (sel != null) sel.clear();
+    }
+
     private boolean freshTap() {
         return tapOff >= 0 && android.os.SystemClock.uptimeMillis() - tapAt < 1500;
     }
@@ -902,12 +918,13 @@ final class RichEditText extends EditText {
     protected void onFocusChanged(boolean focused, int direction, android.graphics.Rect previous) {
         super.onFocusChanged(focused, direction, previous);
         if (focused && freshTap()) setSelection(Math.max(0, Math.min(length(), tapOff)));
-        if (!focused && selDrag != null) selDrag.stop();
+        if (!focused && sel != null) sel.clear();
     }
 
     /** Taking focus from a tap: anything that tries to park the cursor at the very end is put back. */
     @Override
     public boolean bringPointIntoView(int offset) {
+        if (sel != null && sel.holdScroll()) return false; // while selecting, only the selection scrolls the page
         if (freshTap() && offset == length() && tapOff != length()) return super.bringPointIntoView(tapOff);
         return super.bringPointIntoView(offset);
     }
@@ -923,7 +940,7 @@ final class RichEditText extends EditText {
             return;
         }
         super.onSelectionChanged(selStart, selEnd);
-        if (selStart != selEnd) invalidate(); // our handles follow the selection
+        if (sel != null) sel.onSelectionChanged(selStart, selEnd); // our handles and bar follow the selection
         if (listener != null) listener.onSelection(selStart, selEnd);
     }
 }

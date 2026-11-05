@@ -13,6 +13,12 @@ import android.widget.TextView;
 
 /** Shown when a Tasks widget is added: pick which list it shows (the same filters as the home screen). */
 public class WidgetConfigActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private int widgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
     private float density;
 

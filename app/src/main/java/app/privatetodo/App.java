@@ -10,6 +10,7 @@ public class App extends Application {
     public void onCreate() {
         super.onCreate();
         registerActivityLifecycleCallbacks(new Lock.Watch());
+        Pal.applyNight(this); // keep the system's idea of our light / dark mode in step with Settings
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override
             public void onActivityCreated(Activity a, Bundle b) {

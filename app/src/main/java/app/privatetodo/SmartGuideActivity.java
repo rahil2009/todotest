@@ -17,6 +17,12 @@ import java.util.Locale;
  * right now (worked out by the same parser the app uses), so the guide can never drift from the behaviour.
  */
 public class SmartGuideActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private float density;
     private int builtDark;
     private String trig;

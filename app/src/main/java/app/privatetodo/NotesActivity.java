@@ -32,6 +32,12 @@ import java.util.List;
 
 /** The notebook: a searchable list of rich-text notes, stored only on this device. */
 public class NotesActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private TaskDb db;
     private float density;
     private int builtDark;

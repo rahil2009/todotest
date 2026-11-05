@@ -16,6 +16,18 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.56
+
+- **Light / Dark / Auto, done the way apps with their own theme setting do it:** the app now tells Android which
+  mode it is in. Android 12+: `UiModeManager.setApplicationNightMode` (what AndroidX's setDefaultNightMode does), so
+  the system's own dark styling, "make more apps dark", system dialogs and pickers follow the app. Every screen is
+  also created with the light/dark flag set to the app's choice (all Android versions).
+- **Text selection, the note's own:** Android's selection is switched off in notes. Long-press or double-tap selects a
+  word; keep the finger down after a long-press to grow the selection; drag either handle; rest near the top or
+  bottom of what is visible to scroll (about 2 lines a second at first, easing up to about 20 after 3 seconds);
+  our own bar offers Cut, Copy, Paste and Select all. While selecting, only the selection moves the page (that was
+  the jumping: the text field kept scrolling itself to the selection end).
+
 ## v3.55
 
 - **Selection, rewritten (Android 10+):** the note draws its own selection handles. Android's handles live in separate

@@ -20,6 +20,12 @@ import java.util.List;
  * a bug or a delete. Opened from Settings (all notes) or from inside a note (just that note).
  */
 public class NoteHistoryActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     /** Show only this note's versions (the editor passes it). */
     static final String EXTRA_NOTE = "note_id";
 

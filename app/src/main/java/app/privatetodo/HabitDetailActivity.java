@@ -17,6 +17,12 @@ import java.util.Map;
 
 /** One habit: streak, best, total, today's log and a month-by-month history. */
 public class HabitDetailActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private float density;
     private int builtTheme;
     private HabitDb db;

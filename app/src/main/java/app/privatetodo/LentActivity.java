@@ -19,6 +19,12 @@ import java.util.Map;
 
 /** Lent: who owes you, what you lent out, and what you borrowed. Everything stays on the phone. */
 public class LentActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private static final int F_LENT = 0;
     private static final int F_BORROWED = 1;
     private static final int F_RETURNED = 2;

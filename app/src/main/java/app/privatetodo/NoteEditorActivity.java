@@ -32,6 +32,12 @@ import java.util.Map;
  * cursor it applies to what you type next. Saves by itself when you leave.
  */
 public class NoteEditorActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     static final String EXTRA_ID = "note_id";
     /** A new note starts inside this folder (0 = none). */
     static final String EXTRA_FOLDER = "folder_id";

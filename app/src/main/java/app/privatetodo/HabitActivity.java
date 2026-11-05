@@ -23,6 +23,12 @@ import java.util.Map;
 
 /** Habit list: a week strip, and one card per habit with its streak, today's progress and the week at a glance. */
 public class HabitActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private float density;
     private int builtTheme;
     private HabitDb db;

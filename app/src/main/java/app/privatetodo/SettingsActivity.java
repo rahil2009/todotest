@@ -28,6 +28,12 @@ import java.util.List;
  * (any sound on the phone, or an audio file you pick) plus a volume slider. All stored on-device.
  */
 public class SettingsActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private float density;
     private static final int REQ_EXPORT = 4101;
     private static final int REQ_IMPORT = 4102;
@@ -191,6 +197,7 @@ public class SettingsActivity extends Activity {
             chip.setBackground(g);
             chip.setOnClickListener(v -> {
                 Prefs.setTheme(this, mode);
+                Pal.applyNight(this); // tell Android too, so its own dark styling follows the app
                 recreate(); // onCreate re-reads the palette
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);

@@ -26,6 +26,12 @@ import java.util.Locale;
  * lists its tasks underneath, and the bar at the bottom adds a new task to the selected day.
  */
 public class CalendarActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private TaskDb db;
     private float density;
     private int builtDark;

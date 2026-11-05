@@ -23,6 +23,12 @@ import java.util.List;
 
 /** Links shared into the app from the Android Share menu. One permanent card per share, newest first. */
 public class SharedActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     static final String EXTRA_NEW = "new_id";
 
     private TaskDb db;

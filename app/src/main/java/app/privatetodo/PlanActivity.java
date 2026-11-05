@@ -29,6 +29,12 @@ import java.util.Locale;
  * Everything is computed and stored on this device.
  */
 public class PlanActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private static final long DAY = 86_400_000L;
 
     private TaskDb db;

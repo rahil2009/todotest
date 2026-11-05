@@ -53,6 +53,12 @@ import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private static final int REQ_NOTIF = 11;
 
     private TaskDb db;

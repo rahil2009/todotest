@@ -20,6 +20,12 @@ import java.util.List;
 
 /** Adds or edits one lent / borrowed item: money or a thing, who with, the dates and the reminder. */
 public class LentEditActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private static final String[] EMOJI = {"📚", "🔧", "💻", "🎮", "👕",
             "🚲", "📦"};
     private static final long[] QUICK = {100, 500, 1000, 5000};

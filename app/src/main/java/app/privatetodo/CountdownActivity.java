@@ -20,6 +20,12 @@ import java.util.List;
 
 /** Countdowns: events with the days left. Tap one to edit it. */
 public class CountdownActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private int builtTheme;
     private CountdownDb db;
 

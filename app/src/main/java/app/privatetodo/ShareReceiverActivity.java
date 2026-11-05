@@ -11,6 +11,12 @@ import java.util.regex.Matcher;
 /** Target of Android's Share menu. Saves the shared text/link straight into Shared notes and returns to the source app. */
 public class ShareReceiverActivity extends Activity {
     @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
+    @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Intent in = getIntent();

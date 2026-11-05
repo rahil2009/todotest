@@ -22,6 +22,12 @@ import android.widget.TextView;
  * It never traps anyone: if the phone cannot do the check at all, it opens.
  */
 public class UnlockActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private static boolean showing;
     private static final int REQ = 71;
     private static final int ERR_LOCKOUT = 7;

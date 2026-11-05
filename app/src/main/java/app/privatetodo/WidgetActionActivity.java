@@ -11,6 +11,12 @@ import android.os.Bundle;
  */
 public class WidgetActionActivity extends Activity {
     @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
+    @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         try {

@@ -24,6 +24,12 @@ import java.util.List;
  * column or to a new place in its own; tap a card to edit it, link a task or a note, or delete it.
  */
 public class KanbanBoardActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private int builtTheme;
     private KanbanDb db;
     private long boardId;

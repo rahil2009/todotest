@@ -6,6 +6,12 @@ import android.os.Bundle;
 /** Invisible hop used by the notification's "Open link" button: silences the reminder, then opens the link. */
 public class LinkActivity extends Activity {
     @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
+    @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         long id = getIntent().getLongExtra(Reminders.EXTRA_ID, -1);

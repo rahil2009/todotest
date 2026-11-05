@@ -29,6 +29,12 @@ import java.util.Random;
 
 /** Pomodoro focus timer: ring with 60 ticks, session dots, a task to focus on, and daily stats. */
 public class PomodoroActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private static final int BLUE = 0xFF3B82F6;
     private static final int VIOLET = 0xFF8B5CF6;
 

@@ -17,6 +17,12 @@ import java.util.List;
 
 /** Kanban: your boards. Tap one to open it. */
 public class KanbanActivity extends Activity {
+    @Override
+    protected void attachBaseContext(android.content.Context base) {
+        super.attachBaseContext(base);
+        Pal.override(this, base); // the app's Light / Dark choice, not the phone's
+    }
+
     private int builtTheme;
     private KanbanDb db;
 
