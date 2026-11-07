@@ -2259,6 +2259,10 @@ public class NoteEditorActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (findBar != null && findBar.isOpen()) {
+            findBar.close();
+            return;
+        }
         if (reading) {
             exitReading();
             return;
@@ -2337,15 +2341,40 @@ public class NoteEditorActivity extends Activity {
 
     /** The note's three-dot menu. */
     private void noteMenu() {
-        String[] items = {"Page style & colour\u2026", "Opens at\u2026", "Move to Bin"};
+        String[] items = {"Find & replace", "Page style & colour\u2026", "Opens at\u2026", "Appearance\u2026", "Move to Bin"};
         new Dlg.Builder(this).setItems(items, (d, w) -> {
-            if (w == 0) paperDialog();
-            else if (w == 1) {
+            if (w == 0) openFind();
+            else if (w == 1) paperDialog();
+            else if (w == 2) {
                 if (noteId <= 0) {
                     saveNow();
                 }
                 openAtDialog();
-            } else confirmDelete();
+            } else if (w == 3) themeDialog();
+            else confirmDelete();
+        }).show();
+    }
+
+    private FindBar findBar;
+
+    private void openFind() {
+        if (findBar != null && findBar.isOpen()) return;
+        if (reading) return;
+        findBar = new FindBar(this, body, noteScroll, edit -> keepScroll(edit));
+        findBar.open(areaView != null ? areaView : (FrameLayout) noteScroll.getParent(), 0);
+    }
+
+    /** Appearance from the three-dots menu: the same four choices as Settings. */
+    private void themeDialog() {
+        final String[] names = {"Auto (follow the phone)", "Light", "Dark", "AMOLED black"};
+        int cur = Prefs.theme(this);
+        for (int i = 0; i < names.length; i++) if (i == cur) names[i] = "\u2713  " + names[i];
+        new Dlg.Builder(this).setTitle("Appearance").setItems(names, (d, w) -> {
+            if (w == Prefs.theme(this)) return;
+            saveNow();
+            Prefs.setTheme(this, w);
+            Pal.applyNight(this);
+            recreate();
         }).show();
     }
 

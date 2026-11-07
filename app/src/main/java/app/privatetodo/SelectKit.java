@@ -63,6 +63,9 @@ final class SelectKit {
     private float rawY;
     private float grabDy;
     private Runnable pendingLong;
+    private boolean pageScroll;
+    private float lastRawY;
+    private android.view.VelocityTracker vt;
 
     // ---- edge scroll
     private int dir;
@@ -73,6 +76,7 @@ final class SelectKit {
 
     // ---- the bar
     private LinearLayout bar;
+    private boolean barMoved; // the user dragged the bar: it stays where they put it
     private long quietUntil; // our own edits must not make the text field scroll the page
 
     SelectKit(RichEditText v) {
@@ -118,6 +122,22 @@ final class SelectKit {
         });
     }
 
+    /** True when this touch belongs to the selection (a handle, or a drag already under way): checked before anything else. */
+    boolean owns(MotionEvent e) {
+        if (mode != NONE || swallow) return true;
+        return e.getActionMasked() == MotionEvent.ACTION_DOWN && v.hasSelection() && grabbable(e.getX(), e.getY());
+    }
+
+    private boolean grabbable(float x, float y) {
+        int a = Math.min(v.getSelectionStart(), v.getSelectionEnd());
+        int b = Math.max(v.getSelectionStart(), v.getSelectionEnd());
+        float[] pa = point(a);
+        float[] pb = point(b);
+        if (pa == null || pb == null) return false;
+        float r = r();
+        return Math.min(Math.hypot(x - (pa[0] - r), y - (pa[1] + r)), Math.hypot(x - (pb[0] + r), y - (pb[1] + r))) <= 42 * d;
+    }
+
     /** True while a selection made here is showing. */
     boolean active() {
         return v.hasSelection();
@@ -125,7 +145,7 @@ final class SelectKit {
 
     /** The text field asks this before it scrolls itself to the cursor; while selecting, only we scroll. */
     boolean holdScroll() {
-        return mode != NONE || SystemClock.uptimeMillis() < quietUntil || v.hasSelection();
+        return mode != NONE || pageScroll || SystemClock.uptimeMillis() < quietUntil;
     }
 
     private void quiet() {
@@ -233,8 +253,46 @@ final class SelectKit {
             }
             return true;
         }
+        if (pageScroll) { // we are scrolling the page ourselves (a selection is showing)
+            if (act == MotionEvent.ACTION_MOVE) {
+                if (vt != null) vt.addMovement(e);
+                ScrollView sv = page();
+                float dy = lastRawY - e.getRawY();
+                lastRawY = e.getRawY();
+                if (sv != null) sv.scrollBy(0, Math.round(dy));
+            } else {
+                if (vt != null) {
+                    vt.addMovement(e);
+                    vt.computeCurrentVelocity(1000, ViewConfiguration.get(v.getContext()).getScaledMaximumFlingVelocity());
+                    ScrollView sv = page();
+                    if (act == MotionEvent.ACTION_UP && sv != null) sv.fling(-(int) vt.getYVelocity());
+                    vt.recycle();
+                    vt = null;
+                }
+                pageScroll = false;
+                if (bar != null && bar.getVisibility() == View.VISIBLE) placeBar();
+            }
+            return true;
+        }
         if (act == MotionEvent.ACTION_MOVE) {
-            if (Math.hypot(e.getX() - downX, e.getY() - downY) > slop) cancelLong();
+            float mdx = Math.abs(e.getX() - downX);
+            float mdy = Math.abs(e.getY() - downY);
+            if (Math.hypot(mdx, mdy) > slop) cancelLong();
+            // With a selection showing, a vertical drag must scroll the page. If the page has not taken it over
+            // by now, do it here.
+            if (v.hasSelection() && mdy > slop * 1.5f && mdy > mdx && page() != null) {
+                cancelLong();
+                MotionEvent cancel = MotionEvent.obtain(e);
+                cancel.setAction(MotionEvent.ACTION_CANCEL);
+                v.superTouch(cancel);
+                cancel.recycle();
+                pageScroll = true;
+                lastRawY = e.getRawY();
+                vt = android.view.VelocityTracker.obtain();
+                vt.addMovement(e);
+                disallow();
+                return true;
+            }
         } else if (act == MotionEvent.ACTION_UP) {
             cancelLong();
             if (e.getEventTime() - downAt < longPress && Math.hypot(e.getX() - downX, e.getY() - downY) < slop) {
@@ -296,7 +354,7 @@ final class SelectKit {
         float r = r();
         float da = (float) Math.hypot(x - (pa[0] - r), y - (pa[1] + r));
         float db = (float) Math.hypot(x - (pb[0] + r), y - (pb[1] + r));
-        if (Math.min(da, db) > 32 * d) return false;
+        if (Math.min(da, db) > 42 * d) return false;
         dragEnd = db <= da;
         // keep the gap between finger and text point, so the selection edge does not leap to the finger
         grabDy = y - ((dragEnd ? pb[1] : pa[1]) - 2 * d);
@@ -413,26 +471,37 @@ final class SelectKit {
         return (ScrollView) p;
     }
 
-    private void edge() {
+    /**
+     * Works out, from where the finger is right now, which way to scroll and how far into the edge zone it is.
+     * 0..1 inside the zone, up to 2.2 when the finger is out past the edge of the visible area.
+     */
+    private void measureEdge() {
         ScrollView sv = page();
-        if (sv == null) return;
+        if (sv == null) {
+            dir = 0;
+            return;
+        }
         sv.getLocationOnScreen(loc);
         v.getWindowVisibleDisplayFrame(vis); // ends at the top of the keyboard when it is up
         float top = Math.max(loc[1], vis.top);
         float bottom = Math.min(loc[1] + sv.getHeight(), vis.bottom);
-        float zone = 56 * d;
-        int nd = 0;
-        float dep = 0;
+        float zone = 72 * d;
         if (rawY > bottom - zone) {
-            nd = 1;
-            dep = Math.min(1f, (rawY - (bottom - zone)) / zone);
+            dir = 1;
+            depth = Math.min(2.2f, (rawY - (bottom - zone)) / zone);
         } else if (rawY < top + zone) {
-            nd = -1;
-            dep = Math.min(1f, ((top + zone) - rawY) / zone);
+            dir = -1;
+            depth = Math.min(2.2f, ((top + zone) - rawY) / zone);
+        } else {
+            dir = 0;
+            depth = 0;
         }
-        depth = dep;
-        if (nd != dir) {
-            dir = nd;
+    }
+
+    private void edge() {
+        int was = dir;
+        measureEdge();
+        if (dir != was) {
             since = SystemClock.uptimeMillis();
             lastFrame = since;
             carry = 0;
@@ -441,22 +510,26 @@ final class SelectKit {
         }
     }
 
-    /** px per second: ~2 lines/s at first, easing up over 3 s to ~20 lines/s; deeper in is a little faster. */
+    /**
+     * px per second. Two things multiply: how far the finger is into the edge zone (a hair in = a crawl, at the
+     * edge = quick, past the edge = faster still) and how long it has been there (1x, easing to 2.4x over 2.5 s).
+     */
     private float speed() {
         float t = (SystemClock.uptimeMillis() - since) / 1000f;
-        float slow = 45 * d;
-        float fast = 480 * d;
-        float k = Math.min(1f, t / 3f);
+        float k = Math.min(1f, t / 2.5f);
         k = k * k * (3 - 2 * k);
-        return (slow + (fast - slow) * k) * (0.75f + 0.25f * depth);
+        float base = Math.min(1100 * d, 40 * d + 480 * d * depth * depth);
+        return base * (1f + 1.2f * k);
     }
 
     private final Runnable scroller = new Runnable() {
         @Override
         public void run() {
-            if (mode == NONE || dir == 0) return;
+            if ((mode == NONE) || dir == 0) return;
             ScrollView sv = page();
             if (sv == null) return;
+            measureEdge(); // the finger may be resting: re-read where it is every frame
+            if (dir == 0) return;
             long now = SystemClock.uptimeMillis();
             float dt = Math.min(0.034f, (now - lastFrame) / 1000f);
             lastFrame = now;
@@ -484,7 +557,43 @@ final class SelectKit {
         FrameLayout host = host();
         if (host == null) return;
         if (bar == null) {
-            bar = new LinearLayout(v.getContext());
+            bar = new LinearLayout(v.getContext()) {
+                float dx0, dy0, tx0, ty0;
+                boolean moving;
+
+                @Override
+                public boolean onInterceptTouchEvent(MotionEvent e) {
+                    if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                        dx0 = e.getRawX();
+                        dy0 = e.getRawY();
+                        tx0 = getTranslationX();
+                        ty0 = getTranslationY();
+                        moving = false;
+                    } else if (e.getActionMasked() == MotionEvent.ACTION_MOVE && !moving
+                            && Math.hypot(e.getRawX() - dx0, e.getRawY() - dy0) > slop) {
+                        moving = true;
+                        getParent().requestDisallowInterceptTouchEvent(true);
+                    }
+                    return moving;
+                }
+
+                @Override
+                public boolean onTouchEvent(MotionEvent e) {
+                    if (e.getActionMasked() == MotionEvent.ACTION_MOVE) {
+                        FrameLayout h = host();
+                        float nx = tx0 + e.getRawX() - dx0;
+                        float ny = ty0 + e.getRawY() - dy0;
+                        if (h != null) {
+                            nx = Math.max(0, Math.min(h.getWidth() - getWidth(), nx));
+                            ny = Math.max(0, Math.min(h.getHeight() - getHeight(), ny));
+                        }
+                        setTranslationX(nx);
+                        setTranslationY(ny);
+                        barMoved = true;
+                    }
+                    return true;
+                }
+            };
             bar.setOrientation(LinearLayout.HORIZONTAL);
             bar.setGravity(Gravity.CENTER_VERTICAL);
             int p = Math.round(4 * d);
@@ -501,6 +610,7 @@ final class SelectKit {
             host.addView(bar, new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START));
         }
         bar.removeAllViews();
+        grip();
         boolean sel = v.hasSelection();
         if (sel) {
             button("Cut", () -> {
@@ -533,6 +643,17 @@ final class SelectKit {
         bar.post(this::placeBar);
     }
 
+    /** Six small dots at the left end: the bar can be dragged from anywhere, this just says so. */
+    private void grip() {
+        TextView g = new TextView(v.getContext());
+        g.setText("⋮⋮");
+        g.setTextSize(13);
+        g.setTextColor(Pal.muted);
+        g.setGravity(Gravity.CENTER);
+        g.setPadding(Math.round(8 * d), 0, Math.round(2 * d), 0);
+        bar.addView(g, new LinearLayout.LayoutParams(-2, Math.round(40 * d)));
+    }
+
     private boolean allSelected() {
         return Math.min(v.getSelectionStart(), v.getSelectionEnd()) == 0
                 && Math.max(v.getSelectionStart(), v.getSelectionEnd()) == v.length();
@@ -562,7 +683,7 @@ final class SelectKit {
     /** Above the selection, or under it when there is no room above; always inside the screen. */
     private void placeBar() {
         FrameLayout host = host();
-        if (bar == null || host == null || v.getLayout() == null) return;
+        if (bar == null || host == null || v.getLayout() == null || barMoved) return;
         int a = v.hasSelection() ? Math.min(v.getSelectionStart(), v.getSelectionEnd()) : v.getSelectionStart();
         int b = v.hasSelection() ? Math.max(v.getSelectionStart(), v.getSelectionEnd()) : a;
         if (a < 0) return;
@@ -591,6 +712,7 @@ final class SelectKit {
     }
 
     void hideBar() {
+        barMoved = false;
         if (bar != null) bar.setVisibility(View.GONE);
     }
 

@@ -9,6 +9,7 @@
         <item name="android:colorAccent">#0B6B5D</item>
         <item name="android:fontFamily">@font/figtree</item>
         <item name="android:forceDarkAllowed">false</item>
+        <item name="android:isLightTheme">true</item>
     </style>
     <!-- Dark mode: used when the phone is in dark mode or Settings > Appearance > Dark is chosen. -->
     <style name="AppThemeDark" parent="android:Theme.Material.NoActionBar">
@@ -20,6 +21,7 @@
         <item name="android:fontFamily">@font/figtree</item>
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:colorBackgroundFloating">#252C2A</item>
+        <item name="android:isLightTheme">false</item>
     </style>
     <!-- AMOLED: pure black backgrounds. -->
     <style name="AppThemeAmoled" parent="android:Theme.Material.NoActionBar">
@@ -31,6 +33,7 @@
         <item name="android:fontFamily">@font/figtree</item>
         <item name="android:forceDarkAllowed">false</item>
         <item name="android:colorBackgroundFloating">#1A1E1C</item>
+        <item name="android:isLightTheme">false</item>
     </style>
     <!-- Alarm and water screens: the window itself is allowed to run under the camera cut-out (v28+ override below). -->
     <style name="AppThemeAlert" parent="AppThemeDark" />

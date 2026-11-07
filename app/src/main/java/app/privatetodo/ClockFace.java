@@ -108,6 +108,26 @@ final class ClockFace extends View {
         sp(c).edit().putInt("clock_accent", v).apply();
     }
 
+    /** -1 = each face's own lettering; otherwise a note font (NoteFonts slot) used for every clock text. */
+    static int fontIndex(Context c) {
+        return sp(c).getInt("clock_font", -1);
+    }
+
+    static void setFontIndex(Context c, int v) {
+        sp(c).edit().putInt("clock_font", v).apply();
+    }
+
+    private Typeface own(Typeface t) {
+        int idx = fontIndex(getContext());
+        if (idx < 0) return t;
+        NoteFonts.init(getContext());
+        Typeface f = NoteFonts.face(idx);
+        if (f == null) return t;
+        boolean bold = t != null && t.isBold();
+        boolean ital = t != null && t.isItalic();
+        return Typeface.create(f, bold ? (ital ? Typeface.BOLD_ITALIC : Typeface.BOLD) : (ital ? Typeface.ITALIC : Typeface.NORMAL));
+    }
+
     static boolean showDate(Context c) {
         return sp(c).getBoolean("clock_date", true);
     }
@@ -173,7 +193,7 @@ final class ClockFace extends View {
 
     private void text(Canvas c, String s, float x, float y, float size, Typeface t, int color, Paint.Align a) {
         p.setTextSize(size);
-        p.setTypeface(t);
+        p.setTypeface(own(t));
         p.setColor(color);
         p.setTextAlign(a);
         c.drawText(s, x, y, p);
@@ -181,7 +201,7 @@ final class ClockFace extends View {
 
     private float width(String s, float size, Typeface t) {
         p.setTextSize(size);
-        p.setTypeface(t);
+        p.setTypeface(own(t));
         return p.measureText(s);
     }
 

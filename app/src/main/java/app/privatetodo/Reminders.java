@@ -570,6 +570,10 @@ final class Reminders {
             if (!quiet) b.setFullScreenIntent(full, true);
         } else {
             b.setCategory(Notification.CATEGORY_REMINDER).setAutoCancel(true);
+            // Locked or asleep: wake to a dim black peek for a few seconds (in use: just the normal pop-in).
+            if (!quiet && Peek.enabled(ctx)) {
+                b.setFullScreenIntent(Peek.intent(ctx, t.id, t.title, when(ctx, t.snooze > 0 ? t.snooze : t.due)), true);
+            }
         }
 
         Notification n = b.build();

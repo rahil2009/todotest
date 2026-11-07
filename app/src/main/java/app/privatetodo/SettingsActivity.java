@@ -205,6 +205,16 @@ public class SettingsActivity extends Activity {
             chips.addView(chip, lp);
         }
         themeCard.addView(chips);
+        // what Android and this screen think right now: the first thing to look at if a mode ever looks wrong
+        boolean phoneDark = (android.content.res.Resources.getSystem().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        boolean screenDark = (getResources().getConfiguration().uiMode
+                & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
+        TextView diag = text("Phone: " + (phoneDark ? "dark" : "light") + "  \u00B7  This screen: "
+                + (screenDark ? "dark" : "light") + "  \u00B7  Colours: " + (Pal.dark ? "dark" : "light")
+                + "  \u00B7  Android " + android.os.Build.VERSION.RELEASE, 12, Pal.muted, false);
+        diag.setPadding(0, dp(10), 0, 0);
+        themeCard.addView(diag);
         col.addView(themeCard);
         block("appearance theme light dark amoled auto", appLabel, themeCard);
 
@@ -1043,6 +1053,7 @@ public class SettingsActivity extends Activity {
         alertCard.addView(szHead);
         PillSlider szBar = new PillSlider(this);
         szBar.setValue(Math.round((ClockFace.sizePct(this) - 60) / 0.8f)); // 0..100 on the bar = 60..140 %
+        szBar.setIcon(PillSlider.ICON_SIZE);
         szBar.setContentDescription("Clock size");
         szBar.setListener(new PillSlider.Listener() {
             @Override
@@ -1065,6 +1076,50 @@ public class SettingsActivity extends Activity {
         szl.topMargin = dp(4);
         alertCard.addView(szBar, szl);
 
+        // font
+        TextView fh = text("Clock font", 15, Pal.ink, true);
+        fh.setPadding(0, dp(14), 0, dp(6));
+        alertCard.addView(fh);
+        final int nFonts = NoteFonts.count() + 1; // slot 0 = the face's own font
+        final TextView[] fontChips = new TextView[nFonts];
+        final Runnable paintFonts = () -> {
+            int cur = ClockFace.fontIndex(this) + 1;
+            for (int i = 0; i < nFonts; i++) {
+                boolean on = i == cur;
+                fontChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                fontChips[i].setBackground(cg);
+            }
+        };
+        FlowLayout fontRow = new FlowLayout(this, dp(6), dp(6));
+        for (int i = 0; i < nFonts; i++) {
+            final int f = i - 1;
+            String nm = i == 0 ? "Face's own" : NoteFonts.name(f);
+            if (nm == null || nm.startsWith("(")) { // a removed slot
+                fontChips[i] = new TextView(this);
+                continue;
+            }
+            TextView chip = text(nm, 14, Pal.muted, true);
+            chip.setTag("keepfont");
+            if (f >= 0) chip.setTypeface(NoteFonts.face(f));
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(14), 0, dp(14), 0);
+            chip.setMinHeight(dp(40));
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                ClockFace.setFontIndex(this, f);
+                face.refresh();
+                paintFonts.run();
+            });
+            fontChips[i] = chip;
+            fontRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(40)));
+        }
+        paintFonts.run();
+        alertCard.addView(fontRow);
+        alertCard.addView(text("Fonts you import in Settings > Notebook show up here too.", 12, Pal.muted, false));
+
         // colours
         alertCard.addView(colourRow("Main colour", false, face));
         alertCard.addView(colourRow("Accent colour", true, face));
@@ -1073,6 +1128,54 @@ public class SettingsActivity extends Activity {
                     ClockFace.setShowDate(this, on);
                     face.refresh();
                 }));
+
+        // lock-screen peek for ordinary reminders
+        TextView ph = text("Lock-screen peek", 16, Pal.ink, true);
+        ph.setPadding(0, dp(18), 0, 0);
+        alertCard.addView(ph);
+        alertCard.addView(text("Reminders that are not full-screen alerts wake the locked phone to a dim black page for a few seconds, like an always-on display, then it goes dark. Needs the full-screen permission on Android 14+.",
+                13, Pal.muted, false));
+        alertCard.addView(toggleRow("Show the peek", "Off = only the normal notification.",
+                Peek.enabled(this), on -> Peek.setEnabled(this, on)));
+        alertCard.addView(text("Stays lit for", 14, Pal.ink, true));
+        final int[] secOpts = {3, 5, 8, 12};
+        final TextView[] secChips = new TextView[secOpts.length];
+        final Runnable paintSecs = () -> {
+            for (int i = 0; i < secOpts.length; i++) {
+                boolean on = Peek.seconds(this) == secOpts[i];
+                secChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                secChips[i].setBackground(cg);
+            }
+        };
+        LinearLayout secRow = new LinearLayout(this);
+        for (int i = 0; i < secOpts.length; i++) {
+            final int sv = secOpts[i];
+            TextView chip = text(sv + " s", 14, Pal.muted, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setMinHeight(dp(40));
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                Peek.setSeconds(this, sv);
+                paintSecs.run();
+            });
+            secChips[i] = chip;
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            cl.rightMargin = dp(i < secOpts.length - 1 ? 6 : 0);
+            cl.topMargin = dp(6);
+            secRow.addView(chip, cl);
+        }
+        paintSecs.run();
+        alertCard.addView(secRow);
+        alertCard.addView(backupRow("Test the peek now",
+                "Shows the black page right here with a sample reminder",
+                v -> startActivity(new Intent(this, PeekActivity.class)
+                        .putExtra(Peek.EXTRA_TITLE, "Test reminder")
+                        .putExtra(Peek.EXTRA_TEXT, "Today, " + android.text.format.DateFormat.format("HH:mm", new java.util.Date())))));
+        alertCard.addView(backupRow("Test the peek on the lock screen",
+                "A normal reminder in 10 seconds: press the power button to lock the phone first", v -> testPeek()));
 
         alertCard.addView(backupRow("Test full-screen alert",
                 "Shows the alarm screen right now with sample data", v -> testAlert(0)));
@@ -1916,6 +2019,25 @@ public class SettingsActivity extends Activity {
         }
         RingService.start(this, id, true);
         startActivity(new Intent(this, AlarmActivity.class).putExtra(Reminders.EXTRA_ID, id));
+    }
+
+    /** A plain (not full-screen) reminder in 10 seconds, to see the lock-screen peek. */
+    private void testPeek() {
+        TaskDb db = new TaskDb(this);
+        try {
+            long old = Prefs.testId(this);
+            if (old >= 0) {
+                Reminders.cancel(this, old);
+                Reminders.cancelNotification(this, old);
+                db.delete(old);
+            }
+            long id = db.add("Peek test \u2014 a normal reminder", System.currentTimeMillis() + 10_000L, 0, 0, false);
+            Prefs.setTestId(this, id);
+            Reminders.schedule(this, db.get(id));
+        } finally {
+            db.close();
+        }
+        Toast.makeText(this, "Lock the phone now \u2014 it shows in 10 seconds", Toast.LENGTH_LONG).show();
     }
 
     private LinearLayout backupRow(String title, String sub, View.OnClickListener l) {

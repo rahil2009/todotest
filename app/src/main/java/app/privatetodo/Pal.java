@@ -104,6 +104,7 @@ final class Pal {
         if (mode == Prefs.THEME_SYSTEM) return;
         Configuration cur = base.getResources().getConfiguration();
         Configuration o = new Configuration();
+        o.fontScale = 0f; // 0 = "not overridden": a fresh Configuration says 1.0 and would undo the phone's font size
         int night = mode == Prefs.THEME_LIGHT ? Configuration.UI_MODE_NIGHT_NO : Configuration.UI_MODE_NIGHT_YES;
         o.uiMode = (cur.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | night;
         try {

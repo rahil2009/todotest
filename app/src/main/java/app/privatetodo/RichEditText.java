@@ -636,6 +636,13 @@ final class RichEditText extends EditText {
         return x <= edge && x >= from ? ls : -1;
     }
 
+    /** The selection handles get their touches before anything else can look at them. */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent e) {
+        if (sel != null && sel.owns(e)) return sel.onTouch(e);
+        return super.dispatchTouchEvent(e);
+    }
+
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
@@ -828,9 +835,47 @@ final class RichEditText extends EditText {
                     getWidth() - getCompoundPaddingRight(), getResources().getDisplayMetrics().density);
         }
         drawPanels(canvas);
+        drawFind(canvas);
         updateCaret();
         super.onDraw(canvas);
         if (sel != null) sel.draw(canvas);
+    }
+
+    // ---- find and replace highlights (see FindBar)
+    private int[] findHits;
+    private int findLen;
+    private int findCur = -1;
+    private final android.graphics.Path findPath = new android.graphics.Path();
+    private final android.graphics.Paint findPaint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+    void setFind(int[] hits, int len, int cur) {
+        findHits = hits;
+        findLen = len;
+        findCur = cur;
+        invalidate();
+    }
+
+    private void drawFind(android.graphics.Canvas canvas) {
+        android.text.Layout l = getLayout();
+        if (findHits == null || findLen <= 0 || l == null) return;
+        android.graphics.Rect clip = canvas.getClipBounds();
+        int dx = getCompoundPaddingLeft();
+        int dy = getExtendedPaddingTop();
+        canvas.save();
+        canvas.translate(dx, dy);
+        for (int i = 0; i < findHits.length; i++) {
+            int s = Math.min(findHits[i], length());
+            int e = Math.min(findHits[i] + findLen, length());
+            if (e <= s) continue;
+            int top = l.getLineTop(l.getLineForOffset(s)) + dy;
+            int bottom = l.getLineBottom(l.getLineForOffset(e)) + dy;
+            if (bottom < clip.top || top > clip.bottom) continue;
+            findPaint.setColor(i == findCur ? 0xCCFFB300 : 0x66FFD54F);
+            findPath.reset();
+            l.getSelectionPath(s, e, findPath);
+            canvas.drawPath(findPath, findPaint);
+        }
+        canvas.restore();
     }
 
     /** The page background (see Paper), 0 = plain. */

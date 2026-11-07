@@ -16,6 +16,22 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.57
+
+- **Lock-screen peek** for ordinary (non full-screen) reminders: locked or asleep, the screen wakes to a dim black page
+  (time, date, the reminder) for 3/5/8/12 s, then fades to black and closes when the screen turns off. Uses the
+  notification's own full-screen intent, so while you use the phone you only get the normal pop-in. Settings >
+  Full-screen alert: on/off, duration, "Test the peek now" and "Test the peek on the lock screen" (10 s).
+- **Light / dark:** the per-screen override reset the phone's font size to 1.0 (fixed); themes now declare
+  `isLightTheme`; Settings > Appearance prints what the phone, the screen and the app colours currently are.
+  Note three-dots menu > Appearance switches Auto / Light / Dark / AMOLED.
+- **Find & replace** in the note's three-dots menu: all matches highlighted, arrows, Aa (match case), Replace, All.
+- **Selection:** edge-scroll speed now depends on how far into the edge zone the finger is (and past the edge) and ramps
+  with time; handles get touches first (42 dp reach); a vertical swipe scrolls the page while text is selected; the
+  Cut/Copy/Paste bar can be dragged anywhere (it stays until the selection changes).
+- **Clock font** (Settings > Full-screen alert): any note font, including imported ones; "Face's own" = old look.
+- Clock size slider shows small/big "A" instead of a speaker.
+
 ## v3.56
 
 - **Light / Dark / Auto, done the way apps with their own theme setting do it:** the app now tells Android which

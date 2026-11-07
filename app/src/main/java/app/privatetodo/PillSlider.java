@@ -29,6 +29,15 @@ final class PillSlider extends View {
     private final RectF rect = new RectF();
     private int value = 100;
     private Listener listener;
+    static final int ICON_SPEAKER = 0;
+    static final int ICON_SIZE = 1;
+    private int icon = ICON_SPEAKER;
+
+    /** What is drawn inside the left end: a speaker (volume) or a small and a big letter (size). */
+    void setIcon(int kind) {
+        icon = kind;
+        invalidate();
+    }
 
     PillSlider(Context c) {
         super(c);
@@ -86,6 +95,15 @@ final class PillSlider extends View {
         int ic = onFill ? (Pal.dark ? 0xFF111513 : 0xFFFFFFFF) : Pal.muted;
         paint.setColor(ic);
         paint.setStyle(Paint.Style.FILL);
+        if (icon == ICON_SIZE) {
+            paint.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            paint.setTextAlign(Paint.Align.LEFT);
+            paint.setTextSize(11 * d);
+            canvas.drawText("A", x, cy + 4 * d, paint);
+            paint.setTextSize(19 * d);
+            canvas.drawText("A", x + 11 * d, cy + 7 * d, paint);
+            return;
+        }
         canvas.drawRect(x, cy - 3.2f * d, x + 4 * d, cy + 3.2f * d, paint);
         clip.reset();
         clip.moveTo(x + 4 * d, cy - 3.2f * d);

@@ -272,6 +272,17 @@
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
 
+        <!-- The lock-screen peek for ordinary reminders: dim black page for a few seconds. -->
+        <activity
+            android:name=".PeekActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:taskAffinity=""
+            android:theme="@style/AppThemeAlert" />
+
         <activity
             android:name=".AlarmActivity"
             android:exported="false"
