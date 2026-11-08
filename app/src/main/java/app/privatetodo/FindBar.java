@@ -35,6 +35,7 @@ final class FindBar extends LinearLayout {
     private final float d;
     private final EditText find;
     private final EditText rep;
+    private LinearLayout replaceRow;
     private final TextView count;
     private final TextView aa;
     private boolean matchCase;
@@ -91,6 +92,7 @@ final class FindBar extends LinearLayout {
         LayoutParams r2lp = new LayoutParams(-1, -2);
         r2lp.topMargin = px(6);
         addView(r2, r2lp);
+        replaceRow = r2;
 
         find.addTextChangedListener(new TextWatcher() {
             @Override
@@ -112,6 +114,11 @@ final class FindBar extends LinearLayout {
             return true;
         });
         Fonts.apply(this);
+    }
+
+    /** Find only: hides the Replace row so the panel is just the search field. */
+    void setReplaceVisible(boolean show) {
+        replaceRow.setVisibility(show ? VISIBLE : GONE);
     }
 
     private int px(int dp) {

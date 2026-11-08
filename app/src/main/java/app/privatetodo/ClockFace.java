@@ -117,9 +117,22 @@ final class ClockFace extends View {
         sp(c).edit().putInt("clock_font", v).apply();
     }
 
-    private Typeface own(Typeface t) {
+    static final int PART_TIME = 1, PART_DATE = 2, PART_TEXT = 4;
+
+    /** Which parts of the clock and the peek use the chosen font (the rest keep their default lettering). */
+    static int fontParts(Context c) {
+        return sp(c).getInt("clock_font_parts", 7);
+    }
+
+    static void setFontParts(Context c, int v) {
+        sp(c).edit().putInt("clock_font_parts", v & 7).apply();
+    }
+
+    private Typeface own(Typeface t, float size) {
         int idx = fontIndex(getContext());
         if (idx < 0) return t;
+        int part = size <= sp(17) ? PART_DATE : PART_TIME; // the small lines are the date, the big ones the time
+        if ((fontParts(getContext()) & part) == 0) return t;
         NoteFonts.init(getContext());
         Typeface f = NoteFonts.face(idx);
         if (f == null) return t;
@@ -193,7 +206,7 @@ final class ClockFace extends View {
 
     private void text(Canvas c, String s, float x, float y, float size, Typeface t, int color, Paint.Align a) {
         p.setTextSize(size);
-        p.setTypeface(own(t));
+        p.setTypeface(own(t, size));
         p.setColor(color);
         p.setTextAlign(a);
         c.drawText(s, x, y, p);
@@ -201,7 +214,7 @@ final class ClockFace extends View {
 
     private float width(String s, float size, Typeface t) {
         p.setTextSize(size);
-        p.setTypeface(own(t));
+        p.setTypeface(own(t, size));
         return p.measureText(s);
     }
 

@@ -2379,9 +2379,9 @@ public class NoteEditorActivity extends Activity {
         final boolean quick = ShareKit.always(this);
         final String zoomItem = zoomLockValue() > 0 ? "Unlock zoom" : "Lock zoom";
         String[] items = quick
-                ? new String[]{"Share (" + ShareKit.NAMES[ShareKit.lastFormat(this)] + ")", "Share as\u2026", "Find & replace",
+                ? new String[]{"Share (" + ShareKit.NAMES[ShareKit.lastFormat(this)] + ")", "Share as\u2026", "Find", "Find & replace",
                 "Page style & colour\u2026", "Opens at\u2026", zoomItem, "Appearance\u2026", "Move to Bin"}
-                : new String[]{"Share\u2026", "Find & replace", "Page style & colour\u2026", "Opens at\u2026",
+                : new String[]{"Share\u2026", "Find", "Find & replace", "Page style & colour\u2026", "Opens at\u2026",
                 zoomItem, "Appearance\u2026", "Move to Bin"};
         new Dlg.Builder(this).setItems(items, (d, w) -> {
             int k = quick ? w : w + 1; // with a remembered format there is one extra item at the front
@@ -2389,15 +2389,16 @@ public class NoteEditorActivity extends Activity {
                 ShareKit.send(this, ShareKit.lastFormat(this), body.getText(), title.getText().toString(), body.getTextSize(),
                         Paper.styleFor(this, noteId), Paper.colorFor(this, noteId), ShareKit.withPage(this));
             } else if (k == 1) openShare();
-            else if (k == 2) openFind();
-            else if (k == 3) paperDialog();
-            else if (k == 4) {
+            else if (k == 2) openFind(false);
+            else if (k == 3) openFind(true);
+            else if (k == 4) paperDialog();
+            else if (k == 5) {
                 if (noteId <= 0) {
                     saveNow();
                 }
                 openAtDialog();
-            } else if (k == 5) toggleZoomLock();
-            else if (k == 6) themeDialog();
+            } else if (k == 6) toggleZoomLock();
+            else if (k == 7) themeDialog();
             else confirmDelete();
         }).show();
     }
@@ -2416,11 +2417,15 @@ public class NoteEditorActivity extends Activity {
 
     private FindBar findBar;
 
-    private void openFind() {
-        if (findBar != null && findBar.isOpen()) return;
+    private void openFind(boolean withReplace) {
+        if (findBar != null && findBar.isOpen()) {
+            findBar.setReplaceVisible(withReplace);
+            return;
+        }
         if (reading) return;
         if (sharePanel != null && sharePanel.isOpen()) sharePanel.close();
         findBar = new FindBar(this, body, noteScroll, edit -> keepScroll(edit));
+        findBar.setReplaceVisible(withReplace);
         findBar.open(areaView != null ? areaView : (FrameLayout) noteScroll.getParent(), 0);
     }
 

@@ -16,6 +16,13 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.61
+- Settings > Full-screen alert rebuilt: one preview pinned at the top (switch Full-screen alert / Lock-screen peek), options below in your order; "test on the lock screen" rows removed.
+- Font parts: choose whether Time, Date and Reminder text use the chosen font.
+- Test mode: both tests stay open with a small dot at the bottom; tap it for a panel that rises from the bottom and changes the live screen.
+- Note menu: separate "Find" (search only) next to "Find & replace".
+- Done haptics icon is dark in light mode; Water reminders has a water-drop icon.
+
 ### v3.60
 - Theme switch: the app no longer tells Android its night mode (that made Android restart the whole app = the flash). One own rebuild under the circle reveal, light <-> dark and dark <-> AMOLED alike.
 - Big notes: the opening state is the stored text, no second full serialise while you try to scroll.

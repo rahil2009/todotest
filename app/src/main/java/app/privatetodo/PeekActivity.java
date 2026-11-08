@@ -31,6 +31,50 @@ public class PeekActivity extends Activity {
     private final Handler h = new Handler(Looper.getMainLooper());
     private View content;
     private BroadcastReceiver off;
+    static final String EXTRA_TEST = "test";
+    private FrameLayout outer;
+    private TestSheet sheet;
+    private String pTitle = "";
+    private String pText = "";
+
+    private void rebuild() {
+        outer.removeViewAt(0);
+        outer.addView(build(pTitle, pText), 0);
+        content.setAlpha(1f);
+    }
+
+    private void fillSheet() {
+        sheet.heading("Clock size on the peek");
+        sheet.slider("Size", Peek.sizePct(this), v -> {
+            Peek.setSizePct(this, v);
+            rebuild();
+        });
+        sheet.heading("Font");
+        sheet.fontChips(ClockFace.fontIndex(this), v -> {
+            ClockFace.setFontIndex(this, v);
+            rebuild();
+        });
+        sheet.heading("Which parts use it");
+        sheet.toggle("Time", (ClockFace.fontParts(this) & ClockFace.PART_TIME) != 0, on -> part(ClockFace.PART_TIME, on));
+        sheet.toggle("Date", (ClockFace.fontParts(this) & ClockFace.PART_DATE) != 0, on -> part(ClockFace.PART_DATE, on));
+        sheet.toggle("Reminder text", (ClockFace.fontParts(this) & ClockFace.PART_TEXT) != 0, on -> part(ClockFace.PART_TEXT, on));
+        sheet.heading("Date");
+        sheet.toggle("Show the date", ClockFace.showDate(this), on -> {
+            ClockFace.setShowDate(this, on);
+            rebuild();
+        });
+        sheet.heading("Stays lit for");
+        final int[] secOpts = {3, 5, 8, 12};
+        int cur = 0;
+        for (int i = 0; i < secOpts.length; i++) if (secOpts[i] == Peek.seconds(this)) cur = i;
+        sheet.chips(new String[]{"3 s", "5 s", "8 s", "12 s"}, cur, k -> Peek.setSeconds(this, secOpts[k]));
+    }
+
+    private void part(int bit, boolean on) {
+        int m = ClockFace.fontParts(this);
+        ClockFace.setFontParts(this, on ? m | bit : m & ~bit);
+        rebuild();
+    }
 
     @Override
     protected void onCreate(Bundle b) {
@@ -58,16 +102,28 @@ public class PeekActivity extends Activity {
 
         String title = getIntent().getStringExtra(Peek.EXTRA_TITLE);
         String text = getIntent().getStringExtra(Peek.EXTRA_TEXT);
-        setContentView(build(title == null ? "Reminder" : title, text == null ? "" : text));
+        pTitle = title == null ? "Reminder" : title;
+        pText = text == null ? "" : text;
+        final boolean test = getIntent().getBooleanExtra(EXTRA_TEST, false);
+        outer = new FrameLayout(this);
+        outer.setBackgroundColor(Color.BLACK);
+        outer.addView(build(pTitle, pText));
+        setContentView(outer);
+        if (test) { // test mode: stays lit; the dot at the bottom opens the options, every change shows live
+            sheet = TestSheet.attach(outer);
+            fillSheet();
+        }
 
         content.setAlpha(0f);
         content.animate().alpha(1f).setDuration(450).start();
         final int secs = Math.max(2, Peek.seconds(this));
-        h.postDelayed(() -> { // fade to black, keep the screen from being held awake
-            content.animate().alpha(0f).setDuration(900).start();
-            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        }, secs * 1000L);
-        h.postDelayed(this::finish, (secs + 25) * 1000L); // never lingers if the screen never turns off
+        if (!test) {
+            h.postDelayed(() -> { // fade to black, keep the screen from being held awake
+                content.animate().alpha(0f).setDuration(900).start();
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            }, secs * 1000L);
+            h.postDelayed(this::finish, (secs + 25) * 1000L); // never lingers if the screen never turns off
+        }
 
         off = new BroadcastReceiver() {
             @Override
@@ -79,9 +135,9 @@ public class PeekActivity extends Activity {
     }
 
     /** The clock font chosen in Settings (any note font), else the thin system face. */
-    private Typeface face(boolean bold) {
+    private Typeface face(boolean bold, int part) {
         int idx = ClockFace.fontIndex(this);
-        if (idx >= 0) {
+        if (idx >= 0 && (ClockFace.fontParts(this) & part) != 0) {
             NoteFonts.init(this);
             Typeface f = NoteFonts.face(idx);
             if (f != null) return Typeface.create(f, bold ? Typeface.BOLD : Typeface.NORMAL);
@@ -92,7 +148,9 @@ public class PeekActivity extends Activity {
     private View build(String title, String text) {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
-        root.setOnClickListener(v -> finish());
+        root.setOnClickListener(v -> {
+            if (sheet != null && sheet.isOpen()) sheet.close(); else finish();
+        });
         float d = getResources().getDisplayMetrics().density;
         float scale = Peek.sizePct(this) / 100f;
 
@@ -106,7 +164,7 @@ public class PeekActivity extends Activity {
         TextView time = new TextView(this);
         time.setText(new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.getDefault()).format(now));
         time.setTextSize(76 * scale);
-        time.setTypeface(face(false));
+        time.setTypeface(face(false, ClockFace.PART_TIME));
         time.setTextColor(0xE6FFFFFF);
         time.setIncludeFontPadding(false);
         time.setGravity(Gravity.CENTER);
@@ -115,17 +173,18 @@ public class PeekActivity extends Activity {
         TextView date = new TextView(this);
         date.setText(new SimpleDateFormat("EEEE d MMMM", Locale.getDefault()).format(now));
         date.setTextSize(14 * Math.max(0.85f, scale));
-        date.setTypeface(face(false));
+        date.setTypeface(face(false, ClockFace.PART_DATE));
         date.setTextColor(0x99FFFFFF);
         date.setGravity(Gravity.CENTER);
         date.setPadding(0, Math.round(4 * d), 0, Math.round(30 * d));
+        date.setVisibility(ClockFace.showDate(this) ? View.VISIBLE : View.GONE);
         col.addView(date, new LinearLayout.LayoutParams(-2, -2));
 
         // the reminder: plain centred lines, nothing boxed
         TextView t = new TextView(this);
         t.setText(title);
         t.setTextSize(19);
-        t.setTypeface(face(true));
+        t.setTypeface(face(true, ClockFace.PART_TEXT));
         t.setTextColor(0xF0FFFFFF);
         t.setGravity(Gravity.CENTER);
         t.setMaxLines(3);
@@ -138,7 +197,7 @@ public class PeekActivity extends Activity {
             TextView s2 = new TextView(this);
             s2.setText(text);
             s2.setTextSize(13);
-            s2.setTypeface(face(false));
+            s2.setTypeface(face(false, ClockFace.PART_TEXT));
             s2.setTextColor(0x8CFFFFFF);
             s2.setGravity(Gravity.CENTER);
             s2.setMaxLines(2);

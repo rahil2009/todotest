@@ -40,6 +40,7 @@ final class IconView extends View {
     static final int CLOSE_X = 29;
     static final int LENT = 30;
     static final int SPACES = 31;
+    static final int WATER = 32;
 
     private final int kind;
     private boolean on;
@@ -305,6 +306,22 @@ final class IconView extends View {
                 canvas.drawLine(cx + 3 * d, cy - 3 * d, cx + 8.5f * d, cy - 8.5f * d, paint);
                 canvas.drawLine(cx + 4.8f * d, cy - 8.5f * d, cx + 8.5f * d, cy - 8.5f * d, paint);
                 canvas.drawLine(cx + 8.5f * d, cy - 8.5f * d, cx + 8.5f * d, cy - 4.8f * d, paint);
+                break;
+            }
+            case WATER: { // a water drop with a small shine
+                stroke(1.9f, tint != 0 ? tint : Pal.ink);
+                path.reset();
+                path.moveTo(cx, cy - 9.5f * d);
+                path.cubicTo(cx + 2.5f * d, cy - 5.5f * d, cx + 7.5f * d, cy - 1.5f * d, cx + 7.5f * d, cy + 2.8f * d);
+                path.cubicTo(cx + 7.5f * d, cy + 6.8f * d, cx + 4.2f * d, cy + 9.5f * d, cx, cy + 9.5f * d);
+                path.cubicTo(cx - 4.2f * d, cy + 9.5f * d, cx - 7.5f * d, cy + 6.8f * d, cx - 7.5f * d, cy + 2.8f * d);
+                path.cubicTo(cx - 7.5f * d, cy - 1.5f * d, cx - 2.5f * d, cy - 5.5f * d, cx, cy - 9.5f * d);
+                path.close();
+                canvas.drawPath(path, paint);
+                path.reset();
+                path.moveTo(cx - 3.8f * d, cy + 3f * d);
+                path.quadTo(cx - 3.6f * d, cy + 5.6f * d, cx - 1.2f * d, cy + 6.4f * d);
+                canvas.drawPath(path, paint);
                 break;
             }
             case SPACES: { // four rounded tiles, one filled: the hub of extra sections

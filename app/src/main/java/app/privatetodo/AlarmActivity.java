@@ -87,8 +87,69 @@ public class AlarmActivity extends Activity {
         if (fx != null && mode == AlertFx.EDGE) { // the edge glow frames everything, on top
             frame.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));
         }
-        setContentView(frame);
+        if (outer == null) {
+            outer = new android.widget.FrameLayout(this);
+            outer.addView(frame, new android.widget.FrameLayout.LayoutParams(-1, -1));
+            setContentView(outer);
+            if (getIntent().getBooleanExtra(EXTRA_TEST, false)) {
+                sheet = TestSheet.attach(outer);
+                fillSheet();
+            }
+        } else { // test mode changed something: swap the screen under the open panel
+            outer.removeViewAt(0);
+            outer.addView(frame, 0, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        }
         Fonts.apply(getWindow().getDecorView());
+    }
+
+    static final String EXTRA_TEST = "test";
+    private android.widget.FrameLayout outer;
+    private TestSheet sheet;
+
+    private void fillSheet() {
+        sheet.heading("Animation");
+        sheet.chips(AlertFx.NAMES, Prefs.alertAnim(this), v -> {
+            Prefs.setAlertAnim(this, v);
+            show();
+        });
+        sheet.heading("Clock face");
+        sheet.chips(ClockFace.NAMES, ClockFace.chosen(this), v -> {
+            ClockFace.setChosen(this, v);
+            show();
+        });
+        sheet.slider("Clock size", ClockFace.sizePct(this), v -> {
+            ClockFace.setSizePct(this, v);
+            show();
+        });
+        sheet.heading("Clock font");
+        sheet.fontChips(ClockFace.fontIndex(this), v -> {
+            ClockFace.setFontIndex(this, v);
+            show();
+        });
+        sheet.heading("Which parts use it");
+        sheet.toggle("Time", (ClockFace.fontParts(this) & ClockFace.PART_TIME) != 0, on -> part(ClockFace.PART_TIME, on));
+        sheet.toggle("Date", (ClockFace.fontParts(this) & ClockFace.PART_DATE) != 0, on -> part(ClockFace.PART_DATE, on));
+        sheet.heading("Colour");
+        sheet.chips(new String[]{"White", "Cream", "Sky", "Mint", "Rose", "Lilac", "Teal", "Amber", "Coral", "Blue", "Violet", "Green"},
+                Math.max(0, indexOf(ClockFace.COLORS, ClockFace.mainColor(this))), v -> {
+                    ClockFace.setMainColor(this, ClockFace.COLORS[v]);
+                    show();
+                });
+        sheet.toggle("Show the date", ClockFace.showDate(this), on -> {
+            ClockFace.setShowDate(this, on);
+            show();
+        });
+    }
+
+    private static int indexOf(int[] a, int v) {
+        for (int i = 0; i < a.length; i++) if (a[i] == v) return i;
+        return -1;
+    }
+
+    private void part(int bit, boolean on) {
+        int m = ClockFace.fontParts(this);
+        ClockFace.setFontParts(this, on ? m | bit : m & ~bit);
+        show();
     }
 
     private View build(Task t, List<Sub> subs) {

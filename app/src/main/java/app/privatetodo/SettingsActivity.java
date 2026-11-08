@@ -151,7 +151,21 @@ public class SettingsActivity extends Activity {
             lnote.setPadding(dp(8), dp(16), dp(8), 0);
             col.addView(lnote);
         } else if (page == 3) {
-            col.addView(alertCard());
+            LinearLayout ac = alertCard();
+            col.removeView(header);
+            LinearLayout top = new LinearLayout(this);
+            top.setOrientation(LinearLayout.VERTICAL);
+            top.setBackgroundColor(Pal.bg);
+            top.setPadding(dp(16), dp(12), dp(16), dp(8));
+            top.addView(header);
+            top.addView(alertPreview);
+            col.addView(ac);
+            LinearLayout rootCol = new LinearLayout(this);
+            rootCol.setOrientation(LinearLayout.VERTICAL);
+            rootCol.setBackgroundColor(Pal.bg);
+            rootCol.addView(top, new LinearLayout.LayoutParams(-1, -2));
+            rootCol.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1f));
+            return rootCol;
         } else if (page == 4) {
             col.addView(backupCard());
             View gap = new View(this);
@@ -282,7 +296,7 @@ public class SettingsActivity extends Activity {
                         "animations animation tick complete done confetti ring fireworks sweep rain celebrate"},
                 {IconView.SWIPE_DONE, "Done haptics", Hap.NAMES[Hap.pick(this)], 8,
                         "haptics haptic vibration vibrate feedback completed done complete pixel"},
-                {IconView.HABIT, "Water reminders", WaterAlert.enabled(this)
+                {IconView.WATER, "Water reminders", WaterAlert.enabled(this)
                         ? WaterAlert.times(this).size() + " reminders a day" : "Off", 9,
                         "water drink habit reminder alert full screen alarm hydrate times per day how many"},
                 {IconView.NOTE, "Notebook", "Pin up to " + Prefs.maxPins(this), 6,
@@ -320,7 +334,9 @@ public class SettingsActivity extends Activity {
             bg2.setShape(GradientDrawable.OVAL);
             bg2.setColor(Pal.chip);
             badge.setBackground(bg2);
-            badge.addView(new IconView(this, (Integer) t[0]), new LinearLayout.LayoutParams(dp(26), dp(26)));
+            IconView tileIcon = new IconView(this, (Integer) t[0]);
+            if ((Integer) t[0] == IconView.SWIPE_DONE) tileIcon.setTint(Pal.ink); // the swipe tick is white; the tile needs the ink colour
+            badge.addView(tileIcon, new LinearLayout.LayoutParams(dp(26), dp(26)));
             tile.addView(badge, new LinearLayout.LayoutParams(dp(44), dp(44)));
             TextView name = text((String) t[1], 16, Pal.ink, true);
             name.setPadding(dp(14), 0, dp(8), 0);
@@ -976,25 +992,16 @@ public class SettingsActivity extends Activity {
         return t;
     }
 
+    private LinearLayout alertPreview;
+
     private LinearLayout alertCard() {
         LinearLayout alertCard = card();
         alertCard.addView(text("Animation", 16, Pal.ink, true));
-        alertCard.addView(text("Plays behind the alarm screen. Tap one to preview it.", 13, Pal.muted, false));
-        final android.widget.FrameLayout preview = new android.widget.FrameLayout(this);
-        GradientDrawable pbg = new GradientDrawable();
-        pbg.setColor(0xFF111513);
-        pbg.setCornerRadius(dp(18));
-        preview.setBackground(pbg);
-        preview.setClipToOutline(true);
+        alertCard.addView(text("Plays behind the alarm screen. The preview at the top shows it.", 13, Pal.muted, false));
         final TextView[] fxChips = new TextView[AlertFx.NAMES.length];
+        final Runnable[] render = new Runnable[1];
         final Runnable showFx = () -> {
-            preview.removeAllViews();
             int cur = Prefs.alertAnim(this);
-            View fx = AlertFx.create(this, cur);
-            if (fx != null) preview.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));
-            TextView clock = text("9:41", 40, 0xFFFFFFFF, true);
-            clock.setGravity(Gravity.CENTER);
-            preview.addView(clock, new android.widget.FrameLayout.LayoutParams(-1, -1));
             for (int i = 0; i < fxChips.length; i++) {
                 boolean on = i == cur;
                 fxChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
@@ -1003,6 +1010,7 @@ public class SettingsActivity extends Activity {
                 cg.setColor(on ? Pal.sel : Pal.chip);
                 fxChips[i].setBackground(cg);
             }
+            if (render[0] != null) render[0].run();
         };
         FlowLayout fxRow = new FlowLayout(this, dp(6), dp(6));
         for (int i = 0; i < AlertFx.NAMES.length; i++) {
@@ -1022,11 +1030,6 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams frlp = new LinearLayout.LayoutParams(-1, -2);
         frlp.topMargin = dp(10);
         alertCard.addView(fxRow, frlp);
-        LinearLayout.LayoutParams plp2 = new LinearLayout.LayoutParams(-1, dp(150));
-        plp2.topMargin = dp(10);
-        plp2.bottomMargin = dp(6);
-        alertCard.addView(preview, plp2);
-        showFx.run();
 
         // ---- clock face
         TextView cft = text("Clock face", 16, Pal.ink, true);
@@ -1035,17 +1038,6 @@ public class SettingsActivity extends Activity {
         alertCard.addView(text("The clock on the alarm screen. Pick a face, then size it and colour it.", 13, Pal.muted, false));
         final ClockFace face = new ClockFace(this, ClockFace.chosen(this));
         face.setScale(0.62f);
-        android.widget.FrameLayout fbox = new android.widget.FrameLayout(this);
-        GradientDrawable fbg = new GradientDrawable();
-        fbg.setColor(0xFF111513);
-        fbg.setCornerRadius(dp(18));
-        fbox.setBackground(fbg);
-        fbox.setPadding(dp(22), dp(18), dp(22), dp(18));
-        fbox.addView(face, new android.widget.FrameLayout.LayoutParams(-1, -2));
-        LinearLayout.LayoutParams fbl = new LinearLayout.LayoutParams(-1, -2);
-        fbl.topMargin = dp(10);
-        fbl.bottomMargin = dp(6);
-        alertCard.addView(fbox, fbl); // preview first, so it stays in view while you pick
         final TextView[] faceChips = new TextView[ClockFace.NAMES.length];
         final Runnable paintFaces = () -> {
             int cur = ClockFace.chosen(this);
@@ -1070,6 +1062,7 @@ public class SettingsActivity extends Activity {
                 ClockFace.setChosen(this, f);
                 face.setFace(f);
                 paintFaces.run();
+                render[0].run();
             });
             faceChips[i] = chip;
             faceRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(40)));
@@ -1097,6 +1090,7 @@ public class SettingsActivity extends Activity {
                 ClockFace.setSizePct(SettingsActivity.this, pct);
                 szPct.setText(pct + "%");
                 face.refresh();
+                render[0].run();
             }
 
             @Override
@@ -1147,6 +1141,7 @@ public class SettingsActivity extends Activity {
                 ClockFace.setFontIndex(this, f);
                 face.refresh();
                 paintFonts.run();
+                render[0].run();
             });
             fontChips[i] = chip;
             fontRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(40)));
@@ -1154,6 +1149,43 @@ public class SettingsActivity extends Activity {
         paintFonts.run();
         alertCard.addView(fontRow);
         alertCard.addView(text("Fonts you import in Settings > Notebook show up here too.", 12, Pal.muted, false));
+        TextView ptl = text("Which parts use the font", 15, Pal.ink, true);
+        ptl.setPadding(0, dp(14), 0, dp(6));
+        alertCard.addView(ptl);
+        String[] partNames = {"Time", "Date", "Reminder text"};
+        int[] partBits = {ClockFace.PART_TIME, ClockFace.PART_DATE, ClockFace.PART_TEXT};
+        final TextView[] partChips = new TextView[3];
+        final Runnable paintParts = () -> {
+            for (int i = 0; i < 3; i++) {
+                boolean on = (ClockFace.fontParts(this) & partBits[i]) != 0;
+                partChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                partChips[i].setBackground(cg);
+            }
+        };
+        LinearLayout partRow = new LinearLayout(this);
+        for (int i = 0; i < 3; i++) {
+            final int bit = partBits[i];
+            TextView chip = text(partNames[i], 14, Pal.muted, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setMinHeight(dp(40));
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                ClockFace.setFontParts(this, ClockFace.fontParts(this) ^ bit);
+                paintParts.run();
+                face.refresh();
+                render[0].run();
+            });
+            partChips[i] = chip;
+            LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            pl.rightMargin = dp(i < 2 ? 6 : 0);
+            partRow.addView(chip, pl);
+        }
+        paintParts.run();
+        alertCard.addView(partRow);
+        alertCard.addView(text("Off = that part keeps its normal lettering. Reminder text is the title line on the peek.", 12, Pal.muted, false));
 
         // colours
         alertCard.addView(colourRow("Main colour", false, face));
@@ -1162,6 +1194,7 @@ public class SettingsActivity extends Activity {
                 ClockFace.showDate(this), on -> {
                     ClockFace.setShowDate(this, on);
                     face.refresh();
+                    render[0].run();
                 }));
 
         // lock-screen peek for ordinary reminders
@@ -1220,6 +1253,7 @@ public class SettingsActivity extends Activity {
                 int pct = 60 + Math.round(value * 0.8f);
                 Peek.setSizePct(SettingsActivity.this, pct);
                 pkPct.setText(pct + "%");
+                render[0].run();
             }
 
             @Override
@@ -1235,17 +1269,108 @@ public class SettingsActivity extends Activity {
         alertCard.addView(pkBar, pkl);
         alertCard.addView(text("The peek uses the Clock font chosen above.", 12, Pal.muted, false));
         alertCard.addView(backupRow("Test the peek now",
-                "Shows the black page right here with a sample reminder",
+                "Opens the peek here. Tap the little dot at the bottom to change things live",
                 v -> startActivity(new Intent(this, PeekActivity.class)
+                        .putExtra(PeekActivity.EXTRA_TEST, true)
                         .putExtra(Peek.EXTRA_TITLE, "Test reminder")
                         .putExtra(Peek.EXTRA_TEXT, "Today, " + android.text.format.DateFormat.format("HH:mm", new java.util.Date())))));
-        alertCard.addView(backupRow("Test the peek on the lock screen",
-                "A normal reminder in 10 seconds: press the power button to lock the phone first", v -> testPeek()));
-
         alertCard.addView(backupRow("Test full-screen alert",
-                "Shows the alarm screen right now with sample data", v -> testAlert(0)));
-        alertCard.addView(backupRow("Test on the lock screen",
-                "Rings in 10 seconds: press the power button to lock the phone first", v -> testAlert(10)));
+                "Opens the alarm screen here. Tap the little dot at the bottom to change things live", v -> testAlert(0)));
+
+        // ---- the one preview that stays pinned at the top of this page
+        final android.widget.FrameLayout pv = new android.widget.FrameLayout(this);
+        pv.setClipToOutline(true);
+        GradientDrawable pbg = new GradientDrawable();
+        pbg.setColor(0xFF111513);
+        pbg.setCornerRadius(dp(18));
+        pv.setBackground(pbg);
+        pv.setClipToOutline(true);
+        final boolean[] peekMode = {false};
+        render[0] = () -> {
+            pv.removeAllViews();
+            if (face.getParent() instanceof android.view.ViewGroup) ((android.view.ViewGroup) face.getParent()).removeView(face);
+            GradientDrawable bgd = new GradientDrawable();
+            bgd.setCornerRadius(dp(18));
+            if (!peekMode[0]) {
+                bgd.setColor(0xFF111513);
+                pv.setBackground(bgd);
+                View fx = AlertFx.create(this, Prefs.alertAnim(this));
+                if (fx != null) pv.addView(fx, new android.widget.FrameLayout.LayoutParams(-1, -1));
+                android.widget.FrameLayout.LayoutParams fl = new android.widget.FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
+                fl.leftMargin = dp(18);
+                fl.rightMargin = dp(18);
+                pv.addView(face, fl);
+            } else {
+                bgd.setColor(0xFF000000);
+                pv.setBackground(bgd);
+                LinearLayout col2 = new LinearLayout(this);
+                col2.setOrientation(LinearLayout.VERTICAL);
+                col2.setGravity(Gravity.CENTER_HORIZONTAL);
+                float sc = Peek.sizePct(this) / 100f;
+                int parts = ClockFace.fontParts(this);
+                int fi = ClockFace.fontIndex(this);
+                NoteFonts.init(this);
+                android.graphics.Typeface custom = fi >= 0 ? NoteFonts.face(fi) : null;
+                TextView tm = text("9:41", 1, 0xE6FFFFFF, false);
+                tm.setTextSize(46 * sc);
+                tm.setTag("keepfont");
+                tm.setIncludeFontPadding(false);
+                tm.setTypeface(custom != null && (parts & ClockFace.PART_TIME) != 0 ? custom
+                        : android.graphics.Typeface.create("sans-serif-thin", android.graphics.Typeface.NORMAL));
+                col2.addView(tm);
+                if (ClockFace.showDate(this)) {
+                    TextView dt = text("Sunday 8 November", 1, 0x99FFFFFF, false);
+                    dt.setTextSize(12);
+                    dt.setTag("keepfont");
+                    if (custom != null && (parts & ClockFace.PART_DATE) != 0) dt.setTypeface(custom);
+                    dt.setPadding(0, dp(2), 0, dp(14));
+                    col2.addView(dt);
+                } else {
+                    tm.setPadding(0, 0, 0, dp(14));
+                }
+                TextView rt = text("Test reminder", 1, 0xF0FFFFFF, true);
+                rt.setTextSize(16);
+                rt.setTag("keepfont");
+                if (custom != null && (parts & ClockFace.PART_TEXT) != 0) rt.setTypeface(custom, android.graphics.Typeface.BOLD);
+                col2.addView(rt);
+                pv.addView(col2, new android.widget.FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+            }
+        };
+        alertPreview = new LinearLayout(this);
+        alertPreview.setOrientation(LinearLayout.VERTICAL);
+        alertPreview.addView(pv, new LinearLayout.LayoutParams(-1, dp(190)));
+        LinearLayout modes = new LinearLayout(this);
+        final TextView[] mc = new TextView[2];
+        final Runnable paintModes = () -> {
+            for (int i = 0; i < 2; i++) {
+                boolean on = (i == 1) == peekMode[0];
+                mc[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                mc[i].setBackground(cg);
+            }
+        };
+        String[] mn = {"Full-screen alert", "Lock-screen peek"};
+        for (int i = 0; i < 2; i++) {
+            final int k = i;
+            mc[i] = text(mn[i], 13, Pal.muted, true);
+            mc[i].setGravity(Gravity.CENTER);
+            mc[i].setOnClickListener(v -> {
+                peekMode[0] = k == 1;
+                paintModes.run();
+                render[0].run();
+            });
+            LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(0, dp(36), 1f);
+            ml.rightMargin = dp(i == 0 ? 6 : 0);
+            modes.addView(mc[i], ml);
+        }
+        paintModes.run();
+        LinearLayout.LayoutParams mlp = new LinearLayout.LayoutParams(-1, -2);
+        mlp.topMargin = dp(8);
+        alertPreview.addView(modes, mlp);
+        render[0].run();
+        showFx.run();
         return alertCard;
     }
 
@@ -2083,7 +2208,7 @@ public class SettingsActivity extends Activity {
             return;
         }
         RingService.start(this, id, true);
-        startActivity(new Intent(this, AlarmActivity.class).putExtra(Reminders.EXTRA_ID, id));
+        startActivity(new Intent(this, AlarmActivity.class).putExtra(Reminders.EXTRA_ID, id).putExtra(AlarmActivity.EXTRA_TEST, true));
     }
 
     /** A plain (not full-screen) reminder in 10 seconds, to see the lock-screen peek. */
