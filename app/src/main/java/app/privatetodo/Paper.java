@@ -35,6 +35,11 @@ final class Paper {
         return Pal.dark ? DARK[index] : LIGHT[index];
     }
 
+    /** The light-paper version of a colour, whatever the app theme is (used when a note is exported). */
+    static int tintLight(int index) {
+        return index <= 0 || index >= LIGHT.length ? 0 : LIGHT[index];
+    }
+
     private static android.content.SharedPreferences sp(Context c) {
         return c.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE);
     }

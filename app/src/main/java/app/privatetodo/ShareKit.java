@@ -40,7 +40,9 @@ final class ShareKit {
             "Plain words only. Works everywhere; every style is dropped.",
             "# headings, **bold**, lists and code as Markdown. Good for apps that understand it (Obsidian, GitHub, Notion).",
             "Bold, italic, strike, code, lists and quotes use WhatsApp's own marks, so they show as styled text. Colours, sizes, fonts and tables cannot be sent as text.",
-            "A PDF with the note's look: colours, sizes, fonts, tables. Shared as a file."};
+            "A PDF with the note's look: colours, sizes, fonts, tables, and (your choice) the page style and colour. Shared as a file."};
+
+    private static float pdfD = 3f;
 
     private ShareKit() {
     }
@@ -60,6 +62,15 @@ final class ShareKit {
 
     static void remember(Context c, int fmt, boolean always) {
         sp(c).edit().putInt("share_fmt", fmt).putBoolean("share_always", always).apply();
+    }
+
+    /** Whether a PDF carries the note's page style and colour. */
+    static boolean withPage(Context c) {
+        return sp(c).getBoolean("share_page", true);
+    }
+
+    static void setWithPage(Context c, boolean v) {
+        sp(c).edit().putBoolean("share_page", v).apply();
     }
 
     // ------------------------------------------------------------------ converting
@@ -113,7 +124,8 @@ final class ShareKit {
     }
 
     /** The note as a PDF in the share cache, or null if it could not be made. */
-    static File pdf(Context c, Spanned body, String title, float screenTextPx) {
+    static File pdf(Context c, Spanned body, String title, float screenTextPx, int pStyle, int pColor) {
+        pdfD = c.getResources().getDisplayMetrics().density;
         File dir = SharedFiles.dir(c);
         File[] old = dir.listFiles();
         if (old != null) for (File f : old) f.delete(); // only the file being shared lives here
@@ -121,10 +133,10 @@ final class ShareKit {
         if (name.isEmpty()) name = "Note";
         File out = new File(dir, name + ".pdf");
         try {
-            writePdf(out, new SpannableStringBuilder(body), title, screenTextPx);
+            writePdf(out, new SpannableStringBuilder(body), title, screenTextPx, pStyle, pColor);
         } catch (RuntimeException | IOException e) {
             try { // a style that would not draw: fall back to the words alone
-                writePdf(out, new SpannableStringBuilder(body.toString()), title, screenTextPx);
+                writePdf(out, new SpannableStringBuilder(body.toString()), title, screenTextPx, pStyle, pColor);
             } catch (RuntimeException | IOException e2) {
                 return null;
             }
@@ -132,7 +144,8 @@ final class ShareKit {
         return out;
     }
 
-    private static void writePdf(File out, SpannableStringBuilder text, String title, float screenTextPx) throws IOException {
+    private static void writePdf(File out, SpannableStringBuilder text, String title, float screenTextPx, int pStyle, int pColor)
+            throws IOException {
         final int pw = 595;
         final int ph = 842;
         final int margin = 44;
@@ -161,6 +174,8 @@ final class ShareKit {
             while (first || line < lines) {
                 PdfDocument.Page page = doc.startPage(new PdfDocument.PageInfo.Builder(pw, ph, pageNo++).create());
                 Canvas c = page.getCanvas();
+                int tint = Paper.tintLight(pColor);
+                if (tint != 0) c.drawColor(tint); // the paper colour, on light paper whatever the app theme is
                 c.save();
                 c.translate(margin, margin);
                 c.scale(k, k);
@@ -178,6 +193,18 @@ final class ShareKit {
                     if (end == line) end = line + 1;
                     c.save();
                     c.translate(0, y - top);
+                    if (pStyle > 0) { // ruled / grid / dots ... over the whole page, lined up with the text
+                        float m = margin / k;
+                        android.graphics.Rect area = new android.graphics.Rect(Math.round(-m), Math.round(top - y - m),
+                                Math.round(width + m), Math.round(top - y + (ph - margin) / k));
+                        int oldInk = Pal.ink;
+                        Pal.ink = 0xFF202020;
+                        try {
+                            Paper.draw(c, pStyle, area, (tp.descent() - tp.ascent()) * 1.15f, 0f, 0f, width, pdfD);
+                        } finally {
+                            Pal.ink = oldInk;
+                        }
+                    }
                     c.clipRect(0, top, width, lay.getLineBottom(end - 1));
                     lay.draw(c);
                     c.restore();
@@ -197,11 +224,11 @@ final class ShareKit {
 
     // ------------------------------------------------------------------ sending
 
-    static void send(Context c, int fmt, Spanned body, String title, float screenTextPx) {
+    static void send(Context c, int fmt, Spanned body, String title, float screenTextPx, int pStyle, int pColor, boolean withPage) {
         String subject = title == null || title.trim().isEmpty() ? "Note" : title.trim();
         Intent i = new Intent(Intent.ACTION_SEND);
         if (fmt == PDF) {
-            File f = pdf(c, body, title, screenTextPx);
+            File f = pdf(c, body, title, screenTextPx, withPage ? pStyle : 0, withPage ? pColor : 0);
             if (f == null) {
                 Toast.makeText(c, "Could not make the PDF", Toast.LENGTH_LONG).show();
                 return;
@@ -223,7 +250,7 @@ final class ShareKit {
     /** A card that sits just above the note's tools: pick the format, optionally keep the choice, share. */
     static final class Panel extends LinearLayout {
         interface Go {
-            void share(int fmt);
+            void share(int fmt, boolean withPage);
         }
 
         private int fmt;
@@ -232,8 +259,14 @@ final class ShareKit {
         private final TextView note;
         private final TextView keepBox;
 
-        Panel(Context c, Go go) {
+        private boolean page;
+        private final boolean hasPage;
+        private final TextView pageBox;
+
+        Panel(Context c, boolean hasPage, Go go) {
             super(c);
+            this.hasPage = hasPage;
+            page = withPage(c);
             final float d = c.getResources().getDisplayMetrics().density;
             setOrientation(VERTICAL);
             int p = Math.round(12 * d);
@@ -292,6 +325,17 @@ final class ShareKit {
             note.setPadding(0, Math.round(8 * d), 0, Math.round(6 * d));
             addView(note);
 
+            pageBox = new TextView(c);
+            pageBox.setTextSize(13);
+            pageBox.setTypeface(Typeface.DEFAULT_BOLD);
+            pageBox.setGravity(Gravity.CENTER_VERTICAL);
+            pageBox.setPadding(Math.round(12 * d), 0, Math.round(12 * d), 0);
+            pageBox.setOnClickListener(v -> {
+                page = !page;
+                paint();
+            });
+            addView(pageBox, new LayoutParams(-1, Math.round(38 * d)));
+
             LinearLayout foot = new LinearLayout(c);
             foot.setGravity(Gravity.CENTER_VERTICAL);
             keepBox = new TextView(c);
@@ -317,8 +361,9 @@ final class ShareKit {
             go1.setBackground(gb);
             go1.setOnClickListener(v -> {
                 remember(c, fmt, keep);
+                setWithPage(c, page);
                 close();
-                go.share(fmt);
+                go.share(fmt, page);
             });
             foot.addView(go1, new LayoutParams(-2, Math.round(38 * d)));
             addView(foot);
@@ -337,6 +382,9 @@ final class ShareKit {
                 chips[i].setBackground(g);
             }
             note.setText(NOTES[fmt]);
+            pageBox.setVisibility(fmt == PDF && hasPage ? View.VISIBLE : View.GONE);
+            pageBox.setText((page ? "\u2611  " : "\u2610  ") + "Include page style and colour");
+            pageBox.setTextColor(page ? Pal.accent : Pal.muted);
             keepBox.setText((keep ? "☑  " : "☐  ") + "Always use this");
             keepBox.setTextColor(keep ? Pal.accent : Pal.muted);
         }

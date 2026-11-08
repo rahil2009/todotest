@@ -24,6 +24,11 @@ final class Prefs {
         return c.getApplicationContext().getSharedPreferences("settings", Context.MODE_PRIVATE);
     }
 
+    /** Light (1) is the only explicit mode that is not dark. */
+    static boolean isDarkMode(int mode) {
+        return mode == 2 || mode == 3;
+    }
+
     static int theme(Context c) {
         return sp(c).getInt("theme", THEME_SYSTEM);
     }

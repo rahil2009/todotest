@@ -555,10 +555,47 @@ final class TaskDb extends SQLiteOpenHelper {
 
     // ------------------------------------------------------------ notebook
 
-    private static final String[] NOTE_COLS = {"id", "title", "body", "plain", "updated", "pinned", "pincolor", "folder"};
+    /**
+     * A database row is handed over in a window of about 2 MB, and reading a longer one throws. Long notes (many
+     * tables and styles make big text) must never hit that, so long cells are not read with the row: the query
+     * returns an empty stand-in plus the length, and the real text is then read in slices of 100,000 characters.
+     */
+    private static final int BIG = 150_000;
 
-    private static Note mapNote(Cursor c) {
-        return new Note(c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getLong(4), c.getLong(5), c.getInt(6), c.getLong(7));
+    private static String safe(String col) {
+        return "CASE WHEN length(" + col + ") > " + BIG + " THEN '' ELSE " + col + " END";
+    }
+
+    private static String slices(SQLiteDatabase db, String table, String col, long rowId) {
+        StringBuilder sb = new StringBuilder();
+        for (int from = 1; ; from += 100_000) {
+            Cursor c = db.rawQuery("SELECT substr(" + col + ", " + from + ", 100000) FROM " + table + " WHERE id = ?",
+                    new String[]{String.valueOf(rowId)});
+            try {
+                if (!c.moveToFirst()) break;
+                String part = c.getString(0);
+                if (part == null || part.isEmpty()) break;
+                sb.append(part);
+            } finally {
+                c.close();
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String full(SQLiteDatabase db, String table, String col, long rowId, String got, long len) {
+        return len > BIG ? slices(db, table, col, rowId) : got;
+    }
+
+    private static final String[] NOTE_COLS = {"id", "title", "CASE WHEN length(body) > 150000 THEN '' ELSE body END",
+            "CASE WHEN length(plain) > 150000 THEN '' ELSE plain END", "updated", "pinned", "pincolor", "folder",
+            "length(body)", "length(plain)"};
+
+    private static Note mapNote(SQLiteDatabase db, Cursor c) {
+        long id = c.getLong(0);
+        return new Note(id, c.getString(1), full(db, "notes", "body", id, c.getString(2), c.getLong(8)),
+                full(db, "notes", "plain", id, c.getString(3), c.getLong(9)),
+                c.getLong(4), c.getLong(5), c.getInt(6), c.getLong(7));
     }
 
     /** All notes, newest edit first; {@code query} filters title and text (empty = all). */
@@ -608,7 +645,7 @@ final class TaskDb extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().query("notes", NOTE_COLS, where, args, null, null,
                 "(pinned > 0) DESC, pinned DESC, " + order);
         try {
-            while (c.moveToNext()) out.add(mapNote(c));
+            while (c.moveToNext()) out.add(mapNote(getReadableDatabase(), c));
         } finally {
             c.close();
         }
@@ -623,7 +660,7 @@ final class TaskDb extends SQLiteOpenHelper {
                 "updated DESC");
         try {
             while (c.moveToNext()) {
-                Note n = mapNote(c);
+                Note n = mapNote(getReadableDatabase(), c);
                 if (RichText.linksTo(n.body, (int) id)) out.add(n);
             }
         } finally {
@@ -636,7 +673,7 @@ final class TaskDb extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().query("notes", NOTE_COLS, "id = ?",
                 new String[]{String.valueOf(id)}, null, null, null);
         try {
-            return c.moveToFirst() ? mapNote(c) : null;
+            return c.moveToFirst() ? mapNote(getReadableDatabase(), c) : null;
         } finally {
             c.close();
         }
@@ -703,7 +740,7 @@ final class TaskDb extends SQLiteOpenHelper {
      */
     private void remember(long id, String title, String body, String plain) {
         SQLiteDatabase db = getWritableDatabase();
-        Cursor c = db.query("notes", new String[]{"title", "body", "plain", "updated"}, "id = ?",
+        Cursor c = db.query("notes", new String[]{"title", safe("body"), safe("plain"), "updated", "length(body)", "length(plain)"}, "id = ?",
                 new String[]{String.valueOf(id)}, null, null, null);
         String oTitle;
         String oBody;
@@ -712,8 +749,8 @@ final class TaskDb extends SQLiteOpenHelper {
         try {
             if (!c.moveToFirst()) return;
             oTitle = c.getString(0);
-            oBody = c.getString(1);
-            oPlain = c.getString(2);
+            oBody = full(db, "notes", "body", id, c.getString(1), c.getLong(4));
+            oPlain = full(db, "notes", "plain", id, c.getString(2), c.getLong(5));
             oUpdated = c.getLong(3);
         } finally {
             c.close();
@@ -721,18 +758,21 @@ final class TaskDb extends SQLiteOpenHelper {
         if (oBody == null || oBody.isEmpty()) return;
         if (oBody.equals(body) && (oTitle == null ? "" : oTitle).equals(title == null ? "" : title)) return;
         long lastSaved = -1;
-        String lastBody = null;
-        Cursor lc = db.query("note_versions", new String[]{"saved", "body"}, "note_id = ?",
+        long lastId = -1;
+        Cursor lc = db.query("note_versions", new String[]{"saved", "id"}, "note_id = ?",
                 new String[]{String.valueOf(id)}, null, null, "saved DESC, id DESC", "1");
         try {
             if (lc.moveToFirst()) {
                 lastSaved = lc.getLong(0);
-                lastBody = lc.getString(1);
+                lastId = lc.getLong(1);
             }
         } finally {
             lc.close();
         }
-        if (oBody.equals(lastBody)) return; // already filed
+        if (lastId >= 0 && android.database.DatabaseUtils.longForQuery(db,
+                "SELECT COUNT(*) FROM note_versions WHERE id = ? AND body = ?", new String[]{String.valueOf(lastId), oBody}) > 0) {
+            return; // already filed
+        }
         int oldLen = oPlain == null ? 0 : oPlain.trim().length();
         int newLen = plain == null ? 0 : plain.trim().length();
         boolean bigDrop = oldLen >= 60 && newLen * 2 < oldLen;
@@ -759,10 +799,14 @@ final class TaskDb extends SQLiteOpenHelper {
         Note n = note(noteId);
         if (n == null || n.body == null || n.body.isEmpty()) return;
         SQLiteDatabase db = getWritableDatabase();
-        Cursor lc = db.query("note_versions", new String[]{"body"}, "note_id = ?",
+        Cursor lc = db.query("note_versions", new String[]{"id"}, "note_id = ?",
                 new String[]{String.valueOf(noteId)}, null, null, "saved DESC, id DESC", "1");
         try {
-            if (lc.moveToFirst() && n.body.equals(lc.getString(0))) return;
+            if (lc.moveToFirst() && android.database.DatabaseUtils.longForQuery(db,
+                    "SELECT COUNT(*) FROM note_versions WHERE id = ? AND body = ?",
+                    new String[]{String.valueOf(lc.getLong(0)), n.body}) > 0) {
+                return;
+            }
         } finally {
             lc.close();
         }
@@ -817,12 +861,15 @@ final class TaskDb extends SQLiteOpenHelper {
     /** The versions of one note, newest first. */
     List<Version> versions(long noteId) {
         List<Version> out = new ArrayList<>();
-        Cursor c = getReadableDatabase().query("note_versions", new String[]{"id", "note_id", "title", "body", "plain", "saved"},
+        SQLiteDatabase vdb = getReadableDatabase();
+        Cursor c = vdb.query("note_versions", new String[]{"id", "note_id", "title", safe("body"), safe("plain"), "saved", "length(body)", "length(plain)"},
                 "note_id = ?", new String[]{String.valueOf(noteId)}, null, null, "saved DESC, id DESC");
         try {
             while (c.moveToNext()) {
-                out.add(new Version(c.getLong(0), c.getLong(1), c.getString(2), c.getString(3), c.getString(4),
-                        c.getLong(5)));
+                long vid = c.getLong(0);
+                out.add(new Version(vid, c.getLong(1), c.getString(2),
+                        full(vdb, "note_versions", "body", vid, c.getString(3), c.getLong(6)),
+                        full(vdb, "note_versions", "plain", vid, c.getString(4), c.getLong(7)), c.getLong(5)));
             }
         } finally {
             c.close();
@@ -835,7 +882,8 @@ final class TaskDb extends SQLiteOpenHelper {
      * history first); otherwise a new note is made. Returns the note's id, or 0 if the version is gone.
      */
     long restoreVersion(long versionId) {
-        Cursor c = getReadableDatabase().query("note_versions", new String[]{"note_id", "title", "body", "plain"},
+        SQLiteDatabase rdb = getReadableDatabase();
+        Cursor c = rdb.query("note_versions", new String[]{"note_id", "title", safe("body"), safe("plain"), "length(body)", "length(plain)"},
                 "id = ?", new String[]{String.valueOf(versionId)}, null, null, null);
         long noteId;
         String title;
@@ -845,8 +893,8 @@ final class TaskDb extends SQLiteOpenHelper {
             if (!c.moveToFirst()) return 0;
             noteId = c.getLong(0);
             title = c.getString(1);
-            body = c.getString(2);
-            plain = c.getString(3);
+            body = full(rdb, "note_versions", "body", versionId, c.getString(2), c.getLong(4));
+            plain = full(rdb, "note_versions", "plain", versionId, c.getString(3), c.getLong(5));
         } finally {
             c.close();
         }
@@ -988,7 +1036,7 @@ final class TaskDb extends SQLiteOpenHelper {
         Cursor c = getReadableDatabase().query("notes", NOTE_COLS, "deleted > 0", null, null, null,
                 "deleted DESC, id DESC");
         try {
-            while (c.moveToNext()) out.add(mapNote(c));
+            while (c.moveToNext()) out.add(mapNote(getReadableDatabase(), c));
         } finally {
             c.close();
         }

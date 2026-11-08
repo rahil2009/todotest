@@ -50,11 +50,17 @@ public class SettingsActivity extends Activity {
         setTheme(Pal.themeRes());
         builtTheme = Pal.themeRes();
         super.onCreate(savedInstanceState);
+        ThemeFx.prepare(this);
         density = getResources().getDisplayMetrics().density;
         page = getIntent().getIntExtra("page", 0);
         setContentView(build());
         Fonts.apply(getWindow().getDecorView());
         ThemeFx.play(this);
+    }
+
+    private boolean isNightNow() {
+        return (getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                == android.content.res.Configuration.UI_MODE_NIGHT_YES;
     }
 
     private boolean resumedOnce;
@@ -201,7 +207,16 @@ public class SettingsActivity extends Activity {
                 ThemeFx.capture(this); // photo of this screen: the rebuilt one opens under it and a circle reveals it
                 Prefs.setTheme(this, mode);
                 Pal.applyNight(this); // tell Android too, so its own dark styling follows the app
-                recreate(); // onCreate re-reads the palette
+                // When the light/dark state really changes, Android rebuilds every screen itself (Android 12+): a
+                // second rebuild from here is what made the switch flash twice. Dark <-> AMOLED and Auto need ours.
+                if (!(android.os.Build.VERSION.SDK_INT >= 31 && mode != 0 && Prefs.isDarkMode(mode) != isNightNow())) {
+                    recreate(); // onCreate re-reads the palette
+                    overridePendingTransition(0, 0);
+                } else { // safety net: if Android did not rebuild this screen after all, do it
+                    getWindow().getDecorView().postDelayed(() -> {
+                        if (!isDestroyed() && !isFinishing()) recreate();
+                    }, 900);
+                }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
             lp.rightMargin = dp(i < 3 ? 6 : 0);
@@ -219,6 +234,32 @@ public class SettingsActivity extends Activity {
         diag.setPadding(0, dp(10), 0, 0);
         themeCard.addView(diag);
         col.addView(themeCard);
+        final java.io.File crashFile = new java.io.File(getFilesDir(), "last_crash.txt");
+        if (crashFile.isFile()) { // the app closed by itself last time: the report is here, on this phone only
+            String report = "";
+            try (java.io.FileInputStream in = new java.io.FileInputStream(crashFile)) {
+                byte[] buf = new byte[(int) Math.min(crashFile.length(), 6000)];
+                int n = in.read(buf);
+                report = new String(buf, 0, Math.max(0, n), "UTF-8");
+            } catch (java.io.IOException ignored) {
+                // unreadable: skip
+            }
+            final String full = report;
+            col.addView(sectionLabel("Last crash report"));
+            LinearLayout cc = card();
+            TextView ct = text(full.length() > 700 ? full.substring(0, 700) + "\u2026" : full, 11, Pal.muted, false);
+            cc.addView(ct);
+            cc.addView(backupRow("Copy report", "Stays on this phone unless you paste it somewhere", v -> {
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("Crash report", full));
+                Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show();
+            }));
+            cc.addView(backupRow("Clear report", "Deletes it from this phone", v -> {
+                crashFile.delete();
+                recreate();
+            }));
+            col.addView(cc);
+        }
         block("appearance theme light dark amoled auto", appLabel, themeCard);
 
         // ---- sounds, inline

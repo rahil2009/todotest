@@ -848,10 +848,17 @@ final class RichEditText extends EditText {
         // (a blinking cursor, a tick, a handle) re-recorded every line of the whole note, which is what made long
         // notes stutter. Scrolling past the recorded part triggers a fresh recording (see scrollWatch).
         boolean windowed = false;
-        if (getLocalVisibleRect(visRect)) {
-            int m = Math.round(getResources().getDisplayMetrics().heightPixels * 1.5f);
+        // only worth it (and only done) for tall notes; short ones are drawn whole, exactly as before
+        if (getHeight() > getResources().getDisplayMetrics().heightPixels * 6 && getLocalVisibleRect(visRect)) {
+            int m = Math.round(getResources().getDisplayMetrics().heightPixels * 2.5f);
             int lo = Math.max(0, visRect.top - m);
             int hi = Math.min(getHeight(), visRect.bottom + m);
+            android.text.Layout wl = getLayout();
+            if (wl != null && length() > 0) { // the line being typed on is always inside the window
+                int cy = getExtendedPaddingTop() + wl.getLineTop(wl.getLineForOffset(Math.min(length(), Math.max(0, getSelectionEnd()))));
+                if (cy < lo && lo - cy < m * 2) lo = Math.max(0, cy - 8);
+                if (cy + 8 > hi && cy - hi < m * 2) hi = Math.min(getHeight(), cy + getLineHeight() * 3);
+            }
             recLo = lo;
             recHi = hi;
             if (lo > 0 || hi < getHeight()) {
@@ -895,7 +902,7 @@ final class RichEditText extends EditText {
         super.onAttachedToWindow();
         scrollWatch = () -> {
             if (recLo < 0 || !getLocalVisibleRect(visRect)) return;
-            int m = Math.round(getResources().getDisplayMetrics().heightPixels * 0.75f);
+            int m = Math.round(getResources().getDisplayMetrics().heightPixels * 1.0f);
             if (recLo > 0 && visRect.top < recLo + m || recHi < getHeight() && visRect.bottom > recHi - m) invalidate();
         };
         getViewTreeObserver().addOnScrollChangedListener(scrollWatch);

@@ -16,6 +16,21 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.59
+
+- **Theme switch flash:** Android 12+ already rebuilds every screen when the light/dark state changes; the extra rebuild
+  we added made it flash twice. Now only one happens (Dark<->AMOLED and Auto still use ours), the window shows the old
+  screen's photo until the new one has drawn, and transitions are off for the switch.
+- **Lock zoom per note** (note three-dots): pinch does nothing in that note and it keeps the size it was locked at.
+- **PDF page style:** the PDF can carry the page pattern and colour (light paper, dark ink, lined up with the text).
+  Share panel has "Include page style and colour" (shown for PDF when the note has a style/colour).
+- **Long notes, no limits:** database reads no longer hit Android's ~2 MB row window (long cells are read in
+  100,000-character slices; the empty stand-in + length trick keeps list queries cheap). Undo history is capped by
+  memory (about 6 million characters of snapshots) so a huge note can't run the phone out of memory. Drawing
+  window only for notes taller than 6 screens, always covers the line being typed on.
+- **Crash report:** an uncaught crash writes a short report to the app's private storage; Settings shows it with Copy.
+- **Scrolling:** asks for the display's top refresh rate (120 Hz) while the app is open.
+
 ## v3.58
 
 - **Dark/light, force-dark proof:** the light theme now declares `isLightTheme=false`. Android 16/17 "make all apps dark"

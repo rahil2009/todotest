@@ -41,6 +41,17 @@ final class ThemeFx {
         }
     }
 
+    /**
+     * Call right after super.onCreate: until the rebuilt screen has drawn once, the window shows the old screen's
+     * photo instead of its own (new, opposite-coloured) background, and no change of animation plays.
+     */
+    static void prepare(Activity a) {
+        if (shot != null && SystemClock.uptimeMillis() - shotAt <= 1800) {
+            a.getWindow().setBackgroundDrawable(new android.graphics.drawable.BitmapDrawable(a.getResources(), shot));
+            a.overridePendingTransition(0, 0);
+        }
+    }
+
     /** Call at the end of onCreate of a screen that can be recreated by a theme change. */
     static void play(Activity a) {
         // kept for a moment: Android may rebuild the screen twice for one theme change, and both should show it
@@ -78,6 +89,7 @@ final class ThemeFx {
             @Override
             public void onAnimationEnd(Animator an) {
                 decor.removeView(cover);
+                a.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Pal.bg));
             }
         });
         va.start();

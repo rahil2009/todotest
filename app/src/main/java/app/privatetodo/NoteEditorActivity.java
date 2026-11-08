@@ -116,6 +116,7 @@ public class NoteEditorActivity extends Activity {
         Pal.init(this);
         setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
+        ThemeFx.prepare(this);
         density = getResources().getDisplayMetrics().density;
         RichText.init(this);
         NoteFonts.init(this);
@@ -291,11 +292,12 @@ public class NoteEditorActivity extends Activity {
         body.setHint("Start writing…");
         body.setHintTextColor(Pal.muted);
         body.setTextColor(Pal.ink);
-        scale = Prefs.noteScale(this);
+        scale = zoomLockValue() > 0 ? zoomLockValue() : Prefs.noteScale(this);
         RichText.zoom = scale;
         body.setTextSize(17 * scale);
         body.setTableTapListener((tb, r, c, onTick, l, t) -> onTableTap(tb, r, c, onTick));
         body.setZoomListener((f, done) -> {
+            if (zoomLockValue() > 0) return; // this note's zoom is locked: pinching does nothing
             if (done) {
                 Prefs.setNoteScale(this, scale);
                 return;
@@ -550,6 +552,26 @@ public class NoteEditorActivity extends Activity {
     }
 
     private float scale = 1f;
+
+    /** The zoom this note is locked at (0 = not locked). Kept per note, so other notes still zoom freely. */
+    private float zoomLockValue() {
+        if (noteId <= 0) return 0f;
+        return getSharedPreferences("settings", MODE_PRIVATE).getFloat("zoom_lock_" + noteId, 0f);
+    }
+
+    private void toggleZoomLock() {
+        if (noteId <= 0) saveNow(); // a brand-new note needs its id first
+        if (noteId <= 0) return;
+        android.content.SharedPreferences.Editor ed = getSharedPreferences("settings", MODE_PRIVATE).edit();
+        if (zoomLockValue() > 0) {
+            ed.remove("zoom_lock_" + noteId);
+            Toast.makeText(this, "Zoom unlocked", Toast.LENGTH_SHORT).show();
+        } else {
+            ed.putFloat("zoom_lock_" + noteId, scale);
+            Toast.makeText(this, "Zoom locked at this size", Toast.LENGTH_SHORT).show();
+        }
+        ed.apply();
+    }
 
     private void setScale(float v) {
         scale = Math.max(0.7f, Math.min(2.6f, v));
@@ -2346,15 +2368,17 @@ public class NoteEditorActivity extends Activity {
     /** The note's three-dot menu. */
     private void noteMenu() {
         final boolean quick = ShareKit.always(this);
+        final String zoomItem = zoomLockValue() > 0 ? "Unlock zoom" : "Lock zoom";
         String[] items = quick
                 ? new String[]{"Share (" + ShareKit.NAMES[ShareKit.lastFormat(this)] + ")", "Share as\u2026", "Find & replace",
-                "Page style & colour\u2026", "Opens at\u2026", "Appearance\u2026", "Move to Bin"}
+                "Page style & colour\u2026", "Opens at\u2026", zoomItem, "Appearance\u2026", "Move to Bin"}
                 : new String[]{"Share\u2026", "Find & replace", "Page style & colour\u2026", "Opens at\u2026",
-                "Appearance\u2026", "Move to Bin"};
+                zoomItem, "Appearance\u2026", "Move to Bin"};
         new Dlg.Builder(this).setItems(items, (d, w) -> {
             int k = quick ? w : w + 1; // with a remembered format there is one extra item at the front
             if (k == 0) {
-                ShareKit.send(this, ShareKit.lastFormat(this), body.getText(), title.getText().toString(), body.getTextSize());
+                ShareKit.send(this, ShareKit.lastFormat(this), body.getText(), title.getText().toString(), body.getTextSize(),
+                        Paper.styleFor(this, noteId), Paper.colorFor(this, noteId), ShareKit.withPage(this));
             } else if (k == 1) openShare();
             else if (k == 2) openFind();
             else if (k == 3) paperDialog();
@@ -2363,7 +2387,8 @@ public class NoteEditorActivity extends Activity {
                     saveNow();
                 }
                 openAtDialog();
-            } else if (k == 5) themeDialog();
+            } else if (k == 5) toggleZoomLock();
+            else if (k == 6) themeDialog();
             else confirmDelete();
         }).show();
     }
@@ -2373,8 +2398,10 @@ public class NoteEditorActivity extends Activity {
     private void openShare() {
         if (sharePanel != null && sharePanel.isOpen()) return;
         if (findBar != null && findBar.isOpen()) findBar.close();
-        sharePanel = new ShareKit.Panel(this, fmt ->
-                ShareKit.send(this, fmt, body.getText(), title.getText().toString(), body.getTextSize()));
+        final int ps = Paper.styleFor(this, noteId);
+        final int pc = Paper.colorFor(this, noteId);
+        sharePanel = new ShareKit.Panel(this, ps > 0 || pc > 0, (fmt, withPage) ->
+                ShareKit.send(this, fmt, body.getText(), title.getText().toString(), body.getTextSize(), ps, pc, withPage));
         sharePanel.open(areaView != null ? areaView : (FrameLayout) noteScroll.getParent());
     }
 
@@ -2399,7 +2426,16 @@ public class NoteEditorActivity extends Activity {
             ThemeFx.capture(this);
             Prefs.setTheme(this, w);
             Pal.applyNight(this);
-            recreate();
+            if (!(android.os.Build.VERSION.SDK_INT >= 31 && w != 0 && Prefs.isDarkMode(w)
+                    != ((getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+                    == android.content.res.Configuration.UI_MODE_NIGHT_YES))) {
+                recreate();
+                overridePendingTransition(0, 0);
+            } else {
+                getWindow().getDecorView().postDelayed(() -> {
+                    if (!isDestroyed() && !isFinishing()) recreate();
+                }, 900);
+            }
         }).show();
     }
 
@@ -3308,7 +3344,12 @@ public class NoteEditorActivity extends Activity {
         }
         hist.add(snap);
         histSel.add(new int[]{selStart(), selEnd()});
-        if (hist.size() > 100) {
+        long held = 0;
+        for (String h : hist) held += h.length();
+        // keep up to 100 steps, but never more than ~6 million characters of snapshots: in a very long note a full
+        // copy per step would otherwise eat the phone's memory and the app would be killed
+        while (hist.size() > 100 || hist.size() > 3 && held > 6_000_000L) {
+            held -= hist.get(0).length();
             hist.remove(0);
             histSel.remove(0);
         }
