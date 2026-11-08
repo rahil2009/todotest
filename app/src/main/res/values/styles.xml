@@ -9,7 +9,11 @@
         <item name="android:colorAccent">#0B6B5D</item>
         <item name="android:fontFamily">@font/figtree</item>
         <item name="android:forceDarkAllowed">false</item>
-        <item name="android:isLightTheme">true</item>
+        <!-- Deliberately false even though this is the light look. Android's "make all apps dark" / force-invert
+             (Android 16 and up) turns every app dark that says it is light, and ignores forceDarkAllowed. Saying
+             "this theme is dark" is the one switch it respects, so the light look keeps its own colours. The
+             colours themselves are all set by the app, so nothing else reads this flag. -->
+        <item name="android:isLightTheme">false</item>
     </style>
     <!-- Dark mode: used when the phone is in dark mode or Settings > Appearance > Dark is chosen. -->
     <style name="AppThemeDark" parent="android:Theme.Material.NoActionBar">

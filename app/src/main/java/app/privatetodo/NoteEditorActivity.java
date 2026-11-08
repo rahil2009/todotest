@@ -144,8 +144,7 @@ public class NoteEditorActivity extends Activity {
             title.setText(n.title);
             busy = true; // loading must never run the "typed text" logic (Enter, list continuation ...)
             try {
-                RichText.fromJson(n.body, body.getText());
-                RichText.refold(body.getText());
+                loadJson(n.body);
             } finally {
                 busy = false;
                 typing = false;
@@ -162,6 +161,7 @@ public class NoteEditorActivity extends Activity {
         commitNow(); // the opening state is the first step of the history
         if (n != null && body.length() > 0) body.setSelection(0); // never leave the cursor parked at the end
         applyOpenAt();
+        ThemeFx.play(this);
     }
 
     @Override
@@ -2259,6 +2259,10 @@ public class NoteEditorActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (sharePanel != null && sharePanel.isOpen()) {
+            sharePanel.close();
+            return;
+        }
         if (findBar != null && findBar.isOpen()) {
             findBar.close();
             return;
@@ -2341,18 +2345,37 @@ public class NoteEditorActivity extends Activity {
 
     /** The note's three-dot menu. */
     private void noteMenu() {
-        String[] items = {"Find & replace", "Page style & colour\u2026", "Opens at\u2026", "Appearance\u2026", "Move to Bin"};
+        final boolean quick = ShareKit.always(this);
+        String[] items = quick
+                ? new String[]{"Share (" + ShareKit.NAMES[ShareKit.lastFormat(this)] + ")", "Share as\u2026", "Find & replace",
+                "Page style & colour\u2026", "Opens at\u2026", "Appearance\u2026", "Move to Bin"}
+                : new String[]{"Share\u2026", "Find & replace", "Page style & colour\u2026", "Opens at\u2026",
+                "Appearance\u2026", "Move to Bin"};
         new Dlg.Builder(this).setItems(items, (d, w) -> {
-            if (w == 0) openFind();
-            else if (w == 1) paperDialog();
-            else if (w == 2) {
+            int k = quick ? w : w + 1; // with a remembered format there is one extra item at the front
+            if (k == 0) {
+                ShareKit.send(this, ShareKit.lastFormat(this), body.getText(), title.getText().toString(), body.getTextSize());
+            } else if (k == 1) openShare();
+            else if (k == 2) openFind();
+            else if (k == 3) paperDialog();
+            else if (k == 4) {
                 if (noteId <= 0) {
                     saveNow();
                 }
                 openAtDialog();
-            } else if (w == 3) themeDialog();
+            } else if (k == 5) themeDialog();
             else confirmDelete();
         }).show();
+    }
+
+    private ShareKit.Panel sharePanel;
+
+    private void openShare() {
+        if (sharePanel != null && sharePanel.isOpen()) return;
+        if (findBar != null && findBar.isOpen()) findBar.close();
+        sharePanel = new ShareKit.Panel(this, fmt ->
+                ShareKit.send(this, fmt, body.getText(), title.getText().toString(), body.getTextSize()));
+        sharePanel.open(areaView != null ? areaView : (FrameLayout) noteScroll.getParent());
     }
 
     private FindBar findBar;
@@ -2360,6 +2383,7 @@ public class NoteEditorActivity extends Activity {
     private void openFind() {
         if (findBar != null && findBar.isOpen()) return;
         if (reading) return;
+        if (sharePanel != null && sharePanel.isOpen()) sharePanel.close();
         findBar = new FindBar(this, body, noteScroll, edit -> keepScroll(edit));
         findBar.open(areaView != null ? areaView : (FrameLayout) noteScroll.getParent(), 0);
     }
@@ -2372,6 +2396,7 @@ public class NoteEditorActivity extends Activity {
         new Dlg.Builder(this).setTitle("Appearance").setItems(names, (d, w) -> {
             if (w == Prefs.theme(this)) return;
             saveNow();
+            ThemeFx.capture(this);
             Prefs.setTheme(this, w);
             Pal.applyNight(this);
             recreate();
@@ -3303,15 +3328,25 @@ public class NoteEditorActivity extends Activity {
         if (histPos < hist.size() - 1) restore(histPos + 1);
     }
 
+    /**
+     * Puts a saved note into the editor. It is built off to the side and handed over in one piece: putting thousands
+     * of spans into the live text one by one made the text layout re-measure after every single one, which is what
+     * made big notes take seconds to open (and undo/redo in them just as long).
+     */
+    private void loadJson(String json) {
+        android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+        RichText.fromJson(json, sb);
+        RichText.refold(sb);
+        body.setText(sb, TextView.BufferType.EDITABLE);
+    }
+
     private void restore(int pos) {
         dropCell();
         restoring = true;
         busy = true;
         try {
+            loadJson(hist.get(pos));
             Editable e = body.getText();
-            e.clear();
-            RichText.fromJson(hist.get(pos), e);
-            RichText.refold(e);
             int[] sel = histSel.get(pos);
             body.setSelection(Math.min(sel[0], e.length()), Math.min(sel[1], e.length()));
         } finally {

@@ -108,12 +108,28 @@ final class RichEditText extends EditText {
                 });
         addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int d) { }
-            @Override public void onTextChanged(CharSequence s, int a, int b, int d) { }
+            @Override public void onTextChanged(CharSequence s, int a, int b, int d) {
+                dirtyLo = Math.min(dirtyLo, a);
+                dirtyHi = Math.max(dirtyHi, a + d);
+            }
             @Override public void afterTextChanged(Editable e) {
                 if (sel != null) sel.onTextChanged();
-                syncCircles(e);
+                int lo = dirtyLo;
+                int hi = dirtyHi;
+                dirtyLo = Integer.MAX_VALUE;
+                dirtyHi = -1;
+                if (hi < 0) { // nothing recorded (a span-only change): look at everything, as before
+                    lo = 0;
+                    hi = e.length();
+                }
+                syncCircles(e, lo, hi);
                 RichText.healCounters(e);
-                RichText.highlight(e);
+                // code colouring only matters when the edit touched a code block (or one appeared / went away)
+                int blocks = e.getSpans(0, e.length(), RichText.Block.class).length;
+                if (blocks != lastBlocks || blocks > 0 && e.getSpans(Math.max(0, lo - 1), Math.min(e.length(), hi + 1), RichText.Block.class).length > 0) {
+                    RichText.highlight(e);
+                }
+                lastBlocks = blocks;
             }
         });
         initCaret();
@@ -219,20 +235,29 @@ final class RichEditText extends EditText {
         caret.set(color, top, bot);
     }
 
+    private int dirtyLo = Integer.MAX_VALUE;
+    private int dirtyHi = -1;
+    private int lastBlocks;
+
     /** Puts a CircleSpan over the box character of every to-do line (and removes stale ones). */
-    private static void syncCircles(Editable e) {
-        CircleSpan[] old = e.getSpans(0, e.length(), CircleSpan.class);
+    private static void syncCircles(Editable e, int lo, int hi) {
         int n = e.length();
-        int i = 0;
-        while (i < n) {
+        int from = Math.max(0, Math.min(lo, n));
+        while (from > 0 && e.charAt(from - 1) != '\n') from--;
+        int to = Math.max(from, Math.min(hi, n));
+        while (to < n && e.charAt(to) != '\n') to++;
+        CircleSpan[] old = e.getSpans(from, Math.min(n, to + 1), CircleSpan.class);
+        java.util.HashMap<Integer, CircleSpan> byStart = new java.util.HashMap<>();
+        for (CircleSpan o : old) byStart.put(e.getSpanStart(o), o);
+        int i = from;
+        while (i < n && i <= to) {
             int k = RichText.prefixAt(e, i);
             if (RichText.isCheck(k)) {
                 boolean on = k == RichText.P_CHECK_ON;
-                CircleSpan have = null;
-                for (CircleSpan o : old) {
-                    if (e.getSpanStart(o) == i && e.getSpanEnd(o) == i + 1 && o.on == on) have = o;
+                CircleSpan have = byStart.get(i);
+                if (have == null || e.getSpanEnd(have) != i + 1 || have.on != on) {
+                    e.setSpan(new CircleSpan(on), i, i + 1, Editable.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
-                if (have == null) e.setSpan(new CircleSpan(on), i, i + 1, Editable.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             int j = i;
             while (j < n && e.charAt(j) != '\n') j++;
@@ -819,6 +844,24 @@ final class RichEditText extends EditText {
         } else if (p.getStyle() != android.graphics.Paint.Style.FILL) {
             p.setStyle(android.graphics.Paint.Style.FILL);
         }
+        // Only the part of a long note near the screen is drawn into the display list. Without this every redraw
+        // (a blinking cursor, a tick, a handle) re-recorded every line of the whole note, which is what made long
+        // notes stutter. Scrolling past the recorded part triggers a fresh recording (see scrollWatch).
+        boolean windowed = false;
+        if (getLocalVisibleRect(visRect)) {
+            int m = Math.round(getResources().getDisplayMetrics().heightPixels * 1.5f);
+            int lo = Math.max(0, visRect.top - m);
+            int hi = Math.min(getHeight(), visRect.bottom + m);
+            recLo = lo;
+            recHi = hi;
+            if (lo > 0 || hi < getHeight()) {
+                canvas.save();
+                canvas.clipRect(0, lo, getWidth(), hi);
+                windowed = true;
+            }
+        } else {
+            recLo = -1;
+        }
         if (RichText.layoutDirty) { // any span change that moved line heights: start the layout over (see rebuildLayout)
             RichText.layoutDirty = false;
             rebuildLayout();
@@ -839,6 +882,30 @@ final class RichEditText extends EditText {
         updateCaret();
         super.onDraw(canvas);
         if (sel != null) sel.draw(canvas);
+        if (windowed) canvas.restore();
+    }
+
+    private final android.graphics.Rect visRect = new android.graphics.Rect();
+    private int recLo = -1;
+    private int recHi = -1;
+    private android.view.ViewTreeObserver.OnScrollChangedListener scrollWatch;
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        scrollWatch = () -> {
+            if (recLo < 0 || !getLocalVisibleRect(visRect)) return;
+            int m = Math.round(getResources().getDisplayMetrics().heightPixels * 0.75f);
+            if (recLo > 0 && visRect.top < recLo + m || recHi < getHeight() && visRect.bottom > recHi - m) invalidate();
+        };
+        getViewTreeObserver().addOnScrollChangedListener(scrollWatch);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (scrollWatch != null) getViewTreeObserver().removeOnScrollChangedListener(scrollWatch);
+        scrollWatch = null;
+        super.onDetachedFromWindow();
     }
 
     // ---- find and replace highlights (see FindBar)

@@ -16,6 +16,23 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+## v3.58
+
+- **Dark/light, force-dark proof:** the light theme now declares `isLightTheme=false`. Android 16/17 "make all apps dark"
+  (force invert) ignores `forceDarkAllowed` but skips any theme that says it is dark; the colours are all set by the app,
+  so nothing else reads the flag. The Appearance diagnostic also prints the saved mode.
+- **Theme switch animation:** the old screen is photographed, the rebuilt one opens under it and a circle grows from the
+  middle (ThemeFx). No flash between light and dark. Settings and the note editor.
+- **Big notes:** a note is built off to the side and handed to the editor in one go (it used to re-measure after every
+  span); to-do circles and code colouring only look at what an edit touched; only the part of the note near the screen is
+  drawn into the display list (re-recorded when you scroll past it). Undo/redo use the same loader.
+- **Peek:** centred, plain lines (no card), uses the Clock font, own size slider (Settings > Full-screen alert).
+- **Share** (note three-dots menu): panel above the tools - Text / Markdown / WhatsApp / PDF, "Always use this" keeps the
+  choice (then the menu shows "Share (WhatsApp)" and a separate "Share as..."). PDF goes through a read-only
+  ContentProvider (SharedFiles) that serves only the share cache folder; still no INTERNET permission.
+- **Find & replace** now opens at the bottom of the page, right above the tools.
+- Design canvas: new "Lock-screen peek" artboard.
+
 ## v3.57
 
 - **Lock-screen peek** for ordinary (non full-screen) reminders: locked or asleep, the screen wakes to a dim black page

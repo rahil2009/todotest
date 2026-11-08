@@ -176,8 +176,9 @@ final class FindBar extends LinearLayout {
 
     /** Shows the panel and puts the typing cursor in the Find box. */
     void open(FrameLayout area, int topInset) {
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.TOP);
-        lp.setMargins(px(10), topInset + px(8), px(10), 0);
+        // at the bottom of the page area, which is the line just above the note's tools
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
+        lp.setMargins(px(10), 0, px(10), px(8));
         area.addView(this, lp);
         // the selected text of the note, if any, is what people usually want to search for
         int a = Math.min(body.getSelectionStart(), body.getSelectionEnd());
@@ -255,9 +256,9 @@ final class FindBar extends LinearLayout {
         int top = 0;
         for (View p = body; p != null && p != child; p = (View) p.getParent()) top += p.getTop();
         int at = top + y;
-        int clearTop = sv.getScrollY() + getBottom() + px(16);
-        int clearBottom = sv.getScrollY() + sv.getHeight() - px(48);
-        if (at < clearTop || at > clearBottom) sv.smoothScrollTo(0, Math.max(0, at - getHeight() - px(40)));
+        int clearTop = sv.getScrollY() + px(24);
+        int clearBottom = sv.getScrollY() + sv.getHeight() - getHeight() - px(48);
+        if (at < clearTop || at > clearBottom) sv.smoothScrollTo(0, Math.max(0, at - px(120)));
     }
 
     // ------------------------------------------------------------------ replacing

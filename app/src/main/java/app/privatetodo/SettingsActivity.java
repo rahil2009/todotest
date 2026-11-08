@@ -54,6 +54,7 @@ public class SettingsActivity extends Activity {
         page = getIntent().getIntExtra("page", 0);
         setContentView(build());
         Fonts.apply(getWindow().getDecorView());
+        ThemeFx.play(this);
     }
 
     private boolean resumedOnce;
@@ -196,6 +197,8 @@ public class SettingsActivity extends Activity {
             g.setColor(i == current ? Pal.sel : Pal.chip);
             chip.setBackground(g);
             chip.setOnClickListener(v -> {
+                if (mode == Prefs.theme(this)) return;
+                ThemeFx.capture(this); // photo of this screen: the rebuilt one opens under it and a circle reveals it
                 Prefs.setTheme(this, mode);
                 Pal.applyNight(this); // tell Android too, so its own dark styling follows the app
                 recreate(); // onCreate re-reads the palette
@@ -211,7 +214,7 @@ public class SettingsActivity extends Activity {
         boolean screenDark = (getResources().getConfiguration().uiMode
                 & android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES;
         TextView diag = text("Phone: " + (phoneDark ? "dark" : "light") + "  \u00B7  This screen: "
-                + (screenDark ? "dark" : "light") + "  \u00B7  Colours: " + (Pal.dark ? "dark" : "light")
+                + (screenDark ? "dark" : "light") + "  \u00B7  Colours: " + (Pal.dark ? "dark" : "light") + "  \u00B7  Mode: " + Prefs.theme(this)
                 + "  \u00B7  Android " + android.os.Build.VERSION.RELEASE, 12, Pal.muted, false);
         diag.setPadding(0, dp(10), 0, 0);
         themeCard.addView(diag);
@@ -1169,6 +1172,36 @@ public class SettingsActivity extends Activity {
         }
         paintSecs.run();
         alertCard.addView(secRow);
+        LinearLayout pkHead = new LinearLayout(this);
+        pkHead.setPadding(0, dp(12), 0, 0);
+        pkHead.addView(text("Clock size on the peek", 14, Pal.ink, true), new LinearLayout.LayoutParams(0, -2, 1f));
+        final TextView pkPct = text(Peek.sizePct(this) + "%", 14, Pal.muted, true);
+        pkHead.addView(pkPct);
+        alertCard.addView(pkHead);
+        PillSlider pkBar = new PillSlider(this);
+        pkBar.setIcon(PillSlider.ICON_SIZE);
+        pkBar.setContentDescription("Peek clock size");
+        pkBar.setValue(Math.round((Peek.sizePct(this) - 60) / 0.8f));
+        pkBar.setListener(new PillSlider.Listener() {
+            @Override
+            public void onChange(int value) {
+                int pct = 60 + Math.round(value * 0.8f);
+                Peek.setSizePct(SettingsActivity.this, pct);
+                pkPct.setText(pct + "%");
+            }
+
+            @Override
+            public void onStart() {
+            }
+
+            @Override
+            public void onStop() {
+            }
+        });
+        LinearLayout.LayoutParams pkl = new LinearLayout.LayoutParams(-1, dp(44));
+        pkl.topMargin = dp(4);
+        alertCard.addView(pkBar, pkl);
+        alertCard.addView(text("The peek uses the Clock font chosen above.", 12, Pal.muted, false));
         alertCard.addView(backupRow("Test the peek now",
                 "Shows the black page right here with a sample reminder",
                 v -> startActivity(new Intent(this, PeekActivity.class)

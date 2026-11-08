@@ -40,6 +40,15 @@ final class Peek {
         sp(c).edit().putInt("peek_secs", s).apply();
     }
 
+    /** 60 to 140 percent. */
+    static int sizePct(Context c) {
+        return sp(c).getInt("peek_size", 100);
+    }
+
+    static void setSizePct(Context c, int v) {
+        sp(c).edit().putInt("peek_size", Math.max(60, Math.min(140, v))).apply();
+    }
+
     static PendingIntent intent(Context c, long id, String title, String text) {
         Intent i = new Intent(c, PeekActivity.class)
                 .putExtra(EXTRA_TITLE, title)

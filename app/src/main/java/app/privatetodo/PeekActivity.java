@@ -78,11 +78,23 @@ public class PeekActivity extends Activity {
         registerReceiver(off, new IntentFilter(Intent.ACTION_SCREEN_OFF));
     }
 
+    /** The clock font chosen in Settings (any note font), else the thin system face. */
+    private Typeface face(boolean bold) {
+        int idx = ClockFace.fontIndex(this);
+        if (idx >= 0) {
+            NoteFonts.init(this);
+            Typeface f = NoteFonts.face(idx);
+            if (f != null) return Typeface.create(f, bold ? Typeface.BOLD : Typeface.NORMAL);
+        }
+        return bold ? Typeface.DEFAULT_BOLD : Typeface.create("sans-serif-thin", Typeface.NORMAL);
+    }
+
     private View build(String title, String text) {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
         root.setOnClickListener(v -> finish());
         float d = getResources().getDisplayMetrics().density;
+        float scale = Peek.sizePct(this) / 100f;
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -93,82 +105,55 @@ public class PeekActivity extends Activity {
         Date now = new Date();
         TextView time = new TextView(this);
         time.setText(new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.getDefault()).format(now));
-        time.setTextSize(72);
-        time.setTypeface(Typeface.create("sans-serif-thin", Typeface.NORMAL));
+        time.setTextSize(76 * scale);
+        time.setTypeface(face(false));
         time.setTextColor(0xE6FFFFFF);
         time.setIncludeFontPadding(false);
-        col.addView(time);
+        time.setGravity(Gravity.CENTER);
+        col.addView(time, new LinearLayout.LayoutParams(-2, -2));
 
         TextView date = new TextView(this);
         date.setText(new SimpleDateFormat("EEEE d MMMM", Locale.getDefault()).format(now));
-        date.setTextSize(14);
+        date.setTextSize(14 * Math.max(0.85f, scale));
+        date.setTypeface(face(false));
         date.setTextColor(0x99FFFFFF);
-        date.setPadding(0, Math.round(2 * d), 0, Math.round(34 * d));
-        col.addView(date);
+        date.setGravity(Gravity.CENTER);
+        date.setPadding(0, Math.round(4 * d), 0, Math.round(30 * d));
+        col.addView(date, new LinearLayout.LayoutParams(-2, -2));
 
-        // the reminder: a soft outlined card
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        int p = Math.round(16 * d);
-        card.setPadding(p, p, p, p);
-        GradientDrawable g = new GradientDrawable();
-        g.setColor(0xFF0B0D0C);
-        g.setCornerRadius(24 * d);
-        g.setStroke(Math.max(1, Math.round(d)), 0xFF2A302D);
-        card.setBackground(g);
-
-        ImageView ic = new ImageView(this);
-        ic.setImageResource(R.drawable.ic_notify);
-        ic.setColorFilter(0xFF6FCDBD);
-        GradientDrawable ig = new GradientDrawable();
-        ig.setShape(GradientDrawable.OVAL);
-        ig.setColor(0xFF16201D);
-        ic.setBackground(ig);
-        int ip = Math.round(9 * d);
-        ic.setPadding(ip, ip, ip, ip);
-        card.addView(ic, new LinearLayout.LayoutParams(Math.round(42 * d), Math.round(42 * d)));
-
-        LinearLayout words = new LinearLayout(this);
-        words.setOrientation(LinearLayout.VERTICAL);
-        words.setPadding(Math.round(14 * d), 0, 0, 0);
+        // the reminder: plain centred lines, nothing boxed
         TextView t = new TextView(this);
         t.setText(title);
-        t.setTextSize(17);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTextSize(19);
+        t.setTypeface(face(true));
         t.setTextColor(0xF0FFFFFF);
+        t.setGravity(Gravity.CENTER);
         t.setMaxLines(3);
         t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-        words.addView(t);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
+        tl.leftMargin = Math.round(36 * d);
+        tl.rightMargin = Math.round(36 * d);
+        col.addView(t, tl);
         if (!text.isEmpty()) {
-            TextView s = new TextView(this);
-            s.setText(text);
-            s.setTextSize(13);
-            s.setTextColor(0x99FFFFFF);
-            s.setMaxLines(2);
-            s.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            s.setPadding(0, Math.round(2 * d), 0, 0);
-            words.addView(s);
+            TextView s2 = new TextView(this);
+            s2.setText(text);
+            s2.setTextSize(13);
+            s2.setTypeface(face(false));
+            s2.setTextColor(0x8CFFFFFF);
+            s2.setGravity(Gravity.CENTER);
+            s2.setMaxLines(2);
+            s2.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            s2.setPadding(0, Math.round(6 * d), 0, 0);
+            LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(-2, -2);
+            sl.leftMargin = Math.round(36 * d);
+            sl.rightMargin = Math.round(36 * d);
+            col.addView(s2, sl);
         }
-        card.addView(words, new LinearLayout.LayoutParams(0, -2, 1f));
-        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(-1, -2);
-        clp.leftMargin = Math.round(28 * d);
-        clp.rightMargin = Math.round(28 * d);
-        col.addView(card, clp);
-
-        TextView hint = new TextView(this);
-        hint.setText("Tap to close");
-        hint.setTextSize(11);
-        hint.setTextColor(0x55FFFFFF);
-        hint.setPadding(0, Math.round(22 * d), 0, 0);
-        col.addView(hint);
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);
-        lp.bottomMargin = Math.round(60 * d); // a little above the middle
+        lp.bottomMargin = Math.round(40 * d); // a little above the middle
         root.addView(col, lp);
-        Fonts.apply(root);
-        time.setTypeface(Typeface.create("sans-serif-thin", Typeface.NORMAL));
-        return root;
+        return root; // no Fonts.apply: the clock font above is the only font here
     }
 
     @Override

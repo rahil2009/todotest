@@ -247,6 +247,13 @@
             </intent-filter>
         </activity>
 
+        <!-- Serves the one PDF being shared, read-only, to the app the user picked. -->
+        <provider
+            android:name=".SharedFiles"
+            android:authorities="app.privatetodo.share"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
         <service
             android:name=".RingService"
             android:exported="false"
