@@ -16,6 +16,11 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.60
+- Theme switch: the app no longer tells Android its night mode (that made Android restart the whole app = the flash). One own rebuild under the circle reveal, light <-> dark and dark <-> AMOLED alike.
+- Big notes: the opening state is the stored text, no second full serialise while you try to scroll.
+- Find in note: matches are circled with a hand-drawn pencil ring (current one darker, double stroke).
+
 ## v3.59
 
 - **Theme switch flash:** Android 12+ already rebuilds every screen when the light/dark state changes; the extra rebuild

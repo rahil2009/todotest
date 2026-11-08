@@ -77,22 +77,20 @@ final class Pal {
     }
 
     /**
-     * Tells Android which mode the app is in, the way apps with their own Light / Dark / Auto setting do
-     * (AndroidX calls this setDefaultNightMode). Android 12+: the system itself treats the app as light or dark,
-     * so force-dark, "make more apps dark", system dialogs, pickers and the text bar all follow the app's choice.
+     * Older versions told Android the app's mode (setApplicationNightMode). That is what made the whole app restart
+     * (the flash) on every light <-> dark switch, because Android relaunches an app whose night mode changes. Now the
+     * app only handles its own mode per screen, so this just clears whatever an older version left behind, once.
      */
     static void applyNight(Context c) {
         if (android.os.Build.VERSION.SDK_INT < 31) return;
-        int mode = Prefs.theme(c);
-        int m = mode == Prefs.THEME_LIGHT ? android.app.UiModeManager.MODE_NIGHT_NO
-                : mode == Prefs.THEME_SYSTEM ? android.app.UiModeManager.MODE_NIGHT_AUTO
-                : android.app.UiModeManager.MODE_NIGHT_YES;
+        android.content.SharedPreferences sp = c.getSharedPreferences("night_reset", Context.MODE_PRIVATE);
+        if (sp.getBoolean("done", false)) return;
         try {
             android.app.UiModeManager um = c.getSystemService(android.app.UiModeManager.class);
-            if (um != null) um.setApplicationNightMode(m);
+            if (um != null) um.setApplicationNightMode(android.app.UiModeManager.MODE_NIGHT_AUTO);
         } catch (RuntimeException ignored) {
-            // older or unusual system: the per-screen override below still applies
         }
+        sp.edit().putBoolean("done", true).apply();
     }
 
     /**

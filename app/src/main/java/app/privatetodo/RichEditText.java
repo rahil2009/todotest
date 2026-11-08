@@ -944,12 +944,57 @@ final class RichEditText extends EditText {
             int top = l.getLineTop(l.getLineForOffset(s)) + dy;
             int bottom = l.getLineBottom(l.getLineForOffset(e)) + dy;
             if (bottom < clip.top || top > clip.bottom) continue;
-            findPaint.setColor(i == findCur ? 0xCCFFB300 : 0x66FFD54F);
+            findPaint.setStyle(android.graphics.Paint.Style.FILL);
+            findPaint.setColor(i == findCur ? 0x44FFB300 : 0x22FFD54F);
             findPath.reset();
             l.getSelectionPath(s, e, findPath);
             canvas.drawPath(findPath, findPaint);
+            // the pencil ring: one hand-drawn loop per line the word sits on
+            float d = getResources().getDisplayMetrics().density;
+            findPaint.setStyle(android.graphics.Paint.Style.STROKE);
+            findPaint.setStrokeCap(android.graphics.Paint.Cap.ROUND);
+            findPaint.setStrokeJoin(android.graphics.Paint.Join.ROUND);
+            findPaint.setStrokeWidth((i == findCur ? 2.2f : 1.5f) * d);
+            findPaint.setColor(Pal.dark ? (i == findCur ? 0xFFF2F2F2 : 0xAAD0D0D0) : (i == findCur ? 0xFF2A2A2A : 0xAA555555));
+            int l1 = l.getLineForOffset(s);
+            int l2 = l.getLineForOffset(Math.max(s, e - 1));
+            for (int ln = l1; ln <= l2; ln++) {
+                int a0 = Math.max(s, l.getLineStart(ln));
+                int a1 = Math.min(e, l.getLineEnd(ln));
+                if (a1 <= a0) continue;
+                float x0 = l.getPrimaryHorizontal(a0);
+                float x1 = a1 >= l.getLineEnd(ln) ? l.getLineRight(ln) : l.getPrimaryHorizontal(a1);
+                if (x1 < x0) { float t = x0; x0 = x1; x1 = t; }
+                float cy = (l.getLineTop(ln) + l.getLineBottom(ln)) / 2f;
+                float ry = (l.getLineBottom(ln) - l.getLineTop(ln)) / 2f + 2f * d;
+                float rx = (x1 - x0) / 2f + 7f * d;
+                pencilRing(canvas, (x0 + x1) / 2f, cy, rx, ry, findHits[i] * 31 + ln, d);
+                if (i == findCur) pencilRing(canvas, (x0 + x1) / 2f, cy, rx + 1.5f * d, ry + 1f * d, findHits[i] * 17 + ln + 5, d);
+            }
         }
         canvas.restore();
+    }
+
+    /** One wobbly pencil loop that overshoots where it started, like a person circling a word. */
+    private void pencilRing(android.graphics.Canvas c, float cx, float cy, float rx, float ry, int seed, float d) {
+        java.util.Random r = new java.util.Random(seed);
+        float ph1 = r.nextFloat() * 6.28f, ph2 = r.nextFloat() * 6.28f;
+        float start = -0.35f + r.nextFloat() * 0.7f;       // where the pencil touches down
+        float sweep = 6.28318f * (1.08f + r.nextFloat() * 0.07f);
+        float tilt = (r.nextFloat() - 0.5f) * 0.12f;
+        int steps = 48;
+        android.graphics.Path p = new android.graphics.Path();
+        for (int k = 0; k <= steps; k++) {
+            float u = k / (float) steps;
+            float t = start + sweep * u;
+            float grow = 1f + 0.06f * u - 0.03f;               // the loop drifts outward as it closes
+            float wob = 1f + 0.035f * (float) Math.sin(t * 3 + ph1) + 0.02f * (float) Math.sin(t * 5 + ph2);
+            float x = (float) Math.cos(t) * rx * grow * wob;
+            float y = (float) Math.sin(t) * ry * grow * wob;
+            float xr = x + y * tilt, yr = y - x * tilt * 0.4f;
+            if (k == 0) p.moveTo(cx + xr, cy + yr); else p.lineTo(cx + xr, cy + yr);
+        }
+        c.drawPath(p, findPaint);
     }
 
     /** The page background (see Paper), 0 = plain. */

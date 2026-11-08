@@ -206,17 +206,8 @@ public class SettingsActivity extends Activity {
                 if (mode == Prefs.theme(this)) return;
                 ThemeFx.capture(this); // photo of this screen: the rebuilt one opens under it and a circle reveals it
                 Prefs.setTheme(this, mode);
-                Pal.applyNight(this); // tell Android too, so its own dark styling follows the app
-                // When the light/dark state really changes, Android rebuilds every screen itself (Android 12+): a
-                // second rebuild from here is what made the switch flash twice. Dark <-> AMOLED and Auto need ours.
-                if (!(android.os.Build.VERSION.SDK_INT >= 31 && mode != 0 && Prefs.isDarkMode(mode) != isNightNow())) {
-                    recreate(); // onCreate re-reads the palette
-                    overridePendingTransition(0, 0);
-                } else { // safety net: if Android did not rebuild this screen after all, do it
-                    getWindow().getDecorView().postDelayed(() -> {
-                        if (!isDestroyed() && !isFinishing()) recreate();
-                    }, 900);
-                }
+                recreate(); // onCreate re-reads the palette: one rebuild, under the circle reveal
+                overridePendingTransition(0, 0);
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -2, 1f);
             lp.rightMargin = dp(i < 3 ? 6 : 0);

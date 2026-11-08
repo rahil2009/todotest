@@ -159,7 +159,16 @@ public class NoteEditorActivity extends Activity {
         hist.clear();
         histSel.clear();
         histPos = -1;
-        commitNow(); // the opening state is the first step of the history
+        if (n != null && n.body != null && n.body.length() > 20000) {
+            // a big note: the stored text IS the opening state, so use it as the first step instead of
+            // serialising the whole note again on the main thread while the person is already trying to scroll
+            hist.add(n.body);
+            histSel.add(new int[]{0, 0});
+            histPos = 0;
+            updateUndoButtons();
+        } else {
+            commitNow(); // the opening state is the first step of the history
+        }
         if (n != null && body.length() > 0) body.setSelection(0); // never leave the cursor parked at the end
         applyOpenAt();
         ThemeFx.play(this);
@@ -2425,17 +2434,8 @@ public class NoteEditorActivity extends Activity {
             saveNow();
             ThemeFx.capture(this);
             Prefs.setTheme(this, w);
-            Pal.applyNight(this);
-            if (!(android.os.Build.VERSION.SDK_INT >= 31 && w != 0 && Prefs.isDarkMode(w)
-                    != ((getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-                    == android.content.res.Configuration.UI_MODE_NIGHT_YES))) {
-                recreate();
-                overridePendingTransition(0, 0);
-            } else {
-                getWindow().getDecorView().postDelayed(() -> {
-                    if (!isDestroyed() && !isFinishing()) recreate();
-                }, 900);
-            }
+            recreate();
+            overridePendingTransition(0, 0);
         }).show();
     }
 
