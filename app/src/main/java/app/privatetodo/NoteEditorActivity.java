@@ -2268,8 +2268,125 @@ public class NoteEditorActivity extends Activity {
         body.postDelayed(sleepAgain, READ_AWAKE_MS);
     }
 
+    // ---- three-finger gestures (Settings > Notebook chooses what each one does)
+    private boolean g3, g3Done;
+    private float g3x, g3y, g3cx, g3cy;
+    private long g3t;
+    private int backTo = -1;
+
+    private boolean threeFinger(android.view.MotionEvent ev) {
+        int act = ev.getActionMasked();
+        if (act == android.view.MotionEvent.ACTION_DOWN) {
+            g3 = false;
+            g3Done = false;
+        }
+        if (g3Done) {
+            if (act == android.view.MotionEvent.ACTION_UP || act == android.view.MotionEvent.ACTION_CANCEL) g3Done = false;
+            return true;
+        }
+        if (!g3 && ev.getPointerCount() >= 3 && Gestures.enabled(this)) {
+            g3 = true;
+            g3t = ev.getEventTime();
+            float sx = 0, sy = 0;
+            for (int i = 0; i < ev.getPointerCount(); i++) {
+                sx += ev.getX(i);
+                sy += ev.getY(i);
+            }
+            g3x = g3cx = sx / ev.getPointerCount();
+            g3y = g3cy = sy / ev.getPointerCount();
+            android.view.MotionEvent c = android.view.MotionEvent.obtain(ev);
+            c.setAction(android.view.MotionEvent.ACTION_CANCEL);
+            super.dispatchTouchEvent(c); // whatever the note started with one or two fingers stops here
+            c.recycle();
+            return true;
+        }
+        if (!g3) return false;
+        float sx = 0, sy = 0;
+        for (int i = 0; i < ev.getPointerCount(); i++) {
+            sx += ev.getX(i);
+            sy += ev.getY(i);
+        }
+        if (act == android.view.MotionEvent.ACTION_MOVE) {
+            g3cx = sx / ev.getPointerCount();
+            g3cy = sy / ev.getPointerCount();
+            return true;
+        }
+        if (act == android.view.MotionEvent.ACTION_POINTER_UP || act == android.view.MotionEvent.ACTION_UP
+                || act == android.view.MotionEvent.ACTION_CANCEL) {
+            g3 = false;
+            g3Done = act != android.view.MotionEvent.ACTION_UP && act != android.view.MotionEvent.ACTION_CANCEL;
+            if (act == android.view.MotionEvent.ACTION_CANCEL) return true;
+            float d = getResources().getDisplayMetrics().density;
+            float dx = g3cx - g3x, dy = g3cy - g3y;
+            int trig = -1;
+            if (Math.max(Math.abs(dx), Math.abs(dy)) > 70 * d) {
+                trig = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? Gestures.RIGHT : Gestures.LEFT) : (dy > 0 ? Gestures.DOWN : Gestures.UP);
+            } else if (ev.getEventTime() - g3t < 400) {
+                trig = Gestures.TAP;
+            }
+            if (trig >= 0) runGesture(Gestures.action(this, trig));
+            return true;
+        }
+        return true;
+    }
+
+    private void runGesture(int a) {
+        if (a == Gestures.NONE || body == null) return;
+        body.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK);
+        switch (a) {
+            case Gestures.FIND:
+                openFind(false);
+                break;
+            case Gestures.FIND_REPLACE:
+                openFind(true);
+                break;
+            case Gestures.UNDO:
+                undo();
+                break;
+            case Gestures.REDO:
+                redo();
+                break;
+            case Gestures.TOP:
+                noteScroll.smoothScrollTo(0, 0);
+                break;
+            case Gestures.BOTTOM:
+                noteScroll.smoothScrollTo(0, noteScroll.getChildAt(0).getHeight());
+                break;
+            case Gestures.TOP_BOTTOM:
+                if (noteScroll.getScrollY() > 200 * getResources().getDisplayMetrics().density) {
+                    backTo = noteScroll.getScrollY();
+                    noteScroll.smoothScrollTo(0, 0);
+                } else if (backTo >= 0) {
+                    noteScroll.smoothScrollTo(0, backTo);
+                    backTo = -1;
+                }
+                break;
+            case Gestures.SELECT_ALL:
+                body.requestFocus();
+                body.selectAll();
+                break;
+            case Gestures.KEYBOARD: {
+                android.view.inputmethod.InputMethodManager im = getSystemService(android.view.inputmethod.InputMethodManager.class);
+                if (body.isFocused() && im != null && im.isActive(body) && body.getRootWindowInsets() != null
+                        && body.getRootWindowInsets().isVisible(android.view.WindowInsets.Type.ime())) {
+                    im.hideSoftInputFromWindow(body.getWindowToken(), 0);
+                } else {
+                    body.requestFocus();
+                    if (im != null) im.showSoftInput(body, 0);
+                }
+                break;
+            }
+            case Gestures.SHARE:
+                openShare();
+                break;
+            default:
+                break;
+        }
+    }
+
     @Override
     public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (threeFinger(ev)) return true;
         if (reading && ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) keepAwakeFor();
         if (jump != null) jump.touched();
         // First tap into an unfocused note: put the cursor under the finger before focus arrives. Otherwise the

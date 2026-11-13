@@ -16,6 +16,16 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.62
+- Crash fix: keyboard delete could ask the text layout for a spot before it existed (IndexOutOfBounds in bringPointIntoView); now guarded.
+- Cursor handle: own wide grab area under the cursor (works while the handle shows, ~4 s after placing it), with edge scroll.
+- Peek/glance: the full-screen intent is only attached when the phone is locked or asleep, so an unlocked phone gets a normal pop-in that goes away.
+- Several reminders at once: Settings > Full-screen alert > "Several reminders at once" (one at a time / all together), for the alarm screen and the peek.
+- Shared notes: first line becomes the title for plain text, site name for links; folders (chips on top, hold a chip to rename/delete); hold a card and slide up or down on the wheel, lift to drop.
+- Cursor just under a table no longer sits behind it.
+- Scroll stuck with keyboard: stale selection/gesture flags can no longer block scrolling.
+- Three-finger gestures in notes, configurable in Settings > Notebook.
+
 ### v3.61
 - Settings > Full-screen alert rebuilt: one preview pinned at the top (switch Full-screen alert / Lock-screen peek), options below in your order; "test on the lock screen" rows removed.
 - Font parts: choose whether Time, Date and Reminder text use the chosen font.

@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.InputType;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.LinearLayout;
@@ -36,7 +37,12 @@ public class SharedActivity extends Activity {
     private int builtDark;
     private LinearLayout col;
     private long highlight;
+    private long curFolder = -1; // -1 = all
+    private FolderDial dial;
+    private android.widget.HorizontalScrollView chipScroll;
+    private LinearLayout chipRow;
     private final List<Runnable> savers = new ArrayList<>();
+    private List<Folder> folders = new ArrayList<>();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -95,6 +101,12 @@ public class SharedActivity extends Activity {
                 13, Pal.muted, false);
         info.setPadding(dp(24), dp(4), dp(24), dp(8));
         root.addView(info);
+        chipScroll = new android.widget.HorizontalScrollView(this);
+        chipScroll.setHorizontalScrollBarEnabled(false);
+        chipRow = new LinearLayout(this);
+        chipRow.setPadding(dp(14), 0, dp(14), dp(6));
+        chipScroll.addView(chipRow);
+        root.addView(chipScroll, new LinearLayout.LayoutParams(-1, -2));
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
         col = new LinearLayout(this);
@@ -102,15 +114,26 @@ public class SharedActivity extends Activity {
         col.setPadding(dp(16), 0, dp(16), dp(32));
         sv.addView(col);
         root.addView(sv, new LinearLayout.LayoutParams(-1, 0, 1f));
-        return root;
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(this);
+        frame.addView(root, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        dial = new FolderDial(this);
+        dial.setVisibility(View.GONE);
+        frame.addView(dial, new android.widget.FrameLayout.LayoutParams(-1, -1));
+        return frame;
     }
 
     private void refresh() {
         col.removeAllViews();
         savers.clear();
-        List<TaskDb.Shared> all = db.shared();
+        folders = db.sharedFolders();
+        boolean known = curFolder == -1 || curFolder == 0;
+        for (Folder f : folders) if (f.id == curFolder) known = true;
+        if (!known) curFolder = -1;
+        buildChips();
+        List<TaskDb.Shared> all = new ArrayList<>();
+        for (TaskDb.Shared x : db.shared()) if (curFolder == -1 || x.folder == curFolder) all.add(x);
         if (all.isEmpty()) {
-            TextView e = text("Nothing shared yet", 16, Pal.muted, false);
+            TextView e = text(curFolder == -1 ? "Nothing shared yet" : "Nothing in here. Hold a card and drag to move one in.", 16, Pal.muted, false);
             e.setGravity(Gravity.CENTER);
             e.setPadding(0, dp(80), 0, 0);
             col.addView(e, new LinearLayout.LayoutParams(-1, -2));
@@ -132,13 +155,27 @@ public class SharedActivity extends Activity {
         lp.topMargin = dp(10);
         c.setLayoutParams(lp);
 
-        c.addView(text(Reminders.when(this, s.created), 12, Pal.muted, true));
+        TextView when = text(Reminders.when(this, s.created) + folderTag(s.folder), 12, Pal.muted, true);
+        c.addView(when);
+        final View.OnLongClickListener hold = v -> {
+            startDial(s, c);
+            return true;
+        };
+        c.setOnLongClickListener(hold);
+        when.setOnLongClickListener(hold);
+        c.setOnTouchListener((v, e) -> dialTouch(e));
+        when.setOnTouchListener((v, e) -> {
+            boolean r = dialTouch(e);
+            return r;
+        });
 
         TextView link = text(s.url, 14, Pal.accent, false);
         link.setPadding(0, dp(6), 0, dp(6));
         link.setMaxLines(3);
         link.setEllipsize(android.text.TextUtils.TruncateAt.END);
         link.setOnClickListener(v -> open(s.url));
+        link.setOnLongClickListener(hold);
+        link.setOnTouchListener((v, e) -> dialTouch(e));
         if (!s.url.isEmpty()) c.addView(link);
 
         final EditText title = field("Title", s.title, false);
@@ -190,6 +227,202 @@ public class SharedActivity extends Activity {
         row.addView(del, new LinearLayout.LayoutParams(0, dp(44), 1f));
         c.addView(row);
         return c;
+    }
+
+    private String folderTag(long id) {
+        for (Folder f : folders) if (f.id == id) return "  \u00b7  " + f.name;
+        return "";
+    }
+
+    private void buildChips() {
+        chipRow.removeAllViews();
+        addChip("All", -1, null);
+        for (final Folder f : folders) addChip(f.name + "  " + f.count, f.id, f);
+        TextView add = pill("+ Folder", Pal.accent, Pal.chip);
+        add.setOnClickListener(v -> askFolderName("New folder", "", name -> {
+            long id = db.addSharedFolder(name);
+            curFolder = id;
+            refresh();
+        }));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(38));
+        lp.rightMargin = dp(6);
+        add.setPadding(dp(14), 0, dp(14), 0);
+        chipRow.addView(add, lp);
+    }
+
+    private void addChip(String label, final long id, final Folder f) {
+        boolean on = curFolder == id;
+        TextView c = pill(label, on ? Pal.onSel : Pal.ink, on ? Pal.sel : Pal.chip);
+        c.setPadding(dp(14), 0, dp(14), 0);
+        c.setOnClickListener(v -> {
+            Hap.tick(v);
+            curFolder = id;
+            refresh();
+        });
+        if (f != null) {
+            c.setOnLongClickListener(v -> {
+                new Dlg.Builder(this).setTitle(f.name)
+                        .setItems(new String[]{"Rename", "Delete folder (the notes stay)"}, (d, w) -> {
+                            if (w == 0) {
+                                askFolderName("Rename folder", f.name, name -> {
+                                    db.renameSharedFolder(f.id, name);
+                                    refresh();
+                                });
+                            } else {
+                                db.deleteSharedFolder(f.id);
+                                if (curFolder == f.id) curFolder = -1;
+                                refresh();
+                            }
+                        }).show();
+                return true;
+            });
+        }
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(38));
+        lp.rightMargin = dp(6);
+        chipRow.addView(c, lp);
+    }
+
+    private void askFolderName(String title, String start, final java.util.function.Consumer<String> done) {
+        final EditText in = new EditText(this);
+        in.setText(start);
+        in.setSingleLine(true);
+        in.setSelectAllOnFocus(true);
+        in.setTextColor(Pal.ink);
+        in.setPadding(dp(24), dp(12), dp(24), dp(12));
+        new Dlg.Builder(this).setTitle(title).setView(in)
+                .setPositiveButton("Save", (d, w) -> {
+                    String n = in.getText().toString().trim();
+                    if (!n.isEmpty()) done.accept(n);
+                })
+                .setNegativeButton("Cancel", null).show();
+    }
+
+    // ---- hold a card, slide up or down: a wheel of folders turns under your finger, lift to drop it there
+    private boolean dialOn;
+    private TaskDb.Shared dialItem;
+    private float dialY0;
+
+    private void startDial(TaskDb.Shared s, View card) {
+        saveAll();
+        dialItem = s;
+        dialOn = true;
+        card.getParent().requestDisallowInterceptTouchEvent(true);
+        List<String> names = new ArrayList<>();
+        names.add("No folder");
+        for (Folder f : folders) names.add(f.name);
+        names.add("+ New folder");
+        int start = 0;
+        for (int i = 0; i < folders.size(); i++) if (folders.get(i).id == s.folder) start = i + 1;
+        dialY0 = Float.NaN;
+        dial.open(names, start);
+        Hap.tick(card);
+    }
+
+    private boolean dialTouch(MotionEvent e) {
+        if (!dialOn) return false;
+        int act = e.getActionMasked();
+        if (Float.isNaN(dialY0)) dialY0 = e.getRawY();
+        if (act == MotionEvent.ACTION_MOVE) {
+            dial.drag(e.getRawY() - dialY0);
+        } else if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+            dialOn = false;
+            int idx = dial.close();
+            if (act == MotionEvent.ACTION_UP) dropAt(idx);
+        }
+        return true;
+    }
+
+    private void dropAt(int idx) {
+        final TaskDb.Shared s = dialItem;
+        if (s == null) return;
+        if (idx == folders.size() + 1) { // + New folder
+            askFolderName("New folder", "", name -> {
+                long id = db.addSharedFolder(name);
+                db.moveShared(s.id, id);
+                refresh();
+            });
+            return;
+        }
+        long target = idx == 0 ? 0 : folders.get(idx - 1).id;
+        if (target != s.folder) {
+            db.moveShared(s.id, target);
+            Toast.makeText(this, target == 0 ? "Moved out of the folder" : "Moved to " + folders.get(idx - 1).name,
+                    Toast.LENGTH_SHORT).show();
+        }
+        refresh();
+    }
+
+    /** The turning wheel: items curve away above and below the middle, the one in the band is where the card lands. */
+    private final class FolderDial extends View {
+        private List<String> names = new ArrayList<>();
+        private float pos;
+        private float base;
+        private int lastIdx;
+        private final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+        FolderDial(Context c) {
+            super(c);
+            setClickable(true);
+        }
+
+        void open(List<String> n, int start) {
+            names = n;
+            base = start;
+            pos = start;
+            lastIdx = start;
+            setVisibility(View.VISIBLE);
+            setAlpha(0f);
+            animate().alpha(1f).setDuration(140).start();
+            invalidate();
+        }
+
+        void drag(float dy) {
+            pos = Math.max(0, Math.min(names.size() - 1, base + dy / dp(54)));
+            int idx = Math.round(pos);
+            if (idx != lastIdx) {
+                lastIdx = idx;
+                performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
+            }
+            invalidate();
+        }
+
+        int close() {
+            int idx = Math.round(pos);
+            animate().alpha(0f).setDuration(120).withEndAction(() -> setVisibility(View.GONE)).start();
+            return idx;
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas c) {
+            c.drawColor(0xB0000000);
+            float cx = getWidth() / 2f, cy = getHeight() / 2f;
+            float R = dp(150);
+            p.setStyle(android.graphics.Paint.Style.FILL);
+            p.setColor(0x33FFFFFF);
+            c.drawRoundRect(cx - dp(150), cy - dp(26), cx + dp(150), cy + dp(26), dp(26), dp(26), p);
+            p.setTextAlign(android.graphics.Paint.Align.CENTER);
+            for (int i = 0; i < names.size(); i++) {
+                float a = (i - pos) * 0.42f;
+                if (Math.abs(a) > 1.45f) continue;
+                float cos = (float) Math.cos(a);
+                float y = cy + R * (float) Math.sin(a);
+                p.setTextSize(dp(20) * (0.6f + 0.4f * cos));
+                p.setColor(0xFFFFFFFF);
+                p.setAlpha(Math.round(255 * cos * cos));
+                p.setFakeBoldText(Math.abs(i - pos) < 0.5f);
+                c.drawText(names.get(i), cx - (1 - cos) * dp(70), y + dp(7), p);
+            }
+            p.setAlpha(255);
+            p.setTextSize(dp(12));
+            p.setColor(0xCCFFFFFF);
+            p.setFakeBoldText(false);
+            c.drawText("Slide up or down, lift to drop", cx, getHeight() - dp(60), p);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent e) {
+            return true;
+        }
     }
 
     private void open(String url) {

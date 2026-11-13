@@ -49,6 +49,15 @@ final class Peek {
         sp(c).edit().putInt("peek_size", Math.max(60, Math.min(140, v))).apply();
     }
 
+    /** True when the screen is off or the lock screen is up: the only time the peek replaces the normal pop-in. */
+    static boolean phoneIdle(Context c) {
+        android.os.PowerManager pm = (android.os.PowerManager) c.getSystemService(Context.POWER_SERVICE);
+        android.app.KeyguardManager km = (android.app.KeyguardManager) c.getSystemService(Context.KEYGUARD_SERVICE);
+        boolean off = pm != null && !pm.isInteractive();
+        boolean locked = km != null && km.isKeyguardLocked();
+        return off || locked;
+    }
+
     static PendingIntent intent(Context c, long id, String title, String text) {
         Intent i = new Intent(c, PeekActivity.class)
                 .putExtra(EXTRA_TITLE, title)

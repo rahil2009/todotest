@@ -571,7 +571,9 @@ final class Reminders {
         } else {
             b.setCategory(Notification.CATEGORY_REMINDER).setAutoCancel(true);
             // Locked or asleep: wake to a dim black peek for a few seconds (in use: just the normal pop-in).
-            if (!quiet && Peek.enabled(ctx)) {
+            // Only when the phone is locked or asleep. With a full-screen intent attached, Android keeps the pop-in
+            // pinned on an unlocked phone until you swipe it away: in use, a normal heads-up must be left alone.
+            if (!quiet && Peek.enabled(ctx) && Peek.phoneIdle(ctx)) {
                 b.setFullScreenIntent(Peek.intent(ctx, t.id, t.title, when(ctx, t.snooze > 0 ? t.snooze : t.due)), true);
             }
         }

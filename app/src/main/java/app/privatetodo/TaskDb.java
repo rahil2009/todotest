@@ -28,7 +28,7 @@ final class TaskDb extends SQLiteOpenHelper {
     private final Context appCtx;
 
     TaskDb(Context context) {
-        super(context, "tasks.db", null, 14);
+        super(context, "tasks.db", null, 15);
         appCtx = context.getApplicationContext();
     }
 
@@ -57,6 +57,7 @@ final class TaskDb extends SQLiteOpenHelper {
         createNotes(db);
         createFolders(db);
         createShared(db);
+        createSharedFolders(db);
         createOcc(db);
         createVersions(db);
     }
@@ -106,6 +107,10 @@ final class TaskDb extends SQLiteOpenHelper {
             createShared(db);
         }
         if (oldVersion < 14) createVersions(db); // note history
+        if (oldVersion < 15) { // folders inside Shared notes
+            createSharedFolders(db);
+            addColumn(db, "ALTER TABLE shared ADD COLUMN folder INTEGER NOT NULL DEFAULT 0");
+        }
     }
 
     private static void createVersions(SQLiteDatabase db) {
@@ -193,7 +198,15 @@ final class TaskDb extends SQLiteOpenHelper {
                 + "created INTEGER NOT NULL DEFAULT 0,"
                 + "url TEXT NOT NULL DEFAULT '',"
                 + "title TEXT NOT NULL DEFAULT '',"
-                + "description TEXT NOT NULL DEFAULT '')");
+                + "description TEXT NOT NULL DEFAULT '',"
+                + "folder INTEGER NOT NULL DEFAULT 0)");
+    }
+
+    private static void createSharedFolders(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS shared_folders ("
+                + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + "name TEXT NOT NULL DEFAULT '',"
+                + "color INTEGER NOT NULL DEFAULT 0)");
     }
 
     private static void createFolders(SQLiteDatabase db) {
@@ -1082,6 +1095,7 @@ final class TaskDb extends SQLiteOpenHelper {
         final String url;
         final String title;
         final String description;
+        long folder;
 
         Shared(long id, long created, String url, String title, String description) {
             this.id = id;
@@ -1124,15 +1138,59 @@ final class TaskDb extends SQLiteOpenHelper {
     /** Newest first. */
     List<Shared> shared() {
         List<Shared> out = new ArrayList<>();
-        Cursor c = getReadableDatabase().query("shared", new String[]{"id", "created", "url", "title", "description"},
+        Cursor c = getReadableDatabase().query("shared", new String[]{"id", "created", "url", "title", "description", "folder"},
                 null, null, null, null, "created DESC, id DESC");
         try {
             while (c.moveToNext()) {
-                out.add(new Shared(c.getLong(0), c.getLong(1), c.getString(2), c.getString(3), c.getString(4)));
+                Shared s = new Shared(c.getLong(0), c.getLong(1), c.getString(2), c.getString(3), c.getString(4));
+                s.folder = c.getLong(5);
+                out.add(s);
             }
         } finally {
             c.close();
         }
         return out;
+    }
+
+    // ---- folders inside Shared notes
+
+    /** {id, color, count} with the names alongside: a Folder per row (count = shares inside). */
+    List<Folder> sharedFolders() {
+        List<Folder> out = new ArrayList<>();
+        Cursor c = getReadableDatabase().rawQuery(
+                "SELECT f.id, f.name, f.color, (SELECT COUNT(*) FROM shared s WHERE s.folder = f.id) "
+                        + "FROM shared_folders f ORDER BY f.id", null);
+        try {
+            while (c.moveToNext()) out.add(new Folder(c.getLong(0), c.getString(1), c.getInt(2), c.getInt(3)));
+        } finally {
+            c.close();
+        }
+        return out;
+    }
+
+    long addSharedFolder(String name) {
+        ContentValues v = new ContentValues();
+        v.put("name", name);
+        v.put("color", (int) (System.currentTimeMillis() % Folder.COLORS.length));
+        return getWritableDatabase().insert("shared_folders", null, v);
+    }
+
+    void renameSharedFolder(long id, String name) {
+        ContentValues v = new ContentValues();
+        v.put("name", name);
+        getWritableDatabase().update("shared_folders", v, "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    void deleteSharedFolder(long id) {
+        ContentValues v = new ContentValues();
+        v.put("folder", 0);
+        getWritableDatabase().update("shared", v, "folder = ?", new String[]{String.valueOf(id)});
+        getWritableDatabase().delete("shared_folders", "id = ?", new String[]{String.valueOf(id)});
+    }
+
+    void moveShared(long id, long folder) {
+        ContentValues v = new ContentValues();
+        v.put("folder", folder);
+        getWritableDatabase().update("shared", v, "id = ?", new String[]{String.valueOf(id)});
     }
 }

@@ -832,6 +832,42 @@ public class SettingsActivity extends Activity {
         sample.setPadding(0, dp(12), 0, dp(4));
         card.addView(sample);
         fpaint.run();
+        // ---- three-finger gestures in a note
+        TextView gtitle = text("Three-finger gestures", 16, Pal.ink, true);
+        gtitle.setPadding(0, dp(24), 0, 0);
+        card.addView(gtitle);
+        TextView gsub = text("Put three fingers on a note and swipe or tap. Each one does what you choose here.", 13, Pal.muted, false);
+        gsub.setPadding(0, dp(2), 0, dp(6));
+        card.addView(gsub);
+        final TextView gon = text("", 15, Pal.ink, true);
+        final Runnable paintOn = () -> gon.setText("Gestures   " + (Gestures.enabled(this) ? "On" : "Off"));
+        paintOn.run();
+        gon.setMinHeight(dp(44));
+        gon.setGravity(Gravity.CENTER_VERTICAL);
+        gon.setOnClickListener(v -> {
+            Hap.tick(v);
+            Gestures.setEnabled(this, !Gestures.enabled(this));
+            paintOn.run();
+        });
+        card.addView(gon);
+        for (int i2 = 0; i2 < Gestures.TRIGGERS.length; i2++) {
+            final int trig = i2;
+            LinearLayout grow = new LinearLayout(this);
+            grow.setGravity(Gravity.CENTER_VERTICAL);
+            grow.setMinimumHeight(dp(48));
+            grow.addView(text(Gestures.TRIGGERS[i2], 15, Pal.ink, false), new LinearLayout.LayoutParams(0, -2, 1f));
+            final TextView val = text(Gestures.ACTIONS[Gestures.action(this, i2)], 14, Pal.accent, true);
+            grow.addView(val);
+            grow.setOnClickListener(v -> {
+                Hap.tick(v);
+                new Dlg.Builder(this).setTitle(Gestures.TRIGGERS[trig])
+                        .setItems(Gestures.ACTIONS, (d, w) -> {
+                            Gestures.setAction(this, trig, w);
+                            val.setText(Gestures.ACTIONS[w]);
+                        }).show();
+            });
+            card.addView(grow);
+        }
         return card;
     }
 
@@ -1268,6 +1304,39 @@ public class SettingsActivity extends Activity {
         pkl.topMargin = dp(4);
         alertCard.addView(pkBar, pkl);
         alertCard.addView(text("The peek uses the Clock font chosen above.", 12, Pal.muted, false));
+        TextView colT = text("Several reminders at once", 16, Pal.ink, true);
+        colT.setPadding(0, dp(16), 0, dp(2));
+        alertCard.addView(colT);
+        alertCard.addView(text("When more than one rings together, on the alarm screen and the peek.", 13, Pal.muted, false));
+        final TextView[] colChips = new TextView[2];
+        final Runnable paintCol = () -> {
+            for (int i = 0; i < 2; i++) {
+                boolean on = Prefs.collide(this) == i;
+                colChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                colChips[i].setBackground(cg);
+            }
+        };
+        LinearLayout colRow = new LinearLayout(this);
+        String[] colNames = {"One at a time", "All together"};
+        for (int i = 0; i < 2; i++) {
+            final int k = i;
+            colChips[i] = text(colNames[i], 14, Pal.muted, true);
+            colChips[i].setGravity(Gravity.CENTER);
+            colChips[i].setOnClickListener(v -> {
+                Hap.tick(v);
+                Prefs.setCollide(this, k);
+                paintCol.run();
+            });
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            cl.rightMargin = dp(i == 0 ? 6 : 0);
+            cl.topMargin = dp(8);
+            colRow.addView(colChips[i], cl);
+        }
+        paintCol.run();
+        alertCard.addView(colRow);
         alertCard.addView(backupRow("Test the peek now",
                 "Opens the peek here. Tap the little dot at the bottom to change things live",
                 v -> startActivity(new Intent(this, PeekActivity.class)

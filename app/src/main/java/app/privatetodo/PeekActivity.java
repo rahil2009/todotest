@@ -36,6 +36,56 @@ public class PeekActivity extends Activity {
     private TestSheet sheet;
     private String pTitle = "";
     private String pText = "";
+    private final java.util.ArrayList<String[]> items = new java.util.ArrayList<>();
+    private int shown;
+    private boolean test;
+
+    /** Shows the current reminder for the chosen seconds, then the next waiting one, then fades to black. */
+    private void scheduleRound() {
+        h.removeCallbacksAndMessages(null);
+        final int secs = Math.max(2, Peek.seconds(this));
+        final boolean together = Prefs.collide(this) == 1;
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        h.postDelayed(() -> {
+            if (!together && shown + 1 < items.size()) { // one at a time: the next one comes straight after
+                content.animate().alpha(0f).setDuration(350).withEndAction(() -> {
+                    shown++;
+                    pTitle = items.get(shown)[0];
+                    pText = items.get(shown)[1];
+                    rebuild();
+                    content.setAlpha(0f);
+                    content.animate().alpha(1f).setDuration(350).start();
+                    scheduleRound();
+                }).start();
+                return;
+            }
+            content.animate().alpha(0f).setDuration(900).start(); // fade to black, stop holding the screen awake
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            h.postDelayed(this::finish, 25_000L); // never lingers if the screen never turns off
+        }, secs * 1000L);
+    }
+
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        if (test) return;
+        String t = intent.getStringExtra(Peek.EXTRA_TITLE);
+        String x = intent.getStringExtra(Peek.EXTRA_TEXT);
+        String[] it = {t == null ? "Reminder" : t, x == null ? "" : x};
+        for (String[] o : items) if (o[0].equals(it[0]) && o[1].equals(it[1])) return;
+        items.add(it);
+        boolean together = Prefs.collide(this) == 1;
+        boolean faded = content.getAlpha() < 0.5f;
+        if (together || faded) { // all together, or it had already faded out: bring it up now
+            shown = items.size() - 1;
+            pTitle = it[0];
+            pText = it[1];
+            rebuild();
+            content.animate().cancel();
+            content.setAlpha(1f);
+            scheduleRound();
+        }
+    }
 
     private void rebuild() {
         outer.removeViewAt(0);
@@ -104,7 +154,8 @@ public class PeekActivity extends Activity {
         String text = getIntent().getStringExtra(Peek.EXTRA_TEXT);
         pTitle = title == null ? "Reminder" : title;
         pText = text == null ? "" : text;
-        final boolean test = getIntent().getBooleanExtra(EXTRA_TEST, false);
+        test = getIntent().getBooleanExtra(EXTRA_TEST, false);
+        items.add(new String[]{pTitle, pText});
         outer = new FrameLayout(this);
         outer.setBackgroundColor(Color.BLACK);
         outer.addView(build(pTitle, pText));
@@ -116,14 +167,7 @@ public class PeekActivity extends Activity {
 
         content.setAlpha(0f);
         content.animate().alpha(1f).setDuration(450).start();
-        final int secs = Math.max(2, Peek.seconds(this));
-        if (!test) {
-            h.postDelayed(() -> { // fade to black, keep the screen from being held awake
-                content.animate().alpha(0f).setDuration(900).start();
-                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-            }, secs * 1000L);
-            h.postDelayed(this::finish, (secs + 25) * 1000L); // never lingers if the screen never turns off
-        }
+        if (!test) scheduleRound();
 
         off = new BroadcastReceiver() {
             @Override
@@ -180,9 +224,14 @@ public class PeekActivity extends Activity {
         date.setVisibility(ClockFace.showDate(this) ? View.VISIBLE : View.GONE);
         col.addView(date, new LinearLayout.LayoutParams(-2, -2));
 
-        // the reminder: plain centred lines, nothing boxed
+        // the reminder: plain centred lines, nothing boxed (all of them stacked when "all together" is chosen)
+        java.util.List<String[]> view = new java.util.ArrayList<>();
+        if (Prefs.collide(this) == 1 && items.size() > 1 && !test) view.addAll(items); else view.add(new String[]{title, text});
+        for (String[] one : view) {
+            String title1 = one[0];
+            String text1 = one[1];
         TextView t = new TextView(this);
-        t.setText(title);
+        t.setText(title1);
         t.setTextSize(19);
         t.setTypeface(face(true, ClockFace.PART_TEXT));
         t.setTextColor(0xF0FFFFFF);
@@ -192,10 +241,11 @@ public class PeekActivity extends Activity {
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
         tl.leftMargin = Math.round(36 * d);
         tl.rightMargin = Math.round(36 * d);
+        if (one != view.get(0)) tl.topMargin = Math.round(16 * d);
         col.addView(t, tl);
-        if (!text.isEmpty()) {
+        if (!text1.isEmpty()) {
             TextView s2 = new TextView(this);
-            s2.setText(text);
+            s2.setText(text1);
             s2.setTextSize(13);
             s2.setTypeface(face(false, ClockFace.PART_TEXT));
             s2.setTextColor(0x8CFFFFFF);
@@ -207,6 +257,8 @@ public class PeekActivity extends Activity {
             sl.leftMargin = Math.round(36 * d);
             sl.rightMargin = Math.round(36 * d);
             col.addView(s2, sl);
+        }
+
         }
 
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-1, -2, Gravity.CENTER);

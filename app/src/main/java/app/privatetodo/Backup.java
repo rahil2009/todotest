@@ -12,7 +12,7 @@ import org.json.JSONObject;
 /** Export / import of everything: tasks, subtasks, repeat ticks, notes, habits, Pomodoro stats and every setting, as one JSON file you choose where to keep. */
 final class Backup {
     private static final String[] TABLES = {"tasks", "subtasks", "notes", "occ_done", "folders", "shared",
-            "note_versions"};
+            "shared_folders", "note_versions"};
 
     private Backup() {
     }
@@ -143,7 +143,7 @@ final class Backup {
                 for (String table : TABLES) {
                     JSONArray rows = root.optJSONArray(table);
                     // an older backup has no note history: keep the history this phone already has
-                    if (rows == null && table.equals("note_versions")) continue;
+                    if (rows == null && (table.equals("note_versions") || table.equals("shared_folders"))) continue;
                     db.delete(table, null, null);
                     if (rows == null) continue;
                     String[] known;

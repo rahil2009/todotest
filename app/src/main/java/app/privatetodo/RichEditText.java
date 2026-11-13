@@ -665,7 +665,98 @@ final class RichEditText extends EditText {
     @Override
     public boolean dispatchTouchEvent(MotionEvent e) {
         if (sel != null && sel.owns(e)) return sel.onTouch(e);
+        if (cursorTouch(e)) return true;
         return super.dispatchTouchEvent(e);
+    }
+
+    // ---- the cursor's drop handle: our own, generous grab area (the system one is small and misses)
+    private boolean fixingTable;
+    private boolean curPending, curDrag;
+    private float curDownX, curDownY, curX, curY;
+    private long selChangedAt;
+    private final Runnable curScroll = new Runnable() {
+        @Override
+        public void run() {
+            if (!curDrag) return;
+            android.widget.ScrollView sv = null;
+            android.view.ViewParent p = getParent();
+            while (p != null && !(p instanceof android.widget.ScrollView)) p = p.getParent();
+            if (p == null) return;
+            sv = (android.widget.ScrollView) p;
+            int[] a = new int[2], b = new int[2];
+            getLocationOnScreen(a);
+            sv.getLocationOnScreen(b);
+            float d = getResources().getDisplayMetrics().density;
+            float fy = a[1] + curY - b[1];
+            int step = 0;
+            if (fy < 70 * d) step = -Math.round((70 * d - fy) / 5f + 2 * d);
+            else if (fy > sv.getHeight() - 70 * d) step = Math.round((fy - (sv.getHeight() - 70 * d)) / 5f + 2 * d);
+            if (step != 0) {
+                sv.scrollBy(0, step);
+                moveCursorTo(curX, curY);
+            }
+            postOnAnimation(this);
+        }
+    };
+
+    private void moveCursorTo(float x, float y) {
+        if (getLayout() == null) return;
+        float d = getResources().getDisplayMetrics().density;
+        int off = getOffsetForPosition(x, y - 30 * d); // the finger sits under the handle, the cursor above it
+        if (off != getSelectionStart()) {
+            setSelection(Math.max(0, Math.min(length(), off)));
+            performHapticFeedback(android.view.HapticFeedbackConstants.TEXT_HANDLE_MOVE);
+        }
+    }
+
+    private boolean cursorTouch(MotionEvent e) {
+        int act = e.getActionMasked();
+        float d = getResources().getDisplayMetrics().density;
+        if (act == MotionEvent.ACTION_DOWN) {
+            curPending = false;
+            curDrag = false;
+            Layout l = getLayout();
+            if (l == null || !isFocused() || hasSelection() || e.getPointerCount() > 1 || paintL != null) return false;
+            if (android.os.SystemClock.uptimeMillis() - selChangedAt > 4000) return false; // the handle has faded
+            int off = getSelectionStart();
+            if (off < 0 || off > length()) return false;
+            int line = l.getLineForOffset(off);
+            float cx = getTotalPaddingLeft() + l.getPrimaryHorizontal(off) - getScrollX();
+            float yb = getTotalPaddingTop() + l.getLineBottom(line);
+            if (Math.abs(e.getX() - cx) <= 34 * d && e.getY() >= yb - 6 * d && e.getY() <= yb + 46 * d) {
+                curPending = true;
+                curDownX = e.getX();
+                curDownY = e.getY();
+            }
+            return false; // the down still goes through: a tap there is a normal tap
+        }
+        if (!curPending && !curDrag) return false;
+        if (act == MotionEvent.ACTION_MOVE && curPending && !curDrag) {
+            if (Math.hypot(e.getX() - curDownX, e.getY() - curDownY) > 8 * d) {
+                curDrag = true;
+                curPending = false;
+                MotionEvent c = MotionEvent.obtain(e);
+                c.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(c); // whatever the field started (scroll, its own handle) ends here
+                c.recycle();
+                if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                postOnAnimation(curScroll);
+            } else {
+                return false;
+            }
+        }
+        if (curDrag) {
+            curX = e.getX();
+            curY = e.getY();
+            if (act == MotionEvent.ACTION_MOVE) moveCursorTo(curX, curY);
+            if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+                curDrag = false;
+                removeCallbacks(curScroll);
+            }
+            return true;
+        }
+        if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) curPending = false;
+        return false;
     }
 
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
@@ -682,6 +773,7 @@ final class RichEditText extends EditText {
             if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
             return true; // two fingers: pinch only, never moves the cursor or ticks a box
         }
+        if (zooming && e.getActionMasked() == MotionEvent.ACTION_DOWN) zooming = false; // a lost UP must not eat the next touch
         if (zooming) {
             if (e.getActionMasked() == MotionEvent.ACTION_UP
                     || e.getActionMasked() == MotionEvent.ACTION_CANCEL) zooming = false;
@@ -1089,12 +1181,34 @@ final class RichEditText extends EditText {
     @Override
     public boolean bringPointIntoView(int offset) {
         if (sel != null && sel.holdScroll()) return false; // while selecting, only the selection scrolls the page
-        if (freshTap() && offset == length() && tapOff != length()) return super.bringPointIntoView(tapOff);
-        return super.bringPointIntoView(offset);
+        if (curDrag) return false; // our own cursor drag does the scrolling
+        android.text.Layout lay = getLayout();
+        if (lay == null || offset < 0 || offset > length() || lay.getLineCount() == 0) return false;
+        try {
+            if (freshTap() && offset == length() && tapOff != length()) return super.bringPointIntoView(tapOff);
+            return super.bringPointIntoView(offset);
+        } catch (IndexOutOfBoundsException ex) {
+            return false; // the layout was a step behind a batch edit (keyboard delete): the next pass scrolls
+        }
     }
 
     @Override
     protected void onSelectionChanged(int selStart, int selEnd) {
+        selChangedAt = android.os.SystemClock.uptimeMillis();
+        if (selStart == selEnd && !fixingTable) { // never leave the cursor on a table's own line: it would sit behind the table
+            Editable t = getText();
+            int o = selStart;
+            if (o > 0 && o <= t.length() && t.charAt(o - 1) == RichText.TABLE_CHAR && (o == t.length() || t.charAt(o) == '\n')) {
+                fixingTable = true;
+                try {
+                    if (o == t.length()) t.append('\n');
+                    setSelection(Math.min(t.length(), o + 1));
+                } finally {
+                    fixingTable = false;
+                }
+                return;
+            }
+        }
         if (freshTap() && selStart == selEnd && selStart == length() && tapOff != length() && length() > 0) {
             final int t = tapOff;
             super.onSelectionChanged(selStart, selEnd);

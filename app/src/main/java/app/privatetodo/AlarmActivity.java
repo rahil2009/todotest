@@ -26,6 +26,37 @@ public class AlarmActivity extends Activity {
 
     private long id;
     private float density;
+    /** Alarms waiting behind (and including) the one on screen, in the order they rang. */
+    private final java.util.ArrayList<Long> pend = new java.util.ArrayList<>();
+
+    /** Acting on the screen's alarm: the next waiting one comes up, or the screen closes when none is left. */
+    private void advance() {
+        pend.remove(Long.valueOf(id));
+        while (!pend.isEmpty()) {
+            long next = pend.get(0);
+            TaskDb db = new TaskDb(this);
+            Task t;
+            try {
+                t = db.get(next);
+            } finally {
+                db.close();
+            }
+            if (t == null || t.done) {
+                pend.remove(0);
+                continue;
+            }
+            id = next;
+            getIntent().putExtra(Reminders.EXTRA_ID, id);
+            try {
+                RingService.start(this, id, true); // its own sound and vibration, now that it is on screen
+            } catch (RuntimeException ignored) {
+                // the screen is still there; the notification carries on
+            }
+            show();
+            return;
+        }
+        finish();
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -42,6 +73,7 @@ public class AlarmActivity extends Activity {
         }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         id = getIntent().getLongExtra(Reminders.EXTRA_ID, -1);
+        pend.add(id);
         show();
     }
 
@@ -55,7 +87,14 @@ public class AlarmActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
-        id = intent.getLongExtra(Reminders.EXTRA_ID, -1);
+        long nid = intent.getLongExtra(Reminders.EXTRA_ID, -1);
+        if (nid >= 0 && nid != id && !pend.contains(nid) && !intent.getBooleanExtra(EXTRA_TEST, false)) {
+            pend.add(nid); // another one rang while this is open: it waits its turn (or is listed, per Settings)
+            show();
+            return;
+        }
+        id = nid;
+        if (!pend.contains(id)) pend.add(id);
         show();
     }
 
@@ -159,7 +198,9 @@ public class AlarmActivity extends Activity {
         root.setBackgroundColor(BG);
         root.setPadding(dp(28), dp(72), dp(28), dp(40));
 
-        TextView label = label("REMINDER", 13, 0xFF8FD6C8, true);
+        int at = Math.max(0, pend.indexOf(id));
+        boolean together = Prefs.collide(this) == 1;
+        TextView label = label(pend.size() > 1 && !together ? "REMINDER  \u00b7  " + (at + 1) + " of " + pend.size() : "REMINDER", 13, 0xFF8FD6C8, true);
         label.setLetterSpacing(0.18f);
         root.addView(label);
 
@@ -193,6 +234,36 @@ public class AlarmActivity extends Activity {
             root.addView(list);
         }
 
+        if (Prefs.collide(this) == 1 && pend.size() > 1) { // all together: the others sit under this one, each with its own Done
+            TextView more = label("Also ringing", 13, 0xFF8FD6C8, true);
+            more.setPadding(0, dp(18), 0, dp(4));
+            root.addView(more);
+            for (final Long other : new java.util.ArrayList<>(pend)) {
+                if (other == id) continue;
+                TaskDb odb = new TaskDb(this);
+                Task ot;
+                try {
+                    ot = odb.get(other);
+                } finally {
+                    odb.close();
+                }
+                if (ot == null || ot.done) continue;
+                LinearLayout orow = new LinearLayout(this);
+                orow.setGravity(Gravity.CENTER_VERTICAL);
+                TextView ol = label(ot.title, 16, 0xFFE3EAE8, false);
+                ol.setMaxLines(2);
+                orow.addView(ol, new LinearLayout.LayoutParams(0, -2, 1f));
+                TextView od = pill("Done", 0xFF22302D);
+                od.setOnClickListener(v -> {
+                    Reminders.complete(this, other);
+                    pend.remove(other);
+                    show();
+                });
+                orow.addView(od, new LinearLayout.LayoutParams(dp(84), dp(40)));
+                root.addView(orow, new LinearLayout.LayoutParams(-1, -2));
+            }
+        }
+
         View spacer = new View(this);
         root.addView(spacer, new LinearLayout.LayoutParams(1, 0, 1f));
 
@@ -210,7 +281,7 @@ public class AlarmActivity extends Activity {
             b.setOnClickListener(v -> {
                 Reminders.snooze(this, id, m);
                 Toast.makeText(this, "Snoozed", Toast.LENGTH_SHORT).show();
-                finish();
+                advance();
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(52), 1f);
             lp.leftMargin = dp(4);
@@ -243,7 +314,7 @@ public class AlarmActivity extends Activity {
         done.setTextSize(18);
         done.setOnClickListener(v -> {
             Reminders.complete(this, id);
-            finish();
+            advance();
         });
         LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-1, dp(60));
         dlp.topMargin = dp(16);
@@ -308,13 +379,13 @@ public class AlarmActivity extends Activity {
     /** A link was opened from the alarm: the reminder has done its job, so silence it and mark it done. */
     private void linkOpened() {
         Reminders.complete(this, id);
-        finish();
+        advance();
     }
 
     /** Stops the ringing but leaves the task as it is. */
     private void dismiss() {
         Reminders.cancelNotification(this, id);
-        finish();
+        advance();
     }
 
     @Override

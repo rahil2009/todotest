@@ -152,6 +152,15 @@ final class Prefs {
         return s.getBoolean("glow", true) ? AlertFx.EDGE : AlertFx.OFF;
     }
 
+    /** When several reminders arrive together: 0 = one at a time (the next opens when you act on the first), 1 = all together. */
+    static int collide(Context c) {
+        return sp(c).getInt("collide", 0);
+    }
+
+    static void setCollide(Context c, int v) {
+        sp(c).edit().putInt("collide", v).apply();
+    }
+
     static void setAlertAnim(Context c, int v) {
         sp(c).edit().putInt("alert_fx", v).apply();
     }

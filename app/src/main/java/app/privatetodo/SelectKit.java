@@ -145,7 +145,8 @@ final class SelectKit {
 
     /** The text field asks this before it scrolls itself to the cursor; while selecting, only we scroll. */
     boolean holdScroll() {
-        return mode != NONE || pageScroll || SystemClock.uptimeMillis() < quietUntil;
+        // a flag left over from a gesture that never finished must not freeze the page: without a selection it means nothing
+        return ((mode != NONE || pageScroll) && v.hasSelection()) || SystemClock.uptimeMillis() < quietUntil;
     }
 
     private void quiet() {
@@ -216,6 +217,7 @@ final class SelectKit {
         if (act == MotionEvent.ACTION_DOWN) {
             cancelLong();
             swallow = false;
+            pageScroll = false;
             downX = e.getX();
             downY = e.getY();
             downAt = e.getEventTime();
