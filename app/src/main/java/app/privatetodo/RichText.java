@@ -1369,13 +1369,16 @@ final class RichText {
         @Override
         public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
             if (fm != null) {
-                // report a little less than the table is tall: the line spacing adds the rest, so the line ends
-                // exactly where the table ends (draw() starts the table at the top of the line)
-                int h = (int) Math.ceil(totalH(p) / Math.max(1f, lineMult));
+                int h = (int) Math.ceil(totalH(p));
                 fm.ascent = -h;
                 fm.top = -h;
-                fm.descent = 0;
-                fm.bottom = 0;
+                // Line spacing adds (multiplier - 1) x the line's height below it: under a tall table that was a
+                // blank strip. A small negative descent makes the line, spacing included, exactly the table's
+                // height. The table itself is drawn as before (upwards from the baseline), so it never moves.
+                float m = Math.max(1f, lineMult);
+                int d = m > 1.001f ? -(int) Math.floor(h - h / m) : 0;
+                fm.descent = d;
+                fm.bottom = d;
             }
             return width();
         }
@@ -1391,7 +1394,7 @@ final class RichText {
             float[] tops = new float[rows + 1];
             for (int i = 0; i < rows; i++) tops[i + 1] = tops[i] + hs[i];
             float colW = w / cols;
-            float t0 = lineMult > 1.001f ? top : y - tops[rows];
+            float t0 = y - tops[rows];
             drawX = x;
             drawTop = t0;
             drawSize = p.getTextSize();

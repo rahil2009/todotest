@@ -16,6 +16,9 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.64
+- Table drawing back to the v3.62 way (upwards from the line's baseline); v3.63 drew it down from the line top, which clipped or shifted the last row. The blank strip under it is now removed by trimming the line's bottom only, so the table itself never moves.
+
 ### v3.63
 - Table: the blank strip under a tall table (line spacing was padding the table's line) is gone, and the cursor can never sit on the table's own line: a tap near it goes to the line above or below.
 - Shared notes folders restyled like the notebook's (folder icon, colour, count); "New folder" is the notebook's own name + colour dialog; long-press a folder to rename/recolour/delete.
