@@ -16,6 +16,11 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.63
+- Table: the blank strip under a tall table (line spacing was padding the table's line) is gone, and the cursor can never sit on the table's own line: a tap near it goes to the line above or below.
+- Shared notes folders restyled like the notebook's (folder icon, colour, count); "New folder" is the notebook's own name + colour dialog; long-press a folder to rename/recolour/delete.
+- Settings > Full-screen alert: buttons to try three reminders at once on the real alarm screen and peek, in the chosen mode.
+
 ### v3.62
 - Crash fix: keyboard delete could ask the text layout for a spot before it existed (IndexOutOfBounds in bringPointIntoView); now guarded.
 - Cursor handle: own wide grab area under the cursor (works while the handle shows, ~4 s after placing it), with edge scroll.

@@ -666,11 +666,24 @@ final class RichEditText extends EditText {
     @Override
     public boolean dispatchTouchEvent(MotionEvent e) {
         if (sel != null && sel.owns(e)) return sel.onTouch(e);
+        if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            lastDownY = e.getY();
+            lastDownAt = android.os.SystemClock.uptimeMillis();
+        }
         if (cursorTouch(e)) return true;
         return super.dispatchTouchEvent(e);
     }
 
     // ---- the cursor's drop handle: our own, generous grab area (the system one is small and misses)
+    @Override
+    public void setLineSpacing(float add, float mult) {
+        RichText.lineMult = mult;
+        super.setLineSpacing(add, mult);
+    }
+
+    private float lastDownY = -1;
+    private long lastDownAt;
+    private int prevSel = -1;
     private boolean fixingTable;
     private boolean curPending, curDrag;
     private float curDownX, curDownY, curX, curY;
@@ -1196,20 +1209,42 @@ final class RichEditText extends EditText {
     @Override
     protected void onSelectionChanged(int selStart, int selEnd) {
         selChangedAt = android.os.SystemClock.uptimeMillis();
-        if (selStart == selEnd && !fixingTable) { // never leave the cursor on a table's own line: it would sit behind the table
+        if (selStart == selEnd && !fixingTable) { // never leave the cursor on a table's own line: it would be the whole table
             Editable t = getText();
             int o = selStart;
-            if (o > 0 && o <= t.length() && t.charAt(o - 1) == RichText.TABLE_CHAR && (o == t.length() || t.charAt(o) == '\n')) {
+            boolean after = o > 0 && o <= t.length() && t.charAt(o - 1) == RichText.TABLE_CHAR && (o == t.length() || t.charAt(o) == '\n');
+            boolean before = o >= 0 && o < t.length() && t.charAt(o) == RichText.TABLE_CHAR && (o == 0 || t.charAt(o - 1) == '\n');
+            if (after || before) {
                 fixingTable = true;
                 try {
-                    if (o == t.length()) t.append('\n');
-                    setSelection(Math.min(t.length(), o + 1));
+                    int ls = after ? o - 1 : o;
+                    boolean up; // which side of the table the person meant
+                    Layout lay = getLayout();
+                    if (lay != null && android.os.SystemClock.uptimeMillis() - lastDownAt < 1500 && lastDownY >= 0) {
+                        int ln = lay.getLineForOffset(ls);
+                        float mid = getTotalPaddingTop() + (lay.getLineTop(ln) + lay.getLineBottom(ln)) / 2f;
+                        up = lastDownY < mid;
+                    } else {
+                        up = prevSel > ls + 1; // arrived from below by keyboard: carry on upwards
+                    }
+                    if (up) {
+                        if (ls == 0) {
+                            t.insert(0, "\n");
+                            setSelection(0);
+                        } else {
+                            setSelection(ls - 1); // the end of the line above
+                        }
+                    } else {
+                        if (ls + 1 >= t.length()) t.append('\n');
+                        setSelection(Math.min(t.length(), ls + 2)); // the start of the line below
+                    }
                 } finally {
                     fixingTable = false;
                 }
                 return;
             }
         }
+        prevSel = selStart;
         if (freshTap() && selStart == selEnd && selStart == length() && tapOff != length() && length() > 0) {
             final int t = tapOff;
             super.onSelectionChanged(selStart, selEnd);

@@ -74,6 +74,8 @@ public class AlarmActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         id = getIntent().getLongExtra(Reminders.EXTRA_ID, -1);
         pend.add(id);
+        long[] more = getIntent().getLongArrayExtra(EXTRA_PREVIEW);
+        if (more != null) for (long m : more) if (!pend.contains(m)) pend.add(m);
         show();
     }
 
@@ -142,6 +144,14 @@ public class AlarmActivity extends Activity {
     }
 
     static final String EXTRA_TEST = "test";
+    /** Settings preview of several alarms ringing together: the ids, and which way to show them (0 one at a time, 1 together). */
+    static final String EXTRA_PREVIEW = "preview_ids";
+    static final String EXTRA_MODE = "preview_mode";
+
+    private int collideMode() {
+        return getIntent().hasExtra(EXTRA_MODE) ? getIntent().getIntExtra(EXTRA_MODE, 0) : Prefs.collide(this);
+    }
+
     private android.widget.FrameLayout outer;
     private TestSheet sheet;
 
@@ -199,7 +209,7 @@ public class AlarmActivity extends Activity {
         root.setPadding(dp(28), dp(72), dp(28), dp(40));
 
         int at = Math.max(0, pend.indexOf(id));
-        boolean together = Prefs.collide(this) == 1;
+        boolean together = collideMode() == 1;
         TextView label = label(pend.size() > 1 && !together ? "REMINDER  \u00b7  " + (at + 1) + " of " + pend.size() : "REMINDER", 13, 0xFF8FD6C8, true);
         label.setLetterSpacing(0.18f);
         root.addView(label);
@@ -234,7 +244,7 @@ public class AlarmActivity extends Activity {
             root.addView(list);
         }
 
-        if (Prefs.collide(this) == 1 && pend.size() > 1) { // all together: the others sit under this one, each with its own Done
+        if (collideMode() == 1 && pend.size() > 1) { // all together: the others sit under this one, each with its own Done
             TextView more = label("Also ringing", 13, 0xFF8FD6C8, true);
             more.setPadding(0, dp(18), 0, dp(4));
             root.addView(more);
@@ -362,6 +372,18 @@ public class AlarmActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         // the Settings test button makes a throw-away task; remove it once its alert is closed
+        long[] pv = getIntent().getLongArrayExtra(EXTRA_PREVIEW);
+        if (isFinishing() && pv != null) { // the throw-away reminders of a Settings preview
+            TaskDb pdb = new TaskDb(this);
+            try {
+                for (long q : pv) {
+                    Reminders.cancelNotification(this, q);
+                    pdb.delete(q);
+                }
+            } finally {
+                pdb.close();
+            }
+        }
         if (isFinishing() && id >= 0 && id == Prefs.testId(this)) {
             Prefs.setTestId(this, -1);
             Reminders.cancel(this, id);

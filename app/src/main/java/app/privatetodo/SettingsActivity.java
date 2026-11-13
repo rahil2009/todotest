@@ -1337,6 +1337,27 @@ public class SettingsActivity extends Activity {
         }
         paintCol.run();
         alertCard.addView(colRow);
+        alertCard.addView(text("Try it with three reminders at once:", 13, Pal.muted, false));
+        LinearLayout tryRow = new LinearLayout(this);
+        String[] tryNames = {"Alarm screen", "Peek"};
+        for (int i = 0; i < 2; i++) {
+            final boolean alarm = i == 0;
+            TextView b = text(tryNames[i], 14, Pal.accent, true);
+            b.setGravity(Gravity.CENTER);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setCornerRadius(dp(18));
+            bg.setColor(Pal.chip);
+            b.setBackground(bg);
+            b.setOnClickListener(v -> {
+                Hap.tick(v);
+                previewCollide(alarm);
+            });
+            LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, dp(40), 1f);
+            bl.rightMargin = dp(i == 0 ? 6 : 0);
+            bl.topMargin = dp(6);
+            tryRow.addView(b, bl);
+        }
+        alertCard.addView(tryRow);
         alertCard.addView(backupRow("Test the peek now",
                 "Opens the peek here. Tap the little dot at the bottom to change things live",
                 v -> startActivity(new Intent(this, PeekActivity.class)
@@ -2281,6 +2302,34 @@ public class SettingsActivity extends Activity {
     }
 
     /** A plain (not full-screen) reminder in 10 seconds, to see the lock-screen peek. */
+    /** Opens the real alarm screen or peek with three reminders, in the way chosen above, so both ways can be tried. */
+    private void previewCollide(boolean alarm) {
+        int mode = Prefs.collide(this);
+        String[] titles = {"Call the bank", "Pick up the parcel", "Water the plants"};
+        if (!alarm) {
+            startActivity(new Intent(this, PeekActivity.class)
+                    .putExtra(Peek.EXTRA_TITLE, titles[0])
+                    .putExtra(Peek.EXTRA_TEXT, "Today, " + android.text.format.DateFormat.format("HH:mm", new java.util.Date()))
+                    .putExtra(PeekActivity.EXTRA_PREVIEW, new String[]{titles[1], titles[2]})
+                    .putExtra(PeekActivity.EXTRA_MODE, mode));
+            return;
+        }
+        long[] ids = new long[titles.length];
+        TaskDb db = new TaskDb(this);
+        try {
+            for (int i = 0; i < titles.length; i++) {
+                ids[i] = db.add(titles[i], System.currentTimeMillis(), 0, 0, true);
+                db.setAlarmMode(ids[i], true, true);
+            }
+        } finally {
+            db.close();
+        }
+        startActivity(new Intent(this, AlarmActivity.class)
+                .putExtra(Reminders.EXTRA_ID, ids[0])
+                .putExtra(AlarmActivity.EXTRA_PREVIEW, ids)
+                .putExtra(AlarmActivity.EXTRA_MODE, mode));
+    }
+
     private void testPeek() {
         TaskDb db = new TaskDb(this);
         try {

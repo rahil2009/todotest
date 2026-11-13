@@ -234,67 +234,121 @@ public class SharedActivity extends Activity {
         return "";
     }
 
+    private LinearLayout folderChip() {
+        LinearLayout chip = new LinearLayout(this);
+        chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setGravity(Gravity.CENTER_VERTICAL);
+        chip.setPadding(dp(12), 0, dp(14), 0);
+        chip.setClickable(true);
+        return chip;
+    }
+
+    private void styleChip(LinearLayout chip, boolean on, int rim) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(dp(22));
+        g.setColor(on ? Pal.sel : Pal.card);
+        if (!on && rim != 0) g.setStroke(dp(1), (rim & 0x00FFFFFF) | 0x55000000);
+        chip.setBackground(g);
+    }
+
     private void buildChips() {
         chipRow.removeAllViews();
-        addChip("All", -1, null);
-        for (final Folder f : folders) addChip(f.name + "  " + f.count, f.id, f);
-        TextView add = pill("+ Folder", Pal.accent, Pal.chip);
-        add.setOnClickListener(v -> askFolderName("New folder", "", name -> {
-            long id = db.addSharedFolder(name);
-            curFolder = id;
-            refresh();
-        }));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(38));
-        lp.rightMargin = dp(6);
-        add.setPadding(dp(14), 0, dp(14), 0);
-        chipRow.addView(add, lp);
-    }
-
-    private void addChip(String label, final long id, final Folder f) {
-        boolean on = curFolder == id;
-        TextView c = pill(label, on ? Pal.onSel : Pal.ink, on ? Pal.sel : Pal.chip);
-        c.setPadding(dp(14), 0, dp(14), 0);
-        c.setOnClickListener(v -> {
+        chipRow.setPadding(dp(14), dp(2), dp(14), dp(8));
+        // All
+        LinearLayout all = folderChip();
+        styleChip(all, curFolder == -1, 0);
+        TextView an = text("All", 14, curFolder == -1 ? Pal.onSel : Pal.ink, true);
+        all.addView(an);
+        TextView ac = text(String.valueOf(db.sharedCount()), 12, curFolder == -1 ? Pal.onSel : Pal.muted, false);
+        ac.setPadding(dp(10), 0, 0, 0);
+        all.addView(ac);
+        all.setOnClickListener(v -> {
             Hap.tick(v);
-            curFolder = id;
+            curFolder = -1;
             refresh();
         });
-        if (f != null) {
-            c.setOnLongClickListener(v -> {
-                new Dlg.Builder(this).setTitle(f.name)
-                        .setItems(new String[]{"Rename", "Delete folder (the notes stay)"}, (d, w) -> {
-                            if (w == 0) {
-                                askFolderName("Rename folder", f.name, name -> {
-                                    db.renameSharedFolder(f.id, name);
-                                    refresh();
-                                });
-                            } else {
-                                db.deleteSharedFolder(f.id);
-                                if (curFolder == f.id) curFolder = -1;
-                                refresh();
-                            }
-                        }).show();
+        chipRow.addView(all, chipLp());
+        for (final Folder f : folders) {
+            boolean on = curFolder == f.id;
+            LinearLayout chip = folderChip();
+            styleChip(chip, on, f.rgb());
+            IconView ic = new IconView(this, IconView.FOLDER);
+            ic.setTint(f.rgb());
+            ic.setOn(true);
+            ic.setClickable(false);
+            chip.addView(ic, new LinearLayout.LayoutParams(dp(26), dp(26)));
+            TextView nm = text(f.name, 14, on ? Pal.onSel : Pal.ink, true);
+            nm.setSingleLine(true);
+            nm.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            nm.setMaxWidth(dp(120));
+            nm.setPadding(dp(4), 0, 0, 0);
+            chip.addView(nm);
+            TextView cn = text(String.valueOf(f.count), 12, on ? Pal.onSel : Pal.muted, false);
+            cn.setPadding(dp(10), 0, 0, 0);
+            chip.addView(cn);
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                curFolder = f.id;
+                refresh();
+            });
+            chip.setOnLongClickListener(v -> {
+                Hap.confirm(v);
+                folderMenu(f);
                 return true;
             });
+            chipRow.addView(chip, chipLp());
         }
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(38));
-        lp.rightMargin = dp(6);
-        chipRow.addView(c, lp);
+        LinearLayout add = folderChip();
+        styleChip(add, false, 0);
+        IconView plus = new IconView(this, IconView.PLUS);
+        plus.setClickable(false);
+        plus.setTint(Pal.accent);
+        add.addView(plus, new LinearLayout.LayoutParams(dp(26), dp(26)));
+        TextView lab = text("Folder", 14, Pal.ink, true);
+        lab.setPadding(dp(4), 0, 0, 0);
+        add.addView(lab);
+        add.setOnClickListener(v -> {
+            Hap.tick(v);
+            newFolder(null);
+        });
+        chipRow.addView(add, chipLp());
     }
 
-    private void askFolderName(String title, String start, final java.util.function.Consumer<String> done) {
-        final EditText in = new EditText(this);
-        in.setText(start);
-        in.setSingleLine(true);
-        in.setSelectAllOnFocus(true);
-        in.setTextColor(Pal.ink);
-        in.setPadding(dp(24), dp(12), dp(24), dp(12));
-        new Dlg.Builder(this).setTitle(title).setView(in)
-                .setPositiveButton("Save", (d, w) -> {
-                    String n = in.getText().toString().trim();
-                    if (!n.isEmpty()) done.accept(n);
-                })
-                .setNegativeButton("Cancel", null).show();
+    private LinearLayout.LayoutParams chipLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(44));
+        lp.rightMargin = dp(8);
+        return lp;
+    }
+
+    /** The same name + colour dialog the notebook uses. */
+    private void newFolder(final java.util.function.LongConsumer then) {
+        new FolderDlg(this).show(null, (name, color) -> {
+            long id = db.addSharedFolder(name, color);
+            if (then != null) then.accept(id);
+            else curFolder = id;
+            refresh();
+        });
+    }
+
+    private void folderMenu(final Folder f) {
+        new Dlg.Builder(this).setTitle(f.name)
+                .setItems(new String[]{"Rename or change colour", "Delete folder"}, (d, w) -> {
+                    if (w == 0) {
+                        new FolderDlg(this).show(f, (name, color) -> {
+                            db.updateSharedFolder(f.id, name, color);
+                            refresh();
+                        });
+                    } else {
+                        new Dlg.Builder(this).setTitle("Delete folder?")
+                                .setMessage(f.name + "\nIts shared notes go back to All. None is deleted.")
+                                .setPositiveButton("Delete", (d2, w2) -> {
+                                    db.deleteSharedFolder(f.id);
+                                    if (curFolder == f.id) curFolder = -1;
+                                    refresh();
+                                })
+                                .setNegativeButton("Keep", null).show();
+                    }
+                }).show();
     }
 
     // ---- hold a card, slide up or down: a wheel of folders turns under your finger, lift to drop it there
@@ -336,11 +390,7 @@ public class SharedActivity extends Activity {
         final TaskDb.Shared s = dialItem;
         if (s == null) return;
         if (idx == folders.size() + 1) { // + New folder
-            askFolderName("New folder", "", name -> {
-                long id = db.addSharedFolder(name);
-                db.moveShared(s.id, id);
-                refresh();
-            });
+            newFolder(id -> db.moveShared(s.id, id));
             return;
         }
         long target = idx == 0 ? 0 : folders.get(idx - 1).id;

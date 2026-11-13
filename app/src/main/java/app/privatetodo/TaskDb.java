@@ -1168,16 +1168,17 @@ final class TaskDb extends SQLiteOpenHelper {
         return out;
     }
 
-    long addSharedFolder(String name) {
+    long addSharedFolder(String name, int color) {
         ContentValues v = new ContentValues();
         v.put("name", name);
-        v.put("color", (int) (System.currentTimeMillis() % Folder.COLORS.length));
+        v.put("color", color);
         return getWritableDatabase().insert("shared_folders", null, v);
     }
 
-    void renameSharedFolder(long id, String name) {
+    void updateSharedFolder(long id, String name, int color) {
         ContentValues v = new ContentValues();
         v.put("name", name);
+        v.put("color", color);
         getWritableDatabase().update("shared_folders", v, "id = ?", new String[]{String.valueOf(id)});
     }
 

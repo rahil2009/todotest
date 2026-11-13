@@ -32,6 +32,13 @@ public class PeekActivity extends Activity {
     private View content;
     private BroadcastReceiver off;
     static final String EXTRA_TEST = "test";
+    static final String EXTRA_PREVIEW = "preview_titles";
+    static final String EXTRA_MODE = "preview_mode";
+
+    private int collideMode() {
+        return getIntent().hasExtra(EXTRA_MODE) ? getIntent().getIntExtra(EXTRA_MODE, 0) : Prefs.collide(this);
+    }
+
     private FrameLayout outer;
     private TestSheet sheet;
     private String pTitle = "";
@@ -44,7 +51,7 @@ public class PeekActivity extends Activity {
     private void scheduleRound() {
         h.removeCallbacksAndMessages(null);
         final int secs = Math.max(2, Peek.seconds(this));
-        final boolean together = Prefs.collide(this) == 1;
+        final boolean together = collideMode() == 1;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         h.postDelayed(() -> {
             if (!together && shown + 1 < items.size()) { // one at a time: the next one comes straight after
@@ -74,7 +81,7 @@ public class PeekActivity extends Activity {
         String[] it = {t == null ? "Reminder" : t, x == null ? "" : x};
         for (String[] o : items) if (o[0].equals(it[0]) && o[1].equals(it[1])) return;
         items.add(it);
-        boolean together = Prefs.collide(this) == 1;
+        boolean together = collideMode() == 1;
         boolean faded = content.getAlpha() < 0.5f;
         if (together || faded) { // all together, or it had already faded out: bring it up now
             shown = items.size() - 1;
@@ -156,6 +163,8 @@ public class PeekActivity extends Activity {
         pText = text == null ? "" : text;
         test = getIntent().getBooleanExtra(EXTRA_TEST, false);
         items.add(new String[]{pTitle, pText});
+        String[] more = getIntent().getStringArrayExtra(EXTRA_PREVIEW);
+        if (more != null) for (String m : more) items.add(new String[]{m, "Today, " + android.text.format.DateFormat.format("HH:mm", new java.util.Date())});
         outer = new FrameLayout(this);
         outer.setBackgroundColor(Color.BLACK);
         outer.addView(build(pTitle, pText));
@@ -226,7 +235,7 @@ public class PeekActivity extends Activity {
 
         // the reminder: plain centred lines, nothing boxed (all of them stacked when "all together" is chosen)
         java.util.List<String[]> view = new java.util.ArrayList<>();
-        if (Prefs.collide(this) == 1 && items.size() > 1 && !test) view.addAll(items); else view.add(new String[]{title, text});
+        if (collideMode() == 1 && items.size() > 1 && !test) view.addAll(items); else view.add(new String[]{title, text});
         for (String[] one : view) {
             String title1 = one[0];
             String text1 = one[1];
