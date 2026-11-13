@@ -78,7 +78,7 @@ final class PinTint {
             case 6: return 0xFFF6DF6B;
             case 7: return Pal.dark ? Pal.sel : 0xFF0E1513;
             case 9: return Pal.card;
-            default: return HabitUi.blend(Pal.accent, Pal.card, 0.12f);
+            default: return PaperTheme.on ? PaperTheme.sticky(id) : HabitUi.blend(Pal.accent, Pal.card, 0.12f);
         }
     }
 

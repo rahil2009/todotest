@@ -578,6 +578,44 @@ public class SettingsActivity extends Activity {
     /** Notebook settings: how many notes may be pinned to the top (1 to 20). */
     private LinearLayout notebookCard() {
         LinearLayout card = card();
+        // ---- notes theme: a layer over the notebook (same screens, different paper and type)
+        card.addView(text("Notes theme", 16, Pal.ink, true));
+        TextView ntsub = text("Paper: warm paper with grain, ink text, a red pencil accent, serif titles and pinned "
+                + "notes as sticky notes. Only the notes section changes, and only in Light (Dark and AMOLED keep the dark look).",
+                13, Pal.muted, false);
+        ntsub.setPadding(0, dp(2), 0, dp(8));
+        card.addView(ntsub);
+        final TextView[] ntChips = new TextView[2];
+        final Runnable ntPaint = () -> {
+            for (int i = 0; i < 2; i++) {
+                boolean on = PaperTheme.chosen(this) == i;
+                ntChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                ntChips[i].setBackground(cg);
+            }
+        };
+        LinearLayout ntRow = new LinearLayout(this);
+        String[] ntNames = {"Standard", "Paper"};
+        for (int i = 0; i < 2; i++) {
+            final int k = i;
+            ntChips[i] = text(ntNames[i], 14, Pal.muted, true);
+            ntChips[i].setGravity(Gravity.CENTER);
+            ntChips[i].setOnClickListener(v -> {
+                Hap.tick(v);
+                PaperTheme.setChosen(this, k);
+                ntPaint.run();
+            });
+            LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(0, dp(42), 1f);
+            nl.rightMargin = dp(i == 0 ? 6 : 0);
+            ntRow.addView(ntChips[i], nl);
+        }
+        ntPaint.run();
+        LinearLayout.LayoutParams nrl = new LinearLayout.LayoutParams(-1, -2);
+        nrl.bottomMargin = dp(20);
+        card.addView(ntRow, nrl);
+
         card.addView(text("Pinned notes", 16, Pal.ink, true));
         TextView sub = text("Pinned notes stay at the top of the notebook. Choose how many you can pin at once, "
                 + "from 1 to 20. Lowering it never unpins notes you already pinned.", 13, Pal.muted, false);

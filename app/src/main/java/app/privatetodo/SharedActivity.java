@@ -47,6 +47,7 @@ public class SharedActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
+        PaperTheme.apply(this);
         builtDark = Pal.themeRes();
         setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
@@ -61,6 +62,7 @@ public class SharedActivity extends Activity {
         super.onResume();
         Lock.guard(this, Lock.NOTES);
         Pal.init(this);
+        PaperTheme.apply(this);
         if (Pal.themeRes() != builtDark) {
             recreate();
             return;

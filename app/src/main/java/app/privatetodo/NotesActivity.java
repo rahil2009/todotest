@@ -41,6 +41,7 @@ public class NotesActivity extends Activity {
     private TaskDb db;
     private float density;
     private int builtDark;
+    private boolean builtPaper;
     private final List<Note> notes = new ArrayList<>();
     private final List<Object> rows = new ArrayList<>(); // Notes, plus String section headers
     private String query = "";
@@ -52,13 +53,16 @@ public class NotesActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
+        PaperTheme.apply(this);
         builtDark = Pal.themeRes();
+        builtPaper = PaperTheme.on;
         setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         density = getResources().getDisplayMetrics().density;
         db = new TaskDb(this);
         setContentView(build());
         Fonts.apply(getWindow().getDecorView());
+        PaperTheme.serif(getWindow().getDecorView());
     }
 
     @Override
@@ -66,7 +70,8 @@ public class NotesActivity extends Activity {
         super.onResume();
         Lock.guard(this, Lock.NOTES);
         Pal.init(this);
-        if (Pal.themeRes() != builtDark) {
+        PaperTheme.apply(this);
+        if (Pal.themeRes() != builtDark || PaperTheme.on != builtPaper) {
             recreate();
             return;
         }
@@ -98,7 +103,7 @@ public class NotesActivity extends Activity {
 
     private View build() {
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Pal.bg);
+        if (PaperTheme.on) root.setBackground(PaperTheme.background(this)); else root.setBackgroundColor(Pal.bg);
 
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
@@ -674,7 +679,7 @@ public class NotesActivity extends Activity {
         list.setVisibility(empty ? View.GONE : View.VISIBLE);
         emptyTitle.setText(searching ? "No matches" : open != null ? "No notes in this folder" : "No notes yet");
 
-        titleView.setText(open != null ? open.name : "Notebook");
+        titleView.setText(PaperTheme.highlighted(open != null ? open.name : "Notebook"));
         crumb.setVisibility(open != null ? View.VISIBLE : View.GONE);
         if (open != null) {
             crumb.setText("Notebook › " + open.name + " · " + open.count + " note"
@@ -1111,6 +1116,7 @@ public class NotesActivity extends Activity {
                 v = noteView((Note) o, i);
             }
             Fonts.apply(v);
+            PaperTheme.serif(v);
             return v;
         }
     }
@@ -1212,6 +1218,11 @@ public class NotesActivity extends Activity {
         if (n.pinned > 0 && PinTint.isGradient(ps)) PinTint.paint(g, ps, n.id);
         else g.setColor(n.pinned > 0 ? PinTint.bg(ps, n.id) : Pal.card);
         g.setCornerRadius(dp(cell ? 14 : 16));
+        if (PaperTheme.on && n.pinned > 0) { // a sticky note: squarer corners, a little tilt
+            g.setCornerRadii(new float[]{dp(3), dp(3), dp(3), dp(3), dp(8), dp(8), dp(3), dp(3)});
+            card.setRotation(PaperTheme.tilt(n.id));
+            card.setElevation(dp(3));
+        }
         card.setBackground(g);
 
         TextView title = text(n.title.isEmpty() ? "Untitled" : n.title, titleSp,

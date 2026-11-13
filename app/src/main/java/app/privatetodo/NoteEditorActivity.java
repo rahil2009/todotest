@@ -114,6 +114,7 @@ public class NoteEditorActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Pal.init(this);
+        PaperTheme.apply(this);
         setTheme(Pal.themeRes());
         super.onCreate(savedInstanceState);
         ThemeFx.prepare(this);
