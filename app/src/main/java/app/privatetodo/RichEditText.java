@@ -5,6 +5,7 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.text.Editable;
+import android.text.Layout;
 import android.text.TextWatcher;
 import android.text.style.ReplacementSpan;
 import android.view.MotionEvent;
