@@ -194,6 +194,14 @@ final class Prefs {
     }
 
     /** Notebook sort: 0 edited newest, 1 edited oldest, 2 created (newest first), 3 title A-Z, 4 title Z-A. */
+    static boolean foldersExpanded(Context c) {
+        return sp(c).getBoolean("folders_expanded", false);
+    }
+
+    static void setFoldersExpanded(Context c, boolean v) {
+        sp(c).edit().putBoolean("folders_expanded", v).apply();
+    }
+
     static int noteSort(Context c) {
         return sp(c).getInt("note_sort", 0);
     }

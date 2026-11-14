@@ -1907,7 +1907,8 @@ public class NoteEditorActivity extends Activity {
         else cellEdit.setSelection(lab.length());
         android.view.inputmethod.InputMethodManager imm =
                 getSystemService(android.view.inputmethod.InputMethodManager.class);
-        imm.showSoftInput(cellEdit, 0);
+        if (imeForOpen) imm.showSoftInput(cellEdit, 0);
+        imeForOpen = true;
         cellBusy = false;
         tableBarView.setVisibility(View.VISIBLE);
         ensureCellVisible();
@@ -1966,8 +1967,16 @@ public class NoteEditorActivity extends Activity {
         float y = g[1] - noteScroll.getScrollY();
         int ah = areaView.getHeight();
         if (y < dp(8)) noteScroll.scrollBy(0, Math.round(y - dp(8)));
-        else if (ah > 0 && y + g[3] > ah - dp(8)) noteScroll.scrollBy(0, Math.round(y + g[3] - ah + dp(8)));
+        else if (ah > 0 && y + g[3] > ah - dp(72)) noteScroll.scrollBy(0, Math.round(y + g[3] - ah + dp(72))); // clear of the table bar and the thumb
         placeCell();
+    }
+
+    /** False for the next openCell when the keyboard was down: moving a cell must not pop it up. */
+    private boolean imeForOpen = true;
+
+    private boolean imeVisible() {
+        if (android.os.Build.VERSION.SDK_INT < 30 || body.getRootWindowInsets() == null) return true;
+        return body.getRootWindowInsets().isVisible(android.view.WindowInsets.Type.ime());
     }
 
     private boolean cellStepTaken;
@@ -2077,6 +2086,7 @@ public class NoteEditorActivity extends Activity {
             return;
         }
         flushCell();
+        final boolean imeWas = imeVisible();
         final RichText.Tbl t = curTbl;
         int r = curR;
         int c = curC;
@@ -2140,8 +2150,13 @@ public class NoteEditorActivity extends Activity {
                 int a = e.getSpanStart(t);
                 dropCell();
                 if (a >= 0) {
-                    e.removeSpan(t);
-                    e.delete(a, Math.min(e.length(), a + 1));
+                    body.allowTableDelete = true;
+                    try {
+                        e.removeSpan(t);
+                        e.delete(a, Math.min(e.length(), a + 1));
+                    } finally {
+                        body.allowTableDelete = false;
+                    }
                     changed();
                 }
                 return;
@@ -2152,7 +2167,10 @@ public class NoteEditorActivity extends Activity {
         final int rr = r;
         final int cc = c;
         cellOpen = false;
-        body.post(() -> openCell(t, rr, cc));
+        body.post(() -> {
+            imeForOpen = imeWas;
+            openCell(t, rr, cc);
+        });
     }
 
     // ------------------------------------------------------------ full screen reading
@@ -2399,8 +2417,12 @@ public class NoteEditorActivity extends Activity {
             float lx = ev.getRawX() - loc[0];
             float ly = ev.getRawY() - loc[1];
             if (lx >= 0 && ly >= 0 && lx <= body.getWidth() && ly <= body.getHeight()) {
-                int off = body.getOffsetForPosition(lx, ly);
-                if (off >= 0 && off <= body.length()) body.setSelection(off);
+                try {
+                    int off = body.getOffsetForPosition(lx, ly);
+                    if (off >= 0 && off <= body.length()) body.setSelection(off);
+                } catch (IndexOutOfBoundsException broken) {
+                    // the layout is mid-rebuild; the tap itself still goes through
+                }
             }
         }
         return super.dispatchTouchEvent(ev);

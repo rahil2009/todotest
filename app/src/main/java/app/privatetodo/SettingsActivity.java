@@ -579,7 +579,10 @@ public class SettingsActivity extends Activity {
     private LinearLayout notebookCard() {
         LinearLayout card = card();
         // ---- notes theme: a layer over the notebook (same screens, different paper and type)
-        card.addView(text("Notes theme", 16, Pal.ink, true));
+        TextView ntTitle = text("Notes theme", 16, Pal.ink, true);
+        ntTitle.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD));
+        ntTitle.setTag("keepfont"); // the app font pass must not undo the paper serif
+        card.addView(ntTitle);
         TextView ntsub = text("Paper: warm paper with grain, ink text, a red pencil accent, serif titles and pinned "
                 + "notes as sticky notes. Only the notes section changes, and only in Light (Dark and AMOLED keep the dark look).",
                 13, Pal.muted, false);
@@ -602,6 +605,10 @@ public class SettingsActivity extends Activity {
             final int k = i;
             ntChips[i] = text(ntNames[i], 14, Pal.muted, true);
             ntChips[i].setGravity(Gravity.CENTER);
+            if (i == 1) {
+                ntChips[i].setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.SERIF, android.graphics.Typeface.BOLD));
+                ntChips[i].setTag("keepfont");
+            }
             ntChips[i].setOnClickListener(v -> {
                 Hap.tick(v);
                 PaperTheme.setChosen(this, k);

@@ -101,6 +101,15 @@ public class AlarmActivity extends Activity {
     }
 
     private void show() {
+        // the full-screen screen replaces the banner: drop any heads-up/stale shade entries so none sits on top
+        // (a looping alarm keeps its notification, the ring service needs it)
+        if (!RingService.isRinging()) {
+            android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
+            if (nm != null) {
+                nm.cancel((int) id);
+                for (long p : pend) nm.cancel((int) p);
+            }
+        }
         TaskDb db = new TaskDb(this);
         Task t;
         List<Sub> subs = new ArrayList<>();

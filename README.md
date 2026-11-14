@@ -16,6 +16,15 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.66
+- Tables: removed the height hack that caused the gap/crash; table now self-heals if layout height and drawn height differ; crash guard on first tap (line limit -2).
+- Backspace/Delete can no longer remove a table; only the table bar's Delete table does.
+- Moving a cell no longer pops the keyboard (only if it was already up); the active cell keeps clear of the table bar.
+- Folders: "All / Less" chip expands every folder into wrapped rows (no sideways scrolling).
+- Full-screen alert clears old banners from the shade.
+- Paper theme: "Notes theme" settings heading in serif; pinned notes get a translucent tape strip (Paper only, pin button unchanged).
+- Not yet: row swipe colours, table copy/paste across notes, arrow connectors (need design OK).
+
 ### v3.65
 - Notes theme "Paper" (Settings > Notebook > Notes theme): a layer over the notes section only, in Light: paper colour with grain and a warm edge, ink text, red pencil accent, serif titles, a yellow highlighter under the page title, pinned notes as tilted sticky notes (when their pinned colour is the default). Layout and looks are unchanged.
 

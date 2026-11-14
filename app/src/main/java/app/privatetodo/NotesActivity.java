@@ -315,6 +315,12 @@ public class NotesActivity extends Activity {
     /** The folder chips under the title: one per folder, then "+ Folder". */
     private void buildChips(List<Folder> folders) {
         chips.removeAllViews();
+        final boolean wide = Prefs.foldersExpanded(this);
+        final FlowLayout flow = new FlowLayout(this, dp(8), dp(8));
+        chipsScroll.setFillViewport(wide);
+        android.widget.FrameLayout.LayoutParams hp = new android.widget.FrameLayout.LayoutParams(
+                wide ? getResources().getDisplayMetrics().widthPixels : -2, -2);
+        chips.setLayoutParams(hp);
         // Shared notes: links sent here from other apps, always the first chip
         LinearLayout shared = chip();
         TextView link = text("\uD83D\uDD17", 15, Pal.ink, false);
@@ -330,7 +336,7 @@ public class NotesActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, SharedActivity.class));
         });
-        chips.addView(shared, chipLp());
+        put(shared, wide, flow);
         for (final Folder f : folders) {
             LinearLayout chip = chip();
             IconView ic = new IconView(this, IconView.FOLDER);
@@ -357,7 +363,7 @@ public class NotesActivity extends Activity {
                 folderMenu(f);
                 return true;
             });
-            chips.addView(chip, chipLp());
+            put(chip, wide, flow);
         }
         LinearLayout add = chip();
         IconView plus = new IconView(this, IconView.PLUS);
@@ -371,7 +377,7 @@ public class NotesActivity extends Activity {
             Hap.tick(v);
             folderDialog(null, null);
         });
-        chips.addView(add, chipLp());
+        put(add, wide, flow);
         // The Bin: deleted notes wait here for 30 days
         LinearLayout bin = chip();
         IconView bi = new IconView(this, IconView.TRASH);
@@ -390,7 +396,24 @@ public class NotesActivity extends Activity {
             Hap.tick(v);
             startActivity(new Intent(this, BinActivity.class));
         });
-        chips.addView(bin, chipLp());
+        put(bin, wide, flow);
+            // expand / collapse: all folders at once instead of scrolling sideways
+        LinearLayout more = chip();
+        TextView ml = text(wide ? "Less \u25B4" : "All \u25BE", 14, Pal.accent, true);
+        more.addView(ml);
+        more.setOnClickListener(v -> {
+            Hap.tick(v);
+            Prefs.setFoldersExpanded(this, !wide);
+            buildChips(folders);
+            Fonts.apply(chips);
+        });
+        put(more, wide, flow);
+        if (wide) chips.addView(flow, new LinearLayout.LayoutParams(-1, -2));
+    }
+
+    private void put(View v, boolean wide, FlowLayout flow) {
+        if (wide) flow.addView(v, new android.view.ViewGroup.LayoutParams(-2, dp(44)));
+        else chips.addView(v, chipLp());
     }
 
     private LinearLayout chip() {
@@ -1259,6 +1282,7 @@ public class NotesActivity extends Activity {
             return true;
         });
         wrap.addView(card, new FrameLayout.LayoutParams(-1, -2));
+        if (PaperTheme.on && n.pinned > 0) wrap.addView(PaperTheme.tape(this), PaperTheme.tapeLp(this)); // paper only
         wrap.addView(pinButton(n, tinted ? fg : 0, cell ? 40 : 44), pinLp(cell ? 40 : 44));
         return wrap;
     }

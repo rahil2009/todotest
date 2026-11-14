@@ -72,6 +72,53 @@ final class PaperTheme {
         return STICKY[(int) (Math.abs(id) % STICKY.length)];
     }
 
+    /** Paper only: a strip of translucent tape holding a pinned note, like the design. */
+    static View tape(Context c) {
+        final float d = c.getResources().getDisplayMetrics().density;
+        View v = new View(c);
+        v.setRotation(-3f);
+        v.setElevation(2 * d);
+        v.setBackground(new Drawable() {
+            private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint dash = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+            @Override
+            public void draw(Canvas cv) {
+                android.graphics.Rect b = getBounds();
+                fill.setColor(0x8CFFFFFF);
+                cv.drawRect(b, fill);
+                dash.setColor(0x1F000000);
+                dash.setStyle(Paint.Style.STROKE);
+                dash.setStrokeWidth(d);
+                dash.setPathEffect(new android.graphics.DashPathEffect(new float[]{3 * d, 2 * d}, 0));
+                cv.drawLine(b.left + d / 2, b.top, b.left + d / 2, b.bottom, dash);
+                cv.drawLine(b.right - d / 2, b.top, b.right - d / 2, b.bottom, dash);
+            }
+
+            @Override
+            public void setAlpha(int a) {
+            }
+
+            @Override
+            public void setColorFilter(android.graphics.ColorFilter f) {
+            }
+
+            @Override
+            public int getOpacity() {
+                return PixelFormat.TRANSLUCENT;
+            }
+        });
+        return v;
+    }
+
+    static android.widget.FrameLayout.LayoutParams tapeLp(Context c) {
+        float d = c.getResources().getDisplayMetrics().density;
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams((int) (58 * d), (int) (18 * d));
+        lp.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = (int) (-4 * d);
+        return lp;
+    }
+
     /** A small tilt for a pinned note, steady per note. */
     static float tilt(long id) {
         return (id % 2 == 0 ? -1f : 1f) * (0.9f + (Math.abs(id) % 3) * 0.4f);

@@ -1196,6 +1196,11 @@ final class RichText {
         }
 
         /** Height of every row: one line, or more when a cell's text wraps. */
+        /** The height the text layout was told (getSize); the table drawn at another height is what showed as a gap or an overlap. */
+        int laidH = -1;
+        private long healAt;
+        private int heals;
+
         float[] heights(Paint p) {
             int rows = rows();
             int cols = cols();
@@ -1370,15 +1375,11 @@ final class RichText {
         public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
             if (fm != null) {
                 int h = (int) Math.ceil(totalH(p));
+                laidH = h;
                 fm.ascent = -h;
                 fm.top = -h;
-                // Line spacing adds (multiplier - 1) x the line's height below it: under a tall table that was a
-                // blank strip. A small negative descent makes the line, spacing included, exactly the table's
-                // height. The table itself is drawn as before (upwards from the baseline), so it never moves.
-                float m = Math.max(1f, lineMult);
-                int d = m > 1.001f ? -(int) Math.floor(h - h / m) : 0;
-                fm.descent = d;
-                fm.bottom = d;
+                fm.descent = 0;
+                fm.bottom = 0;
             }
             return width();
         }
@@ -1395,6 +1396,19 @@ final class RichText {
             for (int i = 0; i < rows; i++) tops[i + 1] = tops[i] + hs[i];
             float colW = w / cols;
             float t0 = y - tops[rows];
+            if (laidH >= 0 && Math.abs(laidH - tops[rows]) > 1.5f && text instanceof Editable) {
+                // the layout was measured with other numbers (a row grew, the width changed, full screen toggled):
+                // have it measure again, a few times at most
+                long now = android.os.SystemClock.uptimeMillis();
+                if (now - healAt > 400) heals = 0;
+                if (heals < 3 && now - healAt > 60) {
+                    healAt = now;
+                    heals++;
+                    final Editable ed = (Editable) text;
+                    final Tbl self = this;
+                    new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> refresh(ed, self));
+                }
+            }
             drawX = x;
             drawTop = t0;
             drawSize = p.getTextSize();

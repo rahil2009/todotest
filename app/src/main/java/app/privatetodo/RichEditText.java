@@ -91,9 +91,20 @@ final class RichEditText extends EditText {
         }
     }
 
+    /** Set only around the table bar's Delete table. */
+    boolean allowTableDelete;
+
     RichEditText(Context c) {
         super(c);
         sel = new SelectKit(this);
+        // Backspace/Delete must never swallow a table: only the table bar's "Delete table" may remove it.
+        setFilters(new android.text.InputFilter[]{(src, st, en, dst, ds, de) -> {
+            if (allowTableDelete || de <= ds) return null;
+            for (int i = ds; i < de && i < dst.length(); i++)
+                if (dst.charAt(i) == RichText.TABLE_CHAR && dst.getSpans(i, i + 1, RichText.Tbl.class).length > 0)
+                    return dst.subSequence(ds, de);
+            return null;
+        }});
         scaler = new android.view.ScaleGestureDetector(c,
                 new android.view.ScaleGestureDetector.SimpleOnScaleGestureListener() {
                     @Override
