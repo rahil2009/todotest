@@ -24,6 +24,12 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Full-screen alert clears old banners from the shade.
 - Paper theme: "Notes theme" settings heading in serif; pinned notes get a translucent tape strip (Paper only, pin button unchanged).
 - Not yet: row swipe colours, table copy/paste across notes, arrow connectors (need design OK).
+- Tables: height is now measured from the line's real top and self-corrects, so no old padding below any table (also when the table is the last line).
+- Folders (Notes and Shared): swipe the folder row down to open all folders in wrapped rows, up to close; tap the small handle too. Chips are equal height.
+- Tables: swipe one finger sideways across a row to colour it (header too); colours are saved with the note.
+- Copy / cut / paste keeps formatting, tables, counters and ticks, also into other notes (rich copy kept in memory only). New "Copy table" in the table bar.
+- Boxes and arrows: Templates tab has Box (draw a squircle round text with a finger), Arrow (drag from text or box to text or box) and Clear. Tap the dot on an arrow to select it, drag it to move the middle segment, tap the cross to delete or the dot to change colour. They follow the text when you edit.
+- "Notes theme" settings title and Paper pinned-note tape.
 
 ### v3.65
 - Notes theme "Paper" (Settings > Notebook > Notes theme): a layer over the notes section only, in Light: paper colour with grain and a warm edge, ink text, red pencil accent, serif titles, a yellow highlighter under the page title, pinned notes as tilted sticky notes (when their pinned colour is the default). Layout and looks are unchanged.

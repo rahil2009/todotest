@@ -13,6 +13,7 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -108,7 +109,21 @@ public class SharedActivity extends Activity {
         chipRow = new LinearLayout(this);
         chipRow.setPadding(dp(14), 0, dp(14), dp(6));
         chipScroll.addView(chipRow);
-        root.addView(chipScroll, new LinearLayout.LayoutParams(-1, -2));
+        SwipeBox deck = new SwipeBox(this);
+        deck.addView(chipScroll, new LinearLayout.LayoutParams(-1, -2));
+        View grab = new View(this);
+        GradientDrawable gd = new GradientDrawable();
+        gd.setCornerRadius(dp(2));
+        gd.setColor(Pal.muted);
+        grab.setBackground(gd);
+        grab.setAlpha(0.35f);
+        grab.setOnClickListener(v -> setWide(!Prefs.foldersExpanded(this)));
+        LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(dp(36), dp(4));
+        gl.gravity = Gravity.CENTER_HORIZONTAL;
+        gl.bottomMargin = dp(6);
+        deck.addView(grab, gl);
+        deck.onSwipe(() -> setWide(true), () -> setWide(false));
+        root.addView(deck, new LinearLayout.LayoutParams(-1, -2));
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);
         col = new LinearLayout(this);
@@ -253,9 +268,26 @@ public class SharedActivity extends Activity {
         chip.setBackground(g);
     }
 
+    private void setWide(boolean w) {
+        if (Prefs.foldersExpanded(this) == w) return;
+        Prefs.setFoldersExpanded(this, w);
+        buildChips();
+        Fonts.apply(chipRow);
+    }
+
+    private void put(View v, boolean wide, FlowLayout flow) {
+        if (wide) flow.addView(v, new ViewGroup.LayoutParams(-2, dp(44)));
+        else chipRow.addView(v, chipLp());
+    }
+
     private void buildChips() {
         chipRow.removeAllViews();
         chipRow.setPadding(dp(14), dp(2), dp(14), dp(8));
+        final boolean wide = Prefs.foldersExpanded(this);
+        final FlowLayout flow = new FlowLayout(this, dp(8), dp(8));
+        chipScroll.setFillViewport(wide);
+        chipRow.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
+                wide ? getResources().getDisplayMetrics().widthPixels : -2, -2));
         // All
         LinearLayout all = folderChip();
         styleChip(all, curFolder == -1, 0);
@@ -269,7 +301,7 @@ public class SharedActivity extends Activity {
             curFolder = -1;
             refresh();
         });
-        chipRow.addView(all, chipLp());
+        put(all, wide, flow);
         for (final Folder f : folders) {
             boolean on = curFolder == f.id;
             LinearLayout chip = folderChip();
@@ -298,7 +330,7 @@ public class SharedActivity extends Activity {
                 folderMenu(f);
                 return true;
             });
-            chipRow.addView(chip, chipLp());
+            put(chip, wide, flow);
         }
         LinearLayout add = folderChip();
         styleChip(add, false, 0);
@@ -313,7 +345,8 @@ public class SharedActivity extends Activity {
             Hap.tick(v);
             newFolder(null);
         });
-        chipRow.addView(add, chipLp());
+        put(add, wide, flow);
+        if (wide) chipRow.addView(flow, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private LinearLayout.LayoutParams chipLp() {

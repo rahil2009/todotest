@@ -1011,6 +1011,17 @@ final class RichText {
      */
     static final class Tbl extends android.text.style.ReplacementSpan {
         String[][] cells;
+        /** Per-row tint (0 = none), set by swiping across a row. Same length as cells. */
+        int[] rowColor;
+
+        int colorOf(int r) {
+            return rowColor != null && r >= 0 && r < rowColor.length ? rowColor[r] : 0;
+        }
+
+        void setColor(int r, int argb) {
+            if (rowColor == null || rowColor.length != cells.length) rowColor = java.util.Arrays.copyOf(rowColor == null ? new int[0] : rowColor, cells.length);
+            if (r >= 0 && r < rowColor.length) rowColor[r] = argb;
+        }
 
         Tbl(String[][] cells) {
             this.cells = cells;
@@ -1330,6 +1341,9 @@ final class RichText {
                     n[r] = cells[o++];
                 }
             }
+            int[] nc = new int[n.length];
+            for (int r = 0, o = 0; r < n.length; r++) if (r != at) nc[r] = colorOf(o++);
+            rowColor = nc;
             cells = n;
         }
 
@@ -1348,7 +1362,9 @@ final class RichText {
         boolean delRow(int at) {
             if (rows() <= 2 || at < 1 || at >= rows()) return false; // header + one row stay
             String[][] n = new String[rows() - 1][];
-            for (int r = 0, o = 0; r < rows(); r++) if (r != at) n[o++] = cells[r];
+            int[] nc = new int[n.length];
+            for (int r = 0, o = 0; r < rows(); r++) if (r != at) { nc[o] = colorOf(r); n[o++] = cells[r]; }
+            rowColor = nc;
             cells = n;
             return true;
         }
@@ -1371,10 +1387,21 @@ final class RichText {
             cells[r2][k2] = t;
         }
 
+        // The layout adds (multiplier - 1) x the line height below every line except the very last one, so a tall
+        // table would get an invisible gap. Report the height divided by the multiplier that really applies; draw()
+        // reads the true line height back and learns it if the guess was wrong.
+        private float effMult = -1f;
+        private boolean wasLast;
+
         @Override
         public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
             if (fm != null) {
-                int h = (int) Math.ceil(totalH(p));
+                boolean lastLine = end >= text.length();
+                if (effMult < 0 || lastLine != wasLast) {
+                    wasLast = lastLine;
+                    effMult = lastLine ? 1f : Math.max(1f, lineMult);
+                }
+                int h = (int) Math.ceil(totalH(p) / effMult);
                 laidH = h;
                 fm.ascent = -h;
                 fm.top = -h;
@@ -1395,15 +1422,17 @@ final class RichText {
             float[] tops = new float[rows + 1];
             for (int i = 0; i < rows; i++) tops[i + 1] = tops[i] + hs[i];
             float colW = w / cols;
-            float t0 = y - tops[rows];
-            if (laidH >= 0 && Math.abs(laidH - tops[rows]) > 1.5f && text instanceof Editable) {
-                // the layout was measured with other numbers (a row grew, the width changed, full screen toggled):
-                // have it measure again, a few times at most
+            float t0 = top; // from the line's real top, so no padding hides above or below the table
+            y = Math.round(t0 + tops[rows]);
+            float lineH = bottom - top;
+            if (laidH > 0 && Math.abs(lineH - tops[rows]) > 1.5f && text instanceof Editable) {
                 long now = android.os.SystemClock.uptimeMillis();
                 if (now - healAt > 400) heals = 0;
                 if (heals < 3 && now - healAt > 60) {
                     healAt = now;
                     heals++;
+                    float em = lineH / laidH; // what the layout really did with our number
+                    if (em >= 1f && em < 2f && Math.abs(em - effMult) > 0.005f) effMult = em;
                     final Editable ed = (Editable) text;
                     final Tbl self = this;
                     new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> refresh(ed, self));
@@ -1440,6 +1469,12 @@ final class RichText {
             // body rows sit on a slightly raised card colour
             fill.setColor(Pal.card);
             c.drawRect(x, t0 + hs[0], x + w, y, fill);
+            for (int r = 0; r < rows; r++) { // a row tinted with a swipe
+                int rc = colorOf(r);
+                if (rc == 0) continue;
+                fill.setColor((rc & 0x00FFFFFF) | (Pal.dark ? 0x66000000 : 0x55000000));
+                c.drawRect(x, t0 + tops[r], x + w, t0 + tops[r + 1], fill);
+            }
             c.restore();
 
             for (int r = 1; r < rows; r++) c.drawLine(x, t0 + tops[r], x + w, t0 + tops[r], r == 1 ? line : sep);
@@ -2527,6 +2562,10 @@ final class RichText {
             }
             o.put("s", arr);
             if (text instanceof Spanned) {
+                JSONArray an = Arrows.toJson((Spanned) text, end);
+                if (an.length() > 0) o.put("an", an);
+            }
+            if (text instanceof Spanned) {
                 JSONObject tb = new JSONObject();
                 Spanned sp = (Spanned) text;
                 for (Tbl t : sp.getSpans(0, sp.length(), Tbl.class)) {
@@ -2538,6 +2577,18 @@ final class RichText {
                     }
                     tb.put(String.valueOf(sp.getSpanStart(t)), rows);
                 }
+                JSONObject tcl = new JSONObject();
+                for (Tbl t : sp.getSpans(0, sp.length(), Tbl.class)) {
+                    if (t.rowColor == null) continue;
+                    boolean any = false;
+                    JSONArray cs = new JSONArray();
+                    for (int cc : t.rowColor) {
+                        cs.put(cc);
+                        if (cc != 0) any = true;
+                    }
+                    if (any) tcl.put(String.valueOf(sp.getSpanStart(t)), cs);
+                }
+                if (tcl.length() > 0) o.put("tc", tcl);
                 if (tb.length() > 0) o.put("tb", tb);
             }
             return o.toString();
@@ -2552,6 +2603,7 @@ final class RichText {
             JSONObject o = new JSONObject(json);
             String t = o.getString("t");
             out.append(t);
+            Arrows.fromJson(o.optJSONArray("an"), out, t.length());
             JSONArray arr = o.optJSONArray("s");
             if (arr == null) return;
             for (int i = 0; i < arr.length(); i++) {
@@ -2568,7 +2620,14 @@ final class RichText {
                         cells[x] = new String[rr.length()];
                         for (int y = 0; y < rr.length(); y++) cells[x][y] = rr.getString(y);
                     }
-                    out.setSpan(new Tbl(cells), a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    Tbl nt = new Tbl(cells);
+                    JSONObject tcl = o.optJSONObject("tc");
+                    JSONArray cs = tcl == null ? null : tcl.optJSONArray(String.valueOf(a));
+                    if (cs != null) {
+                        nt.rowColor = new int[cells.length];
+                        for (int x = 0; x < cells.length && x < cs.length(); x++) nt.rowColor[x] = cs.optInt(x);
+                    }
+                    out.setSpan(nt, a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     continue;
                 }
                 if (a < b) out.setSpan(make(r.getInt(0), r.optInt(3)), a, b,

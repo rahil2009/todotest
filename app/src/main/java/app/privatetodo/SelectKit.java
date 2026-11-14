@@ -739,9 +739,7 @@ final class SelectKit {
         int a = Math.min(v.getSelectionStart(), v.getSelectionEnd());
         int b = Math.max(v.getSelectionStart(), v.getSelectionEnd());
         if (a < 0 || a == b) return;
-        String s = v.getText().subSequence(a, b).toString().replace('￼', ' ');
-        ClipboardManager cm = clip();
-        if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("note", s));
+        RichClip.copy(v.getContext(), v.getText(), a, b);
     }
 
     private boolean canPaste() {
@@ -750,17 +748,13 @@ final class SelectKit {
     }
 
     private void paste() {
-        ClipboardManager cm = clip();
-        if (cm == null || !cm.hasPrimaryClip() || cm.getPrimaryClip().getItemCount() == 0) return;
-        CharSequence s = cm.getPrimaryClip().getItemAt(0).coerceToText(v.getContext());
-        if (s == null) return;
         if (!v.isFocused()) v.requestFocus();
         int a = Math.max(0, Math.min(v.getSelectionStart(), v.getSelectionEnd()));
         int b = Math.max(0, Math.max(v.getSelectionStart(), v.getSelectionEnd()));
-        Editable e = v.getText();
         quiet();
-        e.replace(a, b, s.toString());
-        v.setSelection(Math.min(e.length(), a + s.length()));
+        int at = RichClip.paste(v.getContext(), v.getText(), a, b);
+        if (at < 0) return;
+        v.setSelection(Math.min(v.length(), at));
         hideBar();
     }
 }

@@ -24,8 +24,10 @@ final class FlowLayout extends ViewGroup {
         for (int i = 0; i < getChildCount(); i++) {
             View ch = getChildAt(i);
             if (ch.getVisibility() == GONE) continue;
-            ch.measure(MeasureSpec.makeMeasureSpec(maxW, MeasureSpec.AT_MOST),
-                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
+            ViewGroup.LayoutParams lp = ch.getLayoutParams();
+            int hs = lp != null && lp.height > 0 ? MeasureSpec.makeMeasureSpec(lp.height, MeasureSpec.EXACTLY)
+                    : MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED);
+            ch.measure(MeasureSpec.makeMeasureSpec(maxW, MeasureSpec.AT_MOST), hs);
             int w = ch.getMeasuredWidth();
             int h = ch.getMeasuredHeight();
             if (x > 0 && x + w > maxW) {

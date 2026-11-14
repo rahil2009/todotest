@@ -306,6 +306,8 @@ public class NoteEditorActivity extends Activity {
         RichText.zoom = scale;
         body.setTextSize(17 * scale);
         body.setTableTapListener((tb, r, c, onTick, l, t) -> onTableTap(tb, r, c, onTick));
+        body.setTableSwipeListener((tb, r) -> rowColourDialog(tb, r));
+        body.arrows.onChanged(this::changed);
         body.setZoomListener((f, done) -> {
             if (zoomLockValue() > 0) return; // this note's zoom is locked: pinching does nothing
             if (done) {
@@ -1161,7 +1163,10 @@ public class NoteEditorActivity extends Activity {
                         tool(ACT_BASE + 2, "☕", Typeface.BOLD, "Recipe", "Recipe template"),
                         tool(ACT_BASE + 3, "▦", Typeface.BOLD, "Week plan", "Week plan table"),
                         tool(ACT_BASE + 4, "★", Typeface.BOLD, "Mine", "Insert my saved template"),
-                        tool(ACT_BASE + 5, "+", Typeface.BOLD, "Save as mine", "Save this note as my template"));
+                        tool(ACT_BASE + 5, "+", Typeface.BOLD, "Save as mine", "Save this note as my template"),
+                        tool(ACT_BASE + 20, "\u25AD", Typeface.BOLD, "Box", "Draw a squircle round some text with your finger"),
+                        tool(ACT_BASE + 21, "\u2197", Typeface.BOLD, "Arrow", "Drag from one text or box to another to link them"),
+                        tool(ACT_BASE + 22, "\u2715", Typeface.BOLD, "Clear links", "Remove every box and arrow in this note"));
             default:
                 return toolRow(
                         tool(ACT_BASE + 10, "↓", Typeface.BOLD, "Paste MD", "Paste Markdown from the clipboard as formatted text"),
@@ -1695,6 +1700,27 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
+    /** 0 = box tool, 1 = arrow tool, 2 = clear. Tapping the active tool again turns it off. */
+    private void linkTool(int which) {
+        if (which == 2) {
+            body.arrows.clearAll();
+            body.arrows.mode = Arrows.MODE_OFF;
+            changed();
+            Toast.makeText(this, "Boxes and arrows cleared", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int m = which == 0 ? Arrows.MODE_BOX : Arrows.MODE_ARROW;
+        body.arrows.mode = body.arrows.mode == m ? Arrows.MODE_OFF : m;
+        body.arrows.onChanged(this::changed);
+        if (body.arrows.mode != Arrows.MODE_OFF) {
+            android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
+            if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
+            Toast.makeText(this, which == 0 ? "Draw round the text you want boxed. Tap Box again to finish."
+                    : "Drag from one text or box to another. Tap Arrow again to finish.", Toast.LENGTH_LONG).show();
+        }
+        body.invalidate();
+    }
+
     private void markdownAction(int n) {
         Editable e = body.getText();
         switch (n) {
@@ -1851,6 +1877,46 @@ public class NoteEditorActivity extends Activity {
         int g = Math.round(android.graphics.Color.green(base) * (1 - a) + android.graphics.Color.green(over) * a);
         int b = Math.round(android.graphics.Color.blue(base) * (1 - a) + android.graphics.Color.blue(over) * a);
         return android.graphics.Color.rgb(r, g, b);
+    }
+
+    private static final int[] ROW_COLOURS = {0, 0xFFE5484D, 0xFFF08A24, 0xFFE9B800, 0xFF2FA866, 0xFF2E7DE0, 0xFF8B5CD6, 0xFF8A8F98};
+
+    /** Swiping across a table row: pick a tint for that row (the first dot clears it). */
+    private void rowColourDialog(final RichText.Tbl t, final int row) {
+        Hap.confirm(body);
+        final AlertDialog[] dlg = new AlertDialog[1];
+        LinearLayout holder = new LinearLayout(this);
+        holder.setOrientation(LinearLayout.VERTICAL);
+        holder.setPadding(dp(20), dp(8), dp(20), dp(12));
+        LinearLayout line = new LinearLayout(this);
+        line.setGravity(Gravity.CENTER);
+        for (int i = 0; i < ROW_COLOURS.length; i++) {
+            final int col = ROW_COLOURS[i];
+            View dot = new View(this);
+            GradientDrawable g = new GradientDrawable();
+            g.setShape(GradientDrawable.OVAL);
+            if (col == 0) {
+                g.setColor(Pal.card);
+                g.setStroke(dp(2), Pal.muted);
+            } else {
+                g.setColor(col);
+                if (t.colorOf(row) == col) g.setStroke(dp(3), Pal.ink);
+            }
+            dot.setBackground(g);
+            dot.setContentDescription(col == 0 ? "No colour" : "Colour");
+            dot.setOnClickListener(v -> {
+                Hap.tick(v);
+                t.setColor(row, col);
+                body.invalidate();
+                changed();
+                if (dlg[0] != null) dlg[0].dismiss();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(34), dp(34));
+            lp.setMargins(dp(5), 0, dp(5), 0);
+            line.addView(dot, lp);
+        }
+        holder.addView(line);
+        dlg[0] = new Dlg.Builder(this).setTitle(row == 0 ? "Colour the header" : "Colour this row").setView(holder).show();
     }
 
     private void onTableTap(RichText.Tbl t, int r, int c, boolean onTick) {
@@ -2063,7 +2129,7 @@ public class NoteEditorActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(8), dp(6), dp(8), dp(6));
-        String[] names = {"Done", "+ Row", "+ Col", "− Row", "− Col", "Tick", "←", "→", "↑", "↓", "± Counter", "Delete table"};
+        String[] names = {"Done", "+ Row", "+ Col", "− Row", "− Col", "Tick", "←", "→", "↑", "↓", "± Counter", "Copy table", "Delete table"};
         for (int i = 0; i < names.length; i++) {
             final int op = i;
             TextView chip = toolChip(names[i], () -> tableOp(op));
@@ -2145,6 +2211,10 @@ public class NoteEditorActivity extends Activity {
                 }
                 dropCell();
                 tableCounterDialog(t, r, c);
+                return;
+            case 11:
+                RichClip.copyTable(this, e, t);
+                Toast.makeText(this, "Table copied. Paste it in any note.", Toast.LENGTH_SHORT).show();
                 return;
             default: {
                 int a = e.getSpanStart(t);
@@ -2636,6 +2706,10 @@ public class NoteEditorActivity extends Activity {
         }
         if (key >= ACT_BASE && key < ACT_BASE + 100) {
             int n = key - ACT_BASE;
+            if (n >= 20 && n <= 22) {
+                linkTool(n - 20);
+                return;
+            }
             if (n < 6) {
                 if (n == 5) {
                     flushCell();

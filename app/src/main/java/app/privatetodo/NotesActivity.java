@@ -166,10 +166,24 @@ public class NotesActivity extends Activity {
         chips.setOrientation(LinearLayout.HORIZONTAL);
         chips.setPadding(dp(16), 0, dp(8), 0);
         chipsScroll.addView(chips);
+        SwipeBox deck = new SwipeBox(this);
+        deck.addView(chipsScroll, new LinearLayout.LayoutParams(-1, -2));
+        View grab = new View(this); // a small handle: swipe the folders down to open them, up to close, or tap it
+        GradientDrawable gd = new GradientDrawable();
+        gd.setCornerRadius(dp(2));
+        gd.setColor(Pal.muted);
+        grab.setBackground(gd);
+        grab.setAlpha(0.35f);
+        grab.setOnClickListener(v -> setFoldersWide(!Prefs.foldersExpanded(this)));
+        LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(dp(36), dp(4));
+        gl.gravity = Gravity.CENTER_HORIZONTAL;
+        gl.topMargin = dp(6);
+        deck.addView(grab, gl);
+        deck.onSwipe(() -> setFoldersWide(true), () -> setFoldersWide(false));
         LinearLayout.LayoutParams chp = new LinearLayout.LayoutParams(-1, -2);
         chp.topMargin = dp(16);
         chp.bottomMargin = dp(8);
-        col.addView(chipsScroll, chp);
+        col.addView(deck, chp);
 
         // Search: opened with the button next to "New note"
         searchField = new EditText(this);
@@ -313,7 +327,19 @@ public class NotesActivity extends Activity {
     // ------------------------------------------------------------ folders
 
     /** The folder chips under the title: one per folder, then "+ Folder". */
+    private List<Folder> lastFolders;
+
+    private void setFoldersWide(boolean w) {
+        if (Prefs.foldersExpanded(this) == w) return;
+        Prefs.setFoldersExpanded(this, w);
+        if (lastFolders != null) {
+            buildChips(lastFolders);
+            Fonts.apply(chips);
+        }
+    }
+
     private void buildChips(List<Folder> folders) {
+        lastFolders = folders;
         chips.removeAllViews();
         final boolean wide = Prefs.foldersExpanded(this);
         final FlowLayout flow = new FlowLayout(this, dp(8), dp(8));
@@ -397,17 +423,6 @@ public class NotesActivity extends Activity {
             startActivity(new Intent(this, BinActivity.class));
         });
         put(bin, wide, flow);
-            // expand / collapse: all folders at once instead of scrolling sideways
-        LinearLayout more = chip();
-        TextView ml = text(wide ? "Less \u25B4" : "All \u25BE", 14, Pal.accent, true);
-        more.addView(ml);
-        more.setOnClickListener(v -> {
-            Hap.tick(v);
-            Prefs.setFoldersExpanded(this, !wide);
-            buildChips(folders);
-            Fonts.apply(chips);
-        });
-        put(more, wide, flow);
         if (wide) chips.addView(flow, new LinearLayout.LayoutParams(-1, -2));
     }
 

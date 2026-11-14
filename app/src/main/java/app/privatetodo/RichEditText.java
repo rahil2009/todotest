@@ -91,6 +91,24 @@ final class RichEditText extends EditText {
         }
     }
 
+    @Override
+    public boolean onTextContextMenuItem(int id) {
+        int a = Math.max(0, Math.min(getSelectionStart(), getSelectionEnd()));
+        int b = Math.max(0, Math.max(getSelectionStart(), getSelectionEnd()));
+        if (id == android.R.id.copy || id == android.R.id.cut) {
+            if (a == b) return true;
+            RichClip.copy(getContext(), getText(), a, b);
+            if (id == android.R.id.cut) getText().delete(a, b);
+            return true;
+        }
+        if (id == android.R.id.paste || id == android.R.id.pasteAsPlainText) {
+            int at = RichClip.paste(getContext(), getText(), a, b);
+            if (at >= 0) setSelection(Math.min(length(), at));
+            return true;
+        }
+        return super.onTextContextMenuItem(id);
+    }
+
     /** Set only around the table bar's Delete table. */
     boolean allowTableDelete;
 
@@ -289,6 +307,20 @@ final class RichEditText extends EditText {
     interface TableTapListener {
         void onTableTap(RichText.Tbl t, int row, int col, boolean onTick, float left, float top);
     }
+
+    /** A one-finger swipe sideways across a table row. */
+    interface TableSwipeListener {
+        void onRowSwipe(RichText.Tbl t, int row);
+    }
+
+    private TableSwipeListener swipeL;
+    private boolean tblSwiped;
+
+    void setTableSwipeListener(TableSwipeListener l) {
+        swipeL = l;
+    }
+
+    final Arrows arrows = new Arrows(this);
 
     private TableTapListener tableListener;
     private RichText.Tbl tblDown;
@@ -787,6 +819,7 @@ final class RichEditText extends EditText {
     /** A tap on a to-do box (the first characters of a "\u2610 " / "\u2611 " line) ticks it. */
     @Override
     public boolean onTouchEvent(MotionEvent e) {
+        if (arrows.touch(e)) return true;
         if (sel != null && sel.onTouch(e)) return true; // the note's own selection (handles, long-press, double-tap)
         if (e.getActionMasked() == MotionEvent.ACTION_DOWN && !isFocused() && getLayout() != null) {
             tapOff = getOffsetForPosition(e.getX(), e.getY());
@@ -860,6 +893,7 @@ final class RichEditText extends EditText {
                 downX = e.getX();
                 downY = e.getY();
                 tblDown = null;
+                tblSwiped = false;
                 if (tableDown(e.getX(), e.getY())) {
                     if ((tblZone == 0 || tblZone == 2) && tblR > 0 && counterL != null
                             && RichText.Tbl.counterOf(tblDown.cells[tblR][tblC]) != null) {
@@ -874,12 +908,19 @@ final class RichEditText extends EditText {
                     tblMoved = true;
                     if (!holdFired) holdEnd();
                 }
+                float sx = e.getX() - downX, sy = e.getY() - downY;
+                if (!tblSwiped && swipeL != null && !holdFired && Math.abs(sx) > 40 * getResources().getDisplayMetrics().density
+                        && Math.abs(sx) > Math.abs(sy) * 2f) {
+                    tblSwiped = true;
+                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                    swipeL.onRowSwipe(tblDown, tblR);
+                }
                 if (act0 == MotionEvent.ACTION_UP) {
                     RichText.Tbl t = tblDown;
                     boolean held = holdFired;
                     holdEnd();
                     tblDown = null;
-                    if (!tblMoved && !held) tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
+                    if (!tblMoved && !held && !tblSwiped) tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
                 } else if (act0 == MotionEvent.ACTION_CANCEL) {
                     holdEnd();
                     tblDown = null;
@@ -1006,6 +1047,7 @@ final class RichEditText extends EditText {
         updateCaret();
         super.onDraw(canvas);
         if (sel != null) sel.draw(canvas);
+        arrows.draw(canvas);
         if (windowed) canvas.restore();
     }
 
