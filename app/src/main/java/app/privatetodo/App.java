@@ -27,6 +27,7 @@ public class App extends Application {
             }
             if (prev != null) prev.uncaughtException(t, e);
         });
+        Shortcuts.publish(this);
         Pal.applyNight(this); // keep the system's idea of our light / dark mode in step with Settings
         registerActivityLifecycleCallbacks(new ActivityLifecycleCallbacks() {
             @Override

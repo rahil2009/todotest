@@ -63,6 +63,25 @@ public class NotesActivity extends Activity {
         setContentView(build());
         Fonts.apply(getWindow().getDecorView());
         PaperTheme.serif(getWindow().getDecorView());
+        paperBars();
+    }
+
+    /** Paper theme: the status bar and the gesture bar take the paper colour too. */
+    private void paperBars() {
+        if (!PaperTheme.on) return;
+        android.view.Window w = getWindow();
+        w.setStatusBarColor(PaperTheme.PAPER_BG);
+        w.setNavigationBarColor(PaperTheme.PAPER_BG);
+        if (android.os.Build.VERSION.SDK_INT >= 30 && w.getInsetsController() != null) {
+            w.getInsetsController().setSystemBarsAppearance(
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                            | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                    android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                            | android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
+        } else {
+            w.getDecorView().setSystemUiVisibility(w.getDecorView().getSystemUiVisibility()
+                    | android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        }
     }
 
     @Override
@@ -75,6 +94,7 @@ public class NotesActivity extends Activity {
             recreate();
             return;
         }
+        paperBars();
         refresh();
         if (getIntent().getBooleanExtra(EXTRA_LOOKS, false)) { // opened from Settings > Notebook > List look
             getIntent().removeExtra(EXTRA_LOOKS);
@@ -179,7 +199,7 @@ public class NotesActivity extends Activity {
         gl.gravity = Gravity.CENTER_HORIZONTAL;
         gl.topMargin = dp(6);
         deck.addView(grab, gl);
-        deck.onSwipe(() -> setFoldersWide(true), () -> setFoldersWide(false));
+        deck.onSwipe(() -> Prefs.foldersExpanded(this), () -> setFoldersWide(true), () -> setFoldersWide(false));
         LinearLayout.LayoutParams chp = new LinearLayout.LayoutParams(-1, -2);
         chp.topMargin = dp(16);
         chp.bottomMargin = dp(8);
@@ -782,6 +802,16 @@ public class NotesActivity extends Activity {
             "Grid: the edit time big and first.", "Grid: accent gradient cards.",
             "Grid: to-dos shown as round ticks.", "Grid: tinted glass with a thin edge."};
 
+    /** Paper theme: two pinned notes side by side as sticky notes. */
+    private static final class PaperPair {
+        final Note a, b;
+
+        PaperPair(Note a, Note b) {
+            this.a = a;
+            this.b = b;
+        }
+    }
+
     /** Pinned tiles shown across the top in look 10. */
     private static final class PinStrip {
         final List<Note> notes;
@@ -913,7 +943,13 @@ public class NotesActivity extends Activity {
             rows.addAll(others);
             return;
         }
-        if (!pinned.isEmpty()) {
+        if (!pinned.isEmpty() && PaperTheme.on) { // Paper: pinned notes as sticky notes, two across, like the design
+            rows.add(pinHead);
+            for (int i = 0; i < pinned.size(); i += 2) {
+                rows.add(new PaperPair(pinned.get(i), i + 1 < pinned.size() ? pinned.get(i + 1) : null));
+            }
+            if (!others.isEmpty() && (look != 7 || Prefs.noteSort(this) > 1)) rows.add("NOTES");
+        } else if (!pinned.isEmpty()) {
             rows.add(pinHead);
             addItems(pinned, look);
             if (!others.isEmpty() && (look != 7 || Prefs.noteSort(this) > 1)) rows.add("NOTES");
@@ -1132,6 +1168,8 @@ public class NotesActivity extends Activity {
                 h.setLetterSpacing(0.08f);
                 h.setPadding(dp(28), dp(12), dp(16), dp(4));
                 v = h;
+            } else if (o instanceof PaperPair) {
+                v = paperPins(((PaperPair) o).a, ((PaperPair) o).b);
             } else if (o instanceof PinStrip) {
                 v = pinStrip(((PinStrip) o).notes);
             } else if (o instanceof Note[]) {
@@ -1621,6 +1659,80 @@ public class NotesActivity extends Activity {
     }
 
     /** Look 10: pinned notes as tiles across the top. */
+    /** The design's sticky notes: tape on top, a small label, a serif title, three lines of text, a slight tilt. */
+    private View paperPins(Note a, Note b) {
+        LinearLayout row = new LinearLayout(this);
+        row.setClipChildren(false);
+        row.setClipToPadding(false);
+        row.setPadding(dp(16), dp(16), dp(16), dp(10));
+        Note[] two = {a, b};
+        for (int k = 0; k < 2; k++) {
+            final Note n = two[k];
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(158), 1f);
+            lp.leftMargin = k == 1 ? dp(7) : 0;
+            lp.rightMargin = k == 0 ? dp(7) : 0;
+            if (n == null) {
+                row.addView(new View(this), lp);
+                continue;
+            }
+            FrameLayout wrap = new FrameLayout(this);
+            wrap.setClipChildren(false);
+            int ps = PinTint.of(this, n);
+            boolean tinted = PinTint.solid(ps);
+            int fg = tinted ? PinTint.fg(ps, n.id) : 0;
+            LinearLayout card = new LinearLayout(this);
+            card.setOrientation(LinearLayout.VERTICAL);
+            card.setPadding(dp(14), dp(20), dp(14), dp(12));
+            GradientDrawable g = new GradientDrawable();
+            if (PinTint.isGradient(ps)) PinTint.paint(g, ps, n.id);
+            else g.setColor(PinTint.bg(ps, n.id));
+            g.setCornerRadii(new float[]{dp(3), dp(3), dp(3), dp(3), dp(8), dp(8), dp(3), dp(3)});
+            card.setBackground(g);
+            card.setRotation(PaperTheme.tilt(n.id));
+            card.setElevation(dp(4));
+            String tag = "";
+            if (n.folder != 0) {
+                Folder f = db.folder(n.folder);
+                if (f != null) tag = f.name.toUpperCase(java.util.Locale.getDefault());
+            }
+            if (!tag.isEmpty()) {
+                TextView tg = text(tag, 10, tinted ? fg : 0xFF8A4B10, true);
+                tg.setLetterSpacing(0.16f);
+                tg.setSingleLine(true);
+                tg.setEllipsize(TextUtils.TruncateAt.END);
+                tg.setPadding(0, 0, dp(26), dp(4));
+                tg.setTag("keepfont");
+                card.addView(tg);
+            }
+            TextView title = text(n.title.isEmpty() ? "Untitled" : n.title, 20, tinted ? fg : Pal.ink, true);
+            title.setTypeface(Typeface.create(Typeface.SERIF, Typeface.BOLD));
+            title.setTag("keepfont");
+            title.setMaxLines(2);
+            title.setEllipsize(TextUtils.TruncateAt.END);
+            title.setLineSpacing(0, 1.05f);
+            card.addView(title);
+            String body = previewOf(n, false);
+            if (!body.isEmpty()) {
+                TextView bt = text(body, 13, tinted ? fg : 0xFF3B342B, false);
+                bt.setMaxLines(3);
+                bt.setEllipsize(TextUtils.TruncateAt.END);
+                bt.setLineSpacing(0, 1.15f);
+                bt.setPadding(0, dp(6), 0, 0);
+                card.addView(bt);
+            }
+            wrap.addView(card, new FrameLayout.LayoutParams(-1, -1));
+            wrap.addView(PaperTheme.tape(this), PaperTheme.tapeLp(this));
+            wrap.addView(pinButton(n, tinted ? fg : 0, 40), pinLp(40));
+            card.setOnClickListener(v -> openNote(n.id));
+            card.setOnLongClickListener(v -> {
+                noteMenu(n);
+                return true;
+            });
+            row.addView(wrap, lp);
+        }
+        return row;
+    }
+
     private View pinStrip(List<Note> pinned) {
         HorizontalScrollView hs = new HorizontalScrollView(this);
         hs.setHorizontalScrollBarEnabled(false);

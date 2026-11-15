@@ -361,8 +361,8 @@ final class AlertFx extends View {
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SCREEN));
         for (int r = 0; r < 6; r++) {
-            float yMid = h * (0.18f + r * 0.13f);
-            float amp = h * (0.07f + 0.02f * (float) Math.sin(t * 0.3f + r));
+            float yMid = h * (0.16f + r * 0.055f); // a compact band in the upper part, not the whole screen
+            float amp = h * (0.032f + 0.01f * (float) Math.sin(t * 0.3f + r));
             float k = (1.3f + r * 0.18f) * 6.2832f / w;
             float sp2 = t * (0.5f + r * 0.11f) * (r % 2 == 0 ? 1 : -1);
             path.reset();
@@ -375,11 +375,11 @@ final class AlertFx extends View {
             p.setShader(new LinearGradient(0, 0, w, 0, new int[]{HabitUi.alpha(col, 0),
                     HabitUi.alpha(col, 0xC0), HabitUi.alpha(pal(r * 0.9f + 1.5f + t * 0.1f), 0xC0),
                     HabitUi.alpha(col, 0)}, null, Shader.TileMode.CLAMP));
-            p.setStrokeWidth(16 * d);
-            p.setAlpha(40);
+            p.setStrokeWidth(12 * d);
+            p.setAlpha(34);
             c.drawPath(path, p);
-            p.setStrokeWidth(7 * d);
-            p.setAlpha(110);
+            p.setStrokeWidth(5 * d);
+            p.setAlpha(100);
             c.drawPath(path, p);
             p.setStrokeWidth(1.6f * d);
             p.setAlpha(255);

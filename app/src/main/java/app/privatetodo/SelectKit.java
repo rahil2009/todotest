@@ -335,6 +335,11 @@ final class SelectKit {
         v.postDelayed(pendingLong, longPress);
     }
 
+    /** Called when a gesture of ours (moving a shape) takes over from a pending long-press. */
+    void cancelPress() {
+        cancelLong();
+    }
+
     private void cancelLong() {
         if (pendingLong != null) {
             v.removeCallbacks(pendingLong);

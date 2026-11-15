@@ -122,7 +122,7 @@ public class SharedActivity extends Activity {
         gl.gravity = Gravity.CENTER_HORIZONTAL;
         gl.bottomMargin = dp(6);
         deck.addView(grab, gl);
-        deck.onSwipe(() -> setWide(true), () -> setWide(false));
+        deck.onSwipe(() -> Prefs.foldersExpanded(this), () -> setWide(true), () -> setWide(false));
         root.addView(deck, new LinearLayout.LayoutParams(-1, -2));
         ScrollView sv = new ScrollView(this);
         sv.setFillViewport(true);

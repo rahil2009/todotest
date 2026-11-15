@@ -89,7 +89,16 @@ public class WaterRingService extends Service {
                 new Intent(this, WaterAlarmActivity.class).setData(Uri.parse("todo://water-screen"))
                         .setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_NO_USER_ACTION),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification.Builder b = new Notification.Builder(this, Reminders.CH_ALARM)
+        // When the full screen opens straight away (the overlay permission), the notification must not also drop a
+        // heads-up card on top of it: it goes in a quiet channel and carries no full-screen intent.
+        final boolean direct = android.provider.Settings.canDrawOverlays(this);
+        String ch = Reminders.CH_ALARM;
+        if (direct) {
+            ch = "water_quiet";
+            getSystemService(NotificationManager.class).createNotificationChannel(
+                    new android.app.NotificationChannel(ch, "Water alert (screen open)", NotificationManager.IMPORTANCE_LOW));
+        }
+        Notification.Builder b = new Notification.Builder(this, ch)
                 .setSmallIcon(R.drawable.ic_notify)
                 .setContentTitle("Drink water")
                 .setContentText(text)
@@ -97,8 +106,8 @@ public class WaterRingService extends Service {
                 .setCategory(Notification.CATEGORY_ALARM)
                 .setVisibility(Notification.VISIBILITY_PUBLIC)
                 .setAutoCancel(true)
-                .setTimeoutAfter(30 * 60 * 1000L)
-                .setFullScreenIntent(open, true);
+                .setTimeoutAfter(30 * 60 * 1000L);
+        if (!direct) b.setFullScreenIntent(open, true);
         Icon icon = Icon.createWithResource(this, R.drawable.ic_notify);
         if (h != null) {
             List<Integer> q = h.quickAmounts();

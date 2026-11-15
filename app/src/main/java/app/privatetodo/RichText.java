@@ -1011,16 +1011,119 @@ final class RichText {
      */
     static final class Tbl extends android.text.style.ReplacementSpan {
         String[][] cells;
-        /** Per-row tint (0 = none), set by swiping across a row. Same length as cells. */
-        int[] rowColor;
+        // ---- per-cell style, set from the note's own tool bar after selecting cells with the table's dot
+        int[][] bgC; // background colour (0 = none)
+        int[][] fgC; // text colour (0 = default)
+        int[][] flC; // bit 0 bold, 1 italic, 2 underline, 3 strike; font index in bits 8..15
+        /** The table is in select mode (its dot was tapped) and these cells are picked. Never saved. */
+        boolean selMode;
+        boolean[][] picked;
 
-        int colorOf(int r) {
-            return rowColor != null && r >= 0 && r < rowColor.length ? rowColor[r] : 0;
+        static final int F_BOLD = 1, F_ITALIC = 2, F_UNDER = 4, F_STRIKE = 8;
+
+        private void ensureSty() {
+            int r = rows(), c = cols();
+            if (bgC == null || bgC.length != r || bgC[0].length != c) {
+                bgC = new int[r][c];
+                fgC = new int[r][c];
+                flC = new int[r][c];
+            }
         }
 
-        void setColor(int r, int argb) {
-            if (rowColor == null || rowColor.length != cells.length) rowColor = java.util.Arrays.copyOf(rowColor == null ? new int[0] : rowColor, cells.length);
-            if (r >= 0 && r < rowColor.length) rowColor[r] = argb;
+        boolean hasSty() {
+            return bgC != null;
+        }
+
+        private static int at(int[][] a, int r, int k) {
+            return a != null && r >= 0 && r < a.length && k >= 0 && k < a[r].length ? a[r][k] : 0;
+        }
+
+        int bgOf(int r, int k) {
+            return at(bgC, r, k);
+        }
+
+        int fgOf(int r, int k) {
+            return at(fgC, r, k);
+        }
+
+        int flOf(int r, int k) {
+            return at(flC, r, k);
+        }
+
+        void setBg(int r, int k, int v) {
+            ensureSty();
+            bgC[r][k] = v;
+        }
+
+        void setFg(int r, int k, int v) {
+            ensureSty();
+            fgC[r][k] = v;
+        }
+
+        void setFl(int r, int k, int v) {
+            ensureSty();
+            flC[r][k] = v;
+        }
+
+        boolean isPicked(int r, int k) {
+            return picked != null && r < picked.length && k < picked[r].length && picked[r][k];
+        }
+
+        void pick(int r, int k, boolean on) {
+            if (picked == null || picked.length != rows() || picked[0].length != cols()) picked = new boolean[rows()][cols()];
+            picked[r][k] = on;
+        }
+
+        int pickedCount() {
+            int n = 0;
+            if (picked != null) for (boolean[] row : picked) for (boolean b : row) if (b) n++;
+            return n;
+        }
+
+        void clearPicked() {
+            picked = null;
+        }
+
+        static Typeface faceFor(Typeface base, int fl, boolean header) {
+            int font = (fl >> 8) & 0xFF;
+            Typeface b = font > 0 ? NoteFonts.face(font) : base;
+            boolean bold = header || (fl & F_BOLD) != 0;
+            boolean it = (fl & F_ITALIC) != 0;
+            return Typeface.create(b, bold && it ? Typeface.BOLD_ITALIC : bold ? Typeface.BOLD : it ? Typeface.ITALIC : Typeface.NORMAL);
+        }
+
+        private static int[][] insRowA(int[][] a, int at, int cols) {
+            if (a == null) return null;
+            int[][] n = new int[a.length + 1][];
+            for (int r = 0, o = 0; r < n.length; r++) n[r] = r == at ? new int[cols] : a[o++];
+            return n;
+        }
+
+        private static int[][] delRowA(int[][] a, int at) {
+            if (a == null) return null;
+            int[][] n = new int[a.length - 1][];
+            for (int r = 0, o = 0; r < a.length; r++) if (r != at) n[o++] = a[r];
+            return n;
+        }
+
+        private static int[][] insColA(int[][] a, int at) {
+            if (a == null) return null;
+            int[][] n = new int[a.length][];
+            for (int r = 0; r < a.length; r++) {
+                n[r] = new int[a[r].length + 1];
+                for (int k = 0, o = 0; k < n[r].length; k++) if (k != at) n[r][k] = a[r][o++];
+            }
+            return n;
+        }
+
+        private static int[][] delColA(int[][] a, int at) {
+            if (a == null) return null;
+            int[][] n = new int[a.length][];
+            for (int r = 0; r < a.length; r++) {
+                n[r] = new int[a[r].length - 1];
+                for (int k = 0, o = 0; k < a[r].length; k++) if (k != at) n[r][o++] = a[r][k];
+            }
+            return n;
         }
 
         Tbl(String[][] cells) {
@@ -1218,6 +1321,7 @@ final class RichText {
             int key = java.util.Arrays.deepHashCode(cells);
             key = key * 31 + Float.floatToIntBits(p.getTextSize());
             key = key * 31 + width();
+            if (flC != null) key = key * 31 + java.util.Arrays.deepHashCode(flC);
             if (rowHs != null && rowKey == key && rowHs.length == rows) return rowHs;
             float[] h = new float[rows];
             android.text.TextPaint tp = new android.text.TextPaint(p);
@@ -1225,9 +1329,9 @@ final class RichText {
             Typeface base = p.getTypeface();
             for (int r = 0; r < rows; r++) {
                 tp.setFakeBoldText(r == 0);
-                tp.setTypeface(r == 0 ? Typeface.create(base, Typeface.BOLD) : base);
                 int lines = 1;
                 for (int k = 0; k < cols; k++) {
+                    tp.setTypeface(faceFor(base, flOf(r, k), r == 0));
                     String raw = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
                     if (r > 0 && counterOf(raw) != null) continue;
                     String cell = label(raw);
@@ -1341,9 +1445,10 @@ final class RichText {
                     n[r] = cells[o++];
                 }
             }
-            int[] nc = new int[n.length];
-            for (int r = 0, o = 0; r < n.length; r++) if (r != at) nc[r] = colorOf(o++);
-            rowColor = nc;
+            bgC = insRowA(bgC, at, cols());
+            fgC = insRowA(fgC, at, cols());
+            flC = insRowA(flC, at, cols());
+            picked = null;
             cells = n;
         }
 
@@ -1357,14 +1462,20 @@ final class RichText {
                 }
                 cells[r] = row;
             }
+                    bgC = insColA(bgC, at);
+            fgC = insColA(fgC, at);
+            flC = insColA(flC, at);
+            picked = null;
         }
 
         boolean delRow(int at) {
             if (rows() <= 2 || at < 1 || at >= rows()) return false; // header + one row stay
             String[][] n = new String[rows() - 1][];
-            int[] nc = new int[n.length];
-            for (int r = 0, o = 0; r < rows(); r++) if (r != at) { nc[o] = colorOf(r); n[o++] = cells[r]; }
-            rowColor = nc;
+            for (int r = 0, o = 0; r < rows(); r++) if (r != at) n[o++] = cells[r];
+            bgC = delRowA(bgC, at);
+            fgC = delRowA(fgC, at);
+            flC = delRowA(flC, at);
+            picked = null;
             cells = n;
             return true;
         }
@@ -1377,6 +1488,10 @@ final class RichText {
                 for (int k = 0, o = 0; k < n; k++) if (k != at) row[o++] = cells[r][k];
                 cells[r] = row;
             }
+            bgC = delColA(bgC, at);
+            fgC = delColA(fgC, at);
+            flC = delColA(flC, at);
+            picked = null;
             return true;
         }
 
@@ -1385,6 +1500,12 @@ final class RichText {
             String t = cells[r1][k1];
             cells[r1][k1] = cells[r2][k2];
             cells[r2][k2] = t;
+            for (int[][] a : new int[][][]{bgC, fgC, flC}) {
+                if (a == null) continue;
+                int x = a[r1][k1];
+                a[r1][k1] = a[r2][k2];
+                a[r2][k2] = x;
+            }
         }
 
         // The layout adds (multiplier - 1) x the line height below every line except the very last one, so a tall
@@ -1392,6 +1513,27 @@ final class RichText {
         // reads the true line height back and learns it if the guess was wrong.
         private float effMult = -1f;
         private boolean wasLast;
+
+        /** Where the handle dot sits (set while drawing), for hit testing. */
+        float dotX = -1, dotY = -1;
+
+        private void drawDot(Canvas c, float cx, float cy) {
+            dotX = cx;
+            dotY = cy;
+            float r = 9 * density;
+            Paint dp = new Paint(Paint.ANTI_ALIAS_FLAG);
+            dp.setStyle(Paint.Style.FILL);
+            dp.setColor(selMode ? Pal.accent : Pal.raised | 0xFF000000);
+            c.drawCircle(cx, cy, r, dp);
+            dp.setStyle(Paint.Style.STROKE);
+            dp.setStrokeWidth(Math.max(1f, density));
+            dp.setColor(selMode ? Pal.onAccent : Pal.muted);
+            c.drawCircle(cx, cy, r, dp);
+            dp.setStrokeWidth(1.6f * density);
+            dp.setStrokeCap(Paint.Cap.ROUND);
+            dp.setColor(selMode ? Pal.onAccent : Pal.muted);
+            for (int i = -1; i <= 1; i++) c.drawLine(cx - 3.5f * density, cy + i * 3f * density, cx + 3.5f * density, cy + i * 3f * density, dp);
+        }
 
         @Override
         public int getSize(Paint p, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
@@ -1469,11 +1611,18 @@ final class RichText {
             // body rows sit on a slightly raised card colour
             fill.setColor(Pal.card);
             c.drawRect(x, t0 + hs[0], x + w, y, fill);
-            for (int r = 0; r < rows; r++) { // a row tinted with a swipe
-                int rc = colorOf(r);
-                if (rc == 0) continue;
-                fill.setColor((rc & 0x00FFFFFF) | (Pal.dark ? 0x66000000 : 0x55000000));
-                c.drawRect(x, t0 + tops[r], x + w, t0 + tops[r + 1], fill);
+            for (int r = 0; r < rows; r++) { // cells with their own background, and the cells picked in select mode
+                for (int k = 0; k < cols; k++) {
+                    int bc = bgOf(r, k);
+                    if (bc != 0) {
+                        fill.setColor((bc & 0x00FFFFFF) | (Pal.dark ? 0x77000000 : 0x66000000));
+                        c.drawRect(x + k * colW, t0 + tops[r], x + (k + 1) * colW, t0 + tops[r + 1], fill);
+                    }
+                    if (selMode && isPicked(r, k)) {
+                        fill.setColor((Pal.accent & 0x00FFFFFF) | 0x55000000);
+                        c.drawRect(x + k * colW, t0 + tops[r], x + (k + 1) * colW, t0 + tops[r + 1], fill);
+                    }
+                }
             }
             c.restore();
 
@@ -1503,6 +1652,9 @@ final class RichText {
                     }
                     int st = tick(raw);
                     String cell = label(raw);
+                    int cfl = flOf(r, k);
+                    tp.setTypeface(faceFor(oldFace, cfl, r == 0));
+                    tp.setUnderlineText((cfl & F_UNDER) != 0);
                     float tx = x + k * colW + pad;
                     if (st > 0) { // tick box that fits inside the cell
                         float size = tp.getTextSize();
@@ -1533,8 +1685,9 @@ final class RichText {
                         tx += size * 1.1f + size * 0.2f;
                     }
                     if (cell.isEmpty()) continue;
-                    tp.setStrikeThruText(st == 2);
-                    tp.setColor(st == 2 ? Pal.muted : Pal.ink);
+                    tp.setStrikeThruText(st == 2 || (cfl & F_STRIKE) != 0);
+                    int cfg = fgOf(r, k);
+                    tp.setColor(cfg != 0 ? cfg : st == 2 ? Pal.muted : Pal.ink);
                     float room = x + (k + 1) * colW - pad - tx;
                     java.util.List<String> lines = wrapLines(cell, tp, Math.max(10, room));
                     for (int li = 0; li < lines.size(); li++) {
@@ -1542,9 +1695,11 @@ final class RichText {
                         c.drawText(ln, 0, ln.length(), tx, base + li * lh, tp);
                     }
                     tp.setStrikeThruText(false);
+                    tp.setUnderlineText(false);
                     tp.setColor(Pal.ink);
                 }
             }
+            drawDot(c, x + w / 2f, t0);
             p.setColor(oldColor);
             p.setStyle(oldStyle);
             p.setTypeface(oldFace);
@@ -2579,14 +2734,24 @@ final class RichText {
                 }
                 JSONObject tcl = new JSONObject();
                 for (Tbl t : sp.getSpans(0, sp.length(), Tbl.class)) {
-                    if (t.rowColor == null) continue;
+                    if (!t.hasSty()) continue;
+                    JSONObject one = new JSONObject();
                     boolean any = false;
-                    JSONArray cs = new JSONArray();
-                    for (int cc : t.rowColor) {
-                        cs.put(cc);
-                        if (cc != 0) any = true;
+                    String[] names = {"bg", "fg", "fl"};
+                    int[][][] grids = {t.bgC, t.fgC, t.flC};
+                    for (int q = 0; q < 3; q++) {
+                        JSONArray rowsA = new JSONArray();
+                        for (int[] row : grids[q]) {
+                            JSONArray ra = new JSONArray();
+                            for (int vv : row) {
+                                ra.put(vv);
+                                if (vv != 0) any = true;
+                            }
+                            rowsA.put(ra);
+                        }
+                        one.put(names[q], rowsA);
                     }
-                    if (any) tcl.put(String.valueOf(sp.getSpanStart(t)), cs);
+                    if (any) tcl.put(String.valueOf(sp.getSpanStart(t)), one);
                 }
                 if (tcl.length() > 0) o.put("tc", tcl);
                 if (tb.length() > 0) o.put("tb", tb);
@@ -2595,6 +2760,18 @@ final class RichText {
         } catch (JSONException ex) {
             return text.toString();
         }
+    }
+
+    private static int[][] readGrid(JSONArray a, String[][] cells) {
+        int[][] g = new int[cells.length][cells[0].length];
+        if (a != null) {
+            for (int r = 0; r < g.length && r < a.length(); r++) {
+                JSONArray ra = a.optJSONArray(r);
+                if (ra == null) continue;
+                for (int k = 0; k < g[r].length && k < ra.length(); k++) g[r][k] = ra.optInt(k);
+            }
+        }
+        return g;
     }
 
     /** Loads stored text into {@code out}. Anything that is not our JSON is treated as plain text. */
@@ -2622,10 +2799,11 @@ final class RichText {
                     }
                     Tbl nt = new Tbl(cells);
                     JSONObject tcl = o.optJSONObject("tc");
-                    JSONArray cs = tcl == null ? null : tcl.optJSONArray(String.valueOf(a));
-                    if (cs != null) {
-                        nt.rowColor = new int[cells.length];
-                        for (int x = 0; x < cells.length && x < cs.length(); x++) nt.rowColor[x] = cs.optInt(x);
+                    JSONObject one = tcl == null ? null : tcl.optJSONObject(String.valueOf(a));
+                    if (one != null) {
+                        nt.bgC = readGrid(one.optJSONArray("bg"), cells);
+                        nt.fgC = readGrid(one.optJSONArray("fg"), cells);
+                        nt.flC = readGrid(one.optJSONArray("fl"), cells);
                     }
                     out.setSpan(nt, a, b, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                     continue;

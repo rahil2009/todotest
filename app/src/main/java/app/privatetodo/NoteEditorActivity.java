@@ -7,6 +7,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.Layout;
 import android.text.InputType;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -306,7 +307,20 @@ public class NoteEditorActivity extends Activity {
         RichText.zoom = scale;
         body.setTextSize(17 * scale);
         body.setTableTapListener((tb, r, c, onTick, l, t) -> onTableTap(tb, r, c, onTick));
-        body.setTableSwipeListener((tb, r) -> rowColourDialog(tb, r));
+        body.setTableDotListener(new RichEditText.TableDotListener() {
+            @Override public void onDotTap(RichText.Tbl t) {
+                toggleCellSelect(t);
+            }
+
+            @Override public void onDotDrag(RichText.Tbl t, float y) {
+                dragTable(t, y);
+            }
+
+            @Override public void onDotEnd(RichText.Tbl t) {
+                endTableDrag(t);
+            }
+        });
+        body.setTableBrushListener((t, r, c, first) -> brushCell(t, r, c, first));
         body.arrows.onChanged(this::changed);
         body.setZoomListener((f, done) -> {
             if (zoomLockValue() > 0) return; // this note's zoom is locked: pinching does nothing
@@ -1127,7 +1141,13 @@ public class NoteEditorActivity extends Activity {
                         tool(LINK_KEY, "↗", Typeface.BOLD, "Note link", "Link to another note"),
                         tool(DATE_KEY, "◷", Typeface.BOLD, "Date", "Insert today's date"),
                         tool(TIME_KEY, "⏱", Typeface.BOLD, "Time", "Insert the time"),
-                        tool(DATETIME_KEY, "\uFFFC", Typeface.BOLD, "Date+time", "Insert date and time together"));
+                        tool(DATETIME_KEY, "\uFFFC", Typeface.BOLD, "Date+time", "Insert date and time together"),
+                        tool(ACT_BASE + 20, "\u25AD", Typeface.BOLD, "Sketch box", "Draw round some text with your finger: a box"),
+                        tool(ACT_BASE + 21, "\u2B2D", Typeface.BOLD, "Squircle", "Draw round some text: a squircle"),
+                        tool(ACT_BASE + 22, "\u25EF", Typeface.BOLD, "Pencil ring", "Draw round some text: a pencil circle"),
+                        tool(ACT_BASE + 23, "\u301C", Typeface.BOLD, "Scribble", "Scribble over some text in pencil"),
+                        tool(ACT_BASE + 24, "\u2197", Typeface.BOLD, "Arrow", "Drag from one text or shape to another to link them"),
+                        tool(ACT_BASE + 25, "\u2715", Typeface.BOLD, "Clear sketch", "Remove every shape and arrow in this note"));
             case 3: {
                 Tool[] t = new Tool[CaseTools.NAMES.length];
                 for (int k = 0; k < t.length; k++) {
@@ -1163,10 +1183,7 @@ public class NoteEditorActivity extends Activity {
                         tool(ACT_BASE + 2, "☕", Typeface.BOLD, "Recipe", "Recipe template"),
                         tool(ACT_BASE + 3, "▦", Typeface.BOLD, "Week plan", "Week plan table"),
                         tool(ACT_BASE + 4, "★", Typeface.BOLD, "Mine", "Insert my saved template"),
-                        tool(ACT_BASE + 5, "+", Typeface.BOLD, "Save as mine", "Save this note as my template"),
-                        tool(ACT_BASE + 20, "\u25AD", Typeface.BOLD, "Box", "Draw a squircle round some text with your finger"),
-                        tool(ACT_BASE + 21, "\u2197", Typeface.BOLD, "Arrow", "Drag from one text or box to another to link them"),
-                        tool(ACT_BASE + 22, "\u2715", Typeface.BOLD, "Clear links", "Remove every box and arrow in this note"));
+                        tool(ACT_BASE + 5, "+", Typeface.BOLD, "Save as mine", "Save this note as my template"));
             default:
                 return toolRow(
                         tool(ACT_BASE + 10, "↓", Typeface.BOLD, "Paste MD", "Paste Markdown from the clipboard as formatted text"),
@@ -1648,6 +1665,10 @@ public class NoteEditorActivity extends Activity {
 
     private void applyFont(int idx) {
         commitNow();
+        if (cellSelActive()) {
+            styleCells(3, idx, true);
+            return;
+        }
         Editable e = body.getText();
         int s = selStart();
         int en = selEnd();
@@ -1700,23 +1721,25 @@ public class NoteEditorActivity extends Activity {
         refreshToolbar();
     }
 
-    /** 0 = box tool, 1 = arrow tool, 2 = clear. Tapping the active tool again turns it off. */
+    /** 0 box, 1 squircle, 2 pencil ring, 3 scribble, 4 arrow, 5 clear. Tapping the active tool again turns it off. */
     private void linkTool(int which) {
-        if (which == 2) {
+        if (which == 5) {
             body.arrows.clearAll();
             body.arrows.mode = Arrows.MODE_OFF;
             changed();
-            Toast.makeText(this, "Boxes and arrows cleared", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Shapes and arrows cleared", Toast.LENGTH_SHORT).show();
             return;
         }
-        int m = which == 0 ? Arrows.MODE_BOX : Arrows.MODE_ARROW;
+        int[] modes = {Arrows.MODE_BOX, Arrows.MODE_SQUIRCLE, Arrows.MODE_CIRCLE, Arrows.MODE_SCRIBBLE, Arrows.MODE_ARROW};
+        int m = modes[which];
         body.arrows.mode = body.arrows.mode == m ? Arrows.MODE_OFF : m;
         body.arrows.onChanged(this::changed);
         if (body.arrows.mode != Arrows.MODE_OFF) {
             android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
             if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
-            Toast.makeText(this, which == 0 ? "Draw round the text you want boxed. Tap Box again to finish."
-                    : "Drag from one text or box to another. Tap Arrow again to finish.", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, which == 4 ? "Drag from one text or shape to another. Tap Arrow again to finish."
+                    : "Draw round the text with your finger. Tap the tool again to finish. Hold a shape to move it.",
+                    Toast.LENGTH_LONG).show();
         }
         body.invalidate();
     }
@@ -1879,44 +1902,215 @@ public class NoteEditorActivity extends Activity {
         return android.graphics.Color.rgb(r, g, b);
     }
 
-    private static final int[] ROW_COLOURS = {0, 0xFFE5484D, 0xFFF08A24, 0xFFE9B800, 0xFF2FA866, 0xFF2E7DE0, 0xFF8B5CD6, 0xFF8A8F98};
+    // ------------------------------------------------------- table dot: move the table, or pick cells to style
 
-    /** Swiping across a table row: pick a tint for that row (the first dot clears it). */
-    private void rowColourDialog(final RichText.Tbl t, final int row) {
-        Hap.confirm(body);
-        final AlertDialog[] dlg = new AlertDialog[1];
-        LinearLayout holder = new LinearLayout(this);
-        holder.setOrientation(LinearLayout.VERTICAL);
-        holder.setPadding(dp(20), dp(8), dp(20), dp(12));
-        LinearLayout line = new LinearLayout(this);
-        line.setGravity(Gravity.CENTER);
-        for (int i = 0; i < ROW_COLOURS.length; i++) {
-            final int col = ROW_COLOURS[i];
-            View dot = new View(this);
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            if (col == 0) {
-                g.setColor(Pal.card);
-                g.setStroke(dp(2), Pal.muted);
-            } else {
-                g.setColor(col);
-                if (t.colorOf(row) == col) g.setStroke(dp(3), Pal.ink);
-            }
-            dot.setBackground(g);
-            dot.setContentDescription(col == 0 ? "No colour" : "Colour");
-            dot.setOnClickListener(v -> {
-                Hap.tick(v);
-                t.setColor(row, col);
-                body.invalidate();
-                changed();
-                if (dlg[0] != null) dlg[0].dismiss();
-            });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(34), dp(34));
-            lp.setMargins(dp(5), 0, dp(5), 0);
-            line.addView(dot, lp);
+    private RichText.Tbl selTbl;
+    private RichText.Tbl dragT;
+    private float dragStartY;
+    private float dragStartTop;
+
+    private void toggleCellSelect(RichText.Tbl t) {
+        Hap.tick(body);
+        if (cellOpen) closeCell(true);
+        android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
+        if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
+        if (selTbl != null && selTbl != t) {
+            selTbl.selMode = false;
+            selTbl.clearPicked();
         }
-        holder.addView(line);
-        dlg[0] = new Dlg.Builder(this).setTitle(row == 0 ? "Colour the header" : "Colour this row").setView(holder).show();
+        if (t.selMode) {
+            t.selMode = false;
+            t.clearPicked();
+            selTbl = null;
+        } else {
+            t.selMode = true;
+            selTbl = t;
+            Toast.makeText(this, "Tap cells or swipe across them, then use the style tools below. Tap the dot to finish.",
+                    Toast.LENGTH_LONG).show();
+        }
+        body.invalidate();
+    }
+
+    private boolean cellSelActive() {
+        return selTbl != null && selTbl.selMode;
+    }
+
+    private boolean isCellStyleKey(int key) {
+        return key == RichText.BOLD || key == RichText.ITALIC || key == RichText.UNDER || key == RichText.STRIKE
+                || key == CLEAR_KEY;
+    }
+
+    /** 0 background, 1 text colour, 2 flags (bold...), 3 font; applies to every picked cell. */
+    private void styleCells(int what, int value, boolean on) {
+        RichText.Tbl t = selTbl;
+        if (t == null) return;
+        if (t.pickedCount() == 0) {
+            Toast.makeText(this, "Pick some cells first (tap them or swipe across)", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        for (int r = 0; r < t.rows(); r++) {
+            for (int k = 0; k < t.cols(); k++) {
+                if (!t.isPicked(r, k)) continue;
+                applyCell(t, r, k, what, value, on);
+            }
+        }
+        RichText.refresh(body.getText(), t);
+        changed();
+        body.invalidate();
+    }
+
+    private void applyCell(RichText.Tbl t, int r, int k, int what, int value, boolean on) {
+        switch (what) {
+            case 0:
+                t.setBg(r, k, on ? value : 0);
+                break;
+            case 1:
+                t.setFg(r, k, on ? value : 0);
+                break;
+            case 2: {
+                int fl = t.flOf(r, k);
+                t.setFl(r, k, on ? fl | value : fl & ~value);
+                break;
+            }
+            case 3:
+                t.setFl(r, k, (t.flOf(r, k) & 0xFF) | (value << 8));
+                break;
+            default:
+                t.setBg(r, k, 0);
+                t.setFg(r, k, 0);
+                t.setFl(r, k, 0);
+        }
+    }
+
+    private int flagOf(int key) {
+        return key == RichText.BOLD ? RichText.Tbl.F_BOLD : key == RichText.ITALIC ? RichText.Tbl.F_ITALIC
+                : key == RichText.UNDER ? RichText.Tbl.F_UNDER : RichText.Tbl.F_STRIKE;
+    }
+
+    /** A style key pressed while cells are picked: bold / italic / underline / strike toggle, Tx clears. */
+    private void styleCellsKey(int key) {
+        RichText.Tbl t = selTbl;
+        if (key == CLEAR_KEY) {
+            styleCells(4, 0, true);
+            return;
+        }
+        int f = flagOf(key);
+        boolean all = t.pickedCount() > 0;
+        for (int r = 0; r < t.rows() && all; r++) {
+            for (int k = 0; k < t.cols(); k++) {
+                if (t.isPicked(r, k) && (t.flOf(r, k) & f) == 0) {
+                    all = false;
+                    break;
+                }
+            }
+        }
+        styleCells(2, f, !all);
+    }
+
+    private boolean cellBrushErase;
+
+    /** Finger mode over a table: the chosen brush goes onto each cell the finger crosses. */
+    private void brushCell(RichText.Tbl t, int r, int k, boolean first) {
+        if (brush == NO_BRUSH) {
+            if (first) Toast.makeText(this, "Pick a style first, then swipe over the cells", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        int fl = t.flOf(r, k);
+        if (first) {
+            if (brush == RichText.HILITE) cellBrushErase = brushHl == 0 || t.bgOf(r, k) == brushHl;
+            else if (brush == RichText.FG) cellBrushErase = brushFg == 0 || t.fgOf(r, k) == brushFg;
+            else if (brush == CLEAR_KEY || brush == RichText.CODE) cellBrushErase = false;
+            else cellBrushErase = (fl & flagOf(brush)) != 0;
+        }
+        if (brush == RichText.HILITE) applyCell(t, r, k, 0, brushHl, !cellBrushErase);
+        else if (brush == RichText.FG) applyCell(t, r, k, 1, brushFg, !cellBrushErase);
+        else if (brush == CLEAR_KEY) applyCell(t, r, k, 4, 0, true);
+        else if (brush == RichText.CODE) return;
+        else applyCell(t, r, k, 2, flagOf(brush), !cellBrushErase);
+        changed();
+        body.invalidate();
+    }
+
+    /** Dragging the dot: the table follows the finger, hopping over the lines above and below it. */
+    private void dragTable(RichText.Tbl t, float y) {
+        Layout l = body.getLayout();
+        Editable e = body.getText();
+        if (l == null || e.getSpanStart(t) < 0) return;
+        if (dragT != t) {
+            dragT = t;
+            commitNow();
+            busy = true;
+            if (e.length() == 0 || e.charAt(e.length() - 1) != '\n') e.append("\n"); // a line after it to hop over
+            busy = false;
+            l = body.getLayout();
+            dragStartY = y;
+            dragStartTop = l.getLineTop(l.getLineForOffset(e.getSpanStart(t)));
+            if (cellOpen) closeCell(true);
+            lockScroll(true);
+        }
+        float want = dragStartTop + (y - dragStartY);
+        for (int guard = 0; guard < 2; guard++) {
+            int a = e.getSpanStart(t);
+            int line = l.getLineForOffset(a);
+            float top = l.getLineTop(line);
+            if (line < l.getLineCount() - 1) {
+                float nh = l.getLineBottom(line + 1) - l.getLineTop(line + 1);
+                if (want > top + Math.min(nh, dp(60)) * 0.5f && hopDown(e, t, a)) {
+                    Hap.tick(body);
+                    return;
+                }
+            }
+            if (line > 0) {
+                float ph = l.getLineBottom(line - 1) - l.getLineTop(line - 1);
+                if (want < top - Math.min(ph, dp(60)) * 0.5f && hopUp(e, t, a)) {
+                    Hap.tick(body);
+                    return;
+                }
+            }
+            break;
+        }
+    }
+
+    private boolean hopDown(Editable e, RichText.Tbl t, int a) {
+        int tEnd = RichText.lineEnd(e, a); // the newline after the table
+        if (tEnd >= e.length()) return false;
+        int ns = tEnd + 1;
+        int ne = RichText.lineEnd(e, ns);
+        if (ne >= e.length()) return false;
+        if (e.subSequence(ns, ne).toString().indexOf(RichText.TABLE_CHAR) >= 0) return false;
+        CharSequence seg = new android.text.SpannableStringBuilder(e.subSequence(ns, ne + 1));
+        busy = true;
+        e.insert(a, seg);
+        e.delete(ns + seg.length(), ne + 1 + seg.length());
+        busy = false;
+        return true;
+    }
+
+    private boolean hopUp(Editable e, RichText.Tbl t, int a) {
+        if (a == 0) return false;
+        int pe = a - 1; // the newline before the table
+        int ps = RichText.lineStart(e, pe);
+        if (e.subSequence(ps, pe).toString().indexOf(RichText.TABLE_CHAR) >= 0) return false;
+        CharSequence seg = new android.text.SpannableStringBuilder(e.subSequence(ps, pe + 1));
+        int tEnd = RichText.lineEnd(e, a);
+        if (tEnd >= e.length()) return false;
+        busy = true;
+        e.insert(tEnd + 1, seg);
+        e.delete(ps, pe + 1);
+        busy = false;
+        return true;
+    }
+
+    private void endTableDrag(RichText.Tbl t) {
+        dragT = null;
+        lockScroll(false);
+        RichText.refresh(body.getText(), t);
+        changed();
+        body.invalidate();
+    }
+
+    private void lockScroll(boolean on) {
+        if (noteScroll != null) noteScroll.requestDisallowInterceptTouchEvent(on);
     }
 
     private void onTableTap(RichText.Tbl t, int r, int c, boolean onTick) {
@@ -2700,13 +2894,17 @@ public class NoteEditorActivity extends Activity {
 
     private void onToolImpl(int key) {
         commitNow();
+        if (cellSelActive() && isCellStyleKey(key)) {
+            styleCellsKey(key);
+            return;
+        }
         if (paintMode && isBrush(key)) { // finger mode: the button picks the brush instead of applying
             selectBrush(key == brush ? NO_BRUSH : key);
             return;
         }
         if (key >= ACT_BASE && key < ACT_BASE + 100) {
             int n = key - ACT_BASE;
-            if (n >= 20 && n <= 22) {
+            if (n >= 20 && n <= 25) {
                 linkTool(n - 20);
                 return;
             }
@@ -2907,6 +3105,10 @@ public class NoteEditorActivity extends Activity {
 
     private void textColorImpl(int color) {
         commitNow();
+        if (cellSelActive()) {
+            styleCells(1, color, color != 0);
+            return;
+        }
         if (paintMode) {
             brushFg = color;
             selectBrush(RichText.FG);
@@ -3079,6 +3281,10 @@ public class NoteEditorActivity extends Activity {
 
     private void highlightImpl(int color) {
         commitNow();
+        if (cellSelActive()) {
+            styleCells(0, color, color != 0);
+            return;
+        }
         if (paintMode) {
             brushHl = color;
             selectBrush(RichText.HILITE);

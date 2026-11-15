@@ -308,16 +308,52 @@ final class RichEditText extends EditText {
         void onTableTap(RichText.Tbl t, int row, int col, boolean onTick, float left, float top);
     }
 
-    /** A one-finger swipe sideways across a table row. */
-    interface TableSwipeListener {
-        void onRowSwipe(RichText.Tbl t, int row);
+    /** The dot on top of a table: drag to move the table, tap to pick cells. */
+    interface TableDotListener {
+        void onDotTap(RichText.Tbl t);
+
+        /** y is in this view's own coordinates (scroll applied). */
+        void onDotDrag(RichText.Tbl t, float y);
+
+        void onDotEnd(RichText.Tbl t);
     }
 
-    private TableSwipeListener swipeL;
-    private boolean tblSwiped;
+    /** Finger mode over a table: the brush is applied to each cell the finger crosses. */
+    interface TableBrushListener {
+        void onBrush(RichText.Tbl t, int row, int col, boolean first);
+    }
 
-    void setTableSwipeListener(TableSwipeListener l) {
-        swipeL = l;
+    private boolean tblPaint;
+
+    private boolean paintBrushOn() {
+        return paintL != null;
+    }
+
+    private TableDotListener dotL;
+    private TableBrushListener brushL;
+    private RichText.Tbl dotT;
+    private boolean dotMoved;
+    private int lastPickR = -1, lastPickC = -1;
+
+    void setTableDotListener(TableDotListener l) {
+        dotL = l;
+    }
+
+    void setTableBrushListener(TableBrushListener l) {
+        brushL = l;
+    }
+
+    /** The table whose dot is under this point (view coordinates), or null. */
+    private RichText.Tbl dotAt(float x, float y) {
+        android.text.Editable e = getText();
+        float rad = 26 * getResources().getDisplayMetrics().density;
+        for (RichText.Tbl t : e.getSpans(0, e.length(), RichText.Tbl.class)) {
+            if (t.dotX < 0 || RichText.hiddenAt(e, e.getSpanStart(t), e.getSpanStart(t) + 1)) continue;
+            float vx = t.dotX + getTotalPaddingLeft() - getScrollX();
+            float vy = t.dotY + getTotalPaddingTop() - getScrollY();
+            if (Math.hypot(x - vx, y - vy) < rad) return t;
+        }
+        return null;
     }
 
     final Arrows arrows = new Arrows(this);
@@ -837,7 +873,13 @@ final class RichEditText extends EditText {
                     || e.getActionMasked() == MotionEvent.ACTION_CANCEL) zooming = false;
             return true;
         }
-        if (paintL != null) return paintTouch(e);
+        if (paintL != null) { // finger mode paints text, except on a table, where it paints cells
+            if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                tblPaint = brushL != null && (dotAt(e.getX(), e.getY()) != null || tableDown(e.getX(), e.getY()));
+                tblDown = null;
+            }
+            if (!tblPaint) return paintTouch(e);
+        }
         // The buttons in a code block's header (Paste, Copy) and the - / + of a counter are ours too:
         // a tap does the job with no cursor move and no keyboard.
         int actC = e.getActionMasked();
@@ -893,8 +935,26 @@ final class RichEditText extends EditText {
                 downX = e.getX();
                 downY = e.getY();
                 tblDown = null;
-                tblSwiped = false;
+                dotT = null;
+                RichText.Tbl dt = dotL == null ? null : dotAt(e.getX(), e.getY());
+                if (dt != null) {
+                    dotT = dt;
+                    dotMoved = false;
+                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                    return true;
+                }
                 if (tableDown(e.getX(), e.getY())) {
+                    lastPickR = tblR;
+                    lastPickC = tblC;
+                    if (brushL != null && paintBrushOn()) {
+                        brushL.onBrush(tblDown, tblR, tblC, true);
+                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                        return true;
+                    }
+                    if (tblDown.selMode) {
+                        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                        return true;
+                    }
                     if ((tblZone == 0 || tblZone == 2) && tblR > 0 && counterL != null
                             && RichText.Tbl.counterOf(tblDown.cells[tblR][tblC]) != null) {
                         holdBegin(-1, tblZone, true);
@@ -902,25 +962,51 @@ final class RichEditText extends EditText {
                     }
                     return true;
                 }
+            } else if (dotT != null) {
+                int slop1 = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(e.getY() - downY) >= slop1) dotMoved = true;
+                if (dotMoved && act0 == MotionEvent.ACTION_MOVE) dotL.onDotDrag(dotT, e.getY());
+                if (act0 == MotionEvent.ACTION_UP) {
+                    RichText.Tbl t = dotT;
+                    dotT = null;
+                    if (dotMoved) dotL.onDotEnd(t);
+                    else dotL.onDotTap(t);
+                } else if (act0 == MotionEvent.ACTION_CANCEL) {
+                    if (dotMoved) dotL.onDotEnd(dotT);
+                    dotT = null;
+                }
+                return true;
             } else if (tblDown != null) {
                 int slop0 = ViewConfiguration.get(getContext()).getScaledTouchSlop();
                 if (Math.abs(e.getX() - downX) >= slop0 || Math.abs(e.getY() - downY) >= slop0) {
                     tblMoved = true;
                     if (!holdFired) holdEnd();
                 }
-                float sx = e.getX() - downX, sy = e.getY() - downY;
-                if (!tblSwiped && swipeL != null && !holdFired && Math.abs(sx) > 40 * getResources().getDisplayMetrics().density
-                        && Math.abs(sx) > Math.abs(sy) * 2f) {
-                    tblSwiped = true;
-                    if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
-                    swipeL.onRowSwipe(tblDown, tblR);
+                if (act0 == MotionEvent.ACTION_MOVE && (brushL != null && paintBrushOn() || tblDown.selMode)) {
+                    int[] rc = tblDown.cellAt(e.getX() - tblLeft, e.getY() - tblTop, tblDown.sized(getPaint()));
+                    if (rc != null && (rc[0] != lastPickR || rc[1] != lastPickC)) {
+                        lastPickR = rc[0];
+                        lastPickC = rc[1];
+                        if (tblDown.selMode && !(brushL != null && paintBrushOn())) {
+                            tblDown.pick(rc[0], rc[1], true);
+                            tblDown.pick(tblR, tblC, true); // the cell the swipe started on counts too
+                            invalidate();
+                        } else {
+                            brushL.onBrush(tblDown, rc[0], rc[1], false);
+                        }
+                    }
                 }
                 if (act0 == MotionEvent.ACTION_UP) {
                     RichText.Tbl t = tblDown;
                     boolean held = holdFired;
                     holdEnd();
                     tblDown = null;
-                    if (!tblMoved && !held && !tblSwiped) tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
+                    if (!tblMoved && t.selMode && !(brushL != null && paintBrushOn())) {
+                        t.pick(tblR, tblC, !t.isPicked(tblR, tblC));
+                        invalidate();
+                    } else if (!tblMoved && !held && !(brushL != null && paintBrushOn())) {
+                        tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
+                    }
                 } else if (act0 == MotionEvent.ACTION_CANCEL) {
                     holdEnd();
                     tblDown = null;
@@ -1220,6 +1306,15 @@ final class RichEditText extends EditText {
     }
 
     /** The plain TextView touch handling, for SelectKit to cancel a gesture it took over. */
+    /** Drops a pending long-press and tells the editor its touch is over (a shape took the gesture). */
+    void abortPress() {
+        if (sel != null) sel.cancelPress();
+        MotionEvent c = MotionEvent.obtain(android.os.SystemClock.uptimeMillis(), android.os.SystemClock.uptimeMillis(),
+                MotionEvent.ACTION_CANCEL, 0, 0, 0);
+        superTouch(c);
+        c.recycle();
+    }
+
     void superTouch(MotionEvent e) {
         super.onTouchEvent(e);
     }

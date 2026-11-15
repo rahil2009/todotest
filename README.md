@@ -16,6 +16,15 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.67
+- App icon shortcuts (hold the icon): New task, New note, Notes, Habits, Focus timer, Plan.
+- Folder row (Notes and Shared): follows your finger live. Drag down to open all folders, keep holding, drag up to close, no need to lift.
+- Tables: the row-swipe colour is gone. Every table has a dot on its top edge: drag it to move the table up or down; tap it to pick cells (tap cells or swipe across them), then use the normal tools (bold, italic, underline, strike, text colour, highlight, fonts, Tx) to style the picked cells. Finger mode also paints cells. Cell styles are saved with the note.
+- Sketch tools moved to the Insert tab: Sketch box, Squircle (a proper continuous-corner one), Pencil ring, Scribble, Arrow, Clear sketch. Hold any shape to pick it up and move it. Arrows join at four points (top, right, bottom, left) and the middle segment can be dragged to the other side without crossing the text.
+- Settings > Notebook: 10 pencil ring styles and 10 scribble styles to try and choose from.
+- Water full-screen alert no longer also shows a banner on top; the ribbons animation is a compact band.
+- Paper theme: status bar and gesture bar take the paper colour; pinned notes are sticky notes (two across, tape, label, serif title).
+
 ### v3.66
 - Tables: removed the height hack that caused the gap/crash; table now self-heals if layout height and drawn height differ; crash guard on first tap (line limit -2).
 - Backspace/Delete can no longer remove a table; only the table bar's Delete table does.

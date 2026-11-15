@@ -575,6 +575,75 @@ public class SettingsActivity extends Activity {
         return card;
     }
 
+    /** Ten previews to choose from: tap one and new pencil rings (or scribbles) are drawn in that look. */
+    private void fxPicker(LinearLayout card, String title, String sub, final boolean circle) {
+        card.addView(text(title, 16, Pal.ink, true));
+        TextView st = text(sub, 13, Pal.muted, false);
+        st.setPadding(0, dp(2), 0, dp(8));
+        card.addView(st);
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        final LinearLayout row = new LinearLayout(this);
+        final int cur = circle ? Prefs.circleStyle(this) : Prefs.scribbleStyle(this);
+        final View[] tiles = new View[10];
+        for (int i = 0; i < 10; i++) {
+            final int k = i;
+            LinearLayout cell = new LinearLayout(this);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            final View prev = new View(this) {
+                private final android.text.TextPaint tp = new android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+
+                @Override
+                protected void onDraw(android.graphics.Canvas c) {
+                    float d = getResources().getDisplayMetrics().density;
+                    tp.setTextSize(17 * d);
+                    tp.setColor(Pal.ink);
+                    tp.setTypeface(Typeface.DEFAULT_BOLD);
+                    String w = "Sample";
+                    float tw = tp.measureText(w);
+                    float x = (getWidth() - tw) / 2f;
+                    float base = getHeight() / 2f + 6 * d;
+                    c.drawText(w, x, base, tp);
+                    android.graphics.RectF r = new android.graphics.RectF(x, base - 15 * d, x + tw, base + 4 * d);
+                    if (circle) PencilFx.circle(c, r, k, 3, d);
+                    else PencilFx.scribble(c, r, k, 3, d);
+                }
+            };
+            boolean on = k == cur;
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(14));
+            g.setColor(Pal.card);
+            g.setStroke(dp(on ? 2 : 1), on ? Pal.accent : Pal.chip);
+            prev.setBackground(g);
+            tiles[k] = prev;
+            prev.setOnClickListener(v -> {
+                Hap.tick(v);
+                if (circle) Prefs.setCircleStyle(this, k);
+                else Prefs.setScribbleStyle(this, k);
+                for (int q = 0; q < 10; q++) {
+                    GradientDrawable gg = new GradientDrawable();
+                    gg.setCornerRadius(dp(14));
+                    gg.setColor(Pal.card);
+                    gg.setStroke(dp(q == k ? 2 : 1), q == k ? Pal.accent : Pal.chip);
+                    tiles[q].setBackground(gg);
+                }
+            });
+            cell.addView(prev, new LinearLayout.LayoutParams(dp(112), dp(64)));
+            TextView nm = text((k + 1) + "  " + (circle ? PencilFx.CIRCLE_NAMES[k] : PencilFx.SCRIBBLE_NAMES[k]), 12,
+                    Pal.muted, false);
+            nm.setPadding(0, dp(4), 0, 0);
+            cell.addView(nm);
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(-2, -2);
+            cl.rightMargin = dp(8);
+            row.addView(cell, cl);
+        }
+        hs.addView(row);
+        LinearLayout.LayoutParams hl = new LinearLayout.LayoutParams(-1, -2);
+        hl.bottomMargin = dp(18);
+        card.addView(hs, hl);
+    }
+
     /** Notebook settings: how many notes may be pinned to the top (1 to 20). */
     private LinearLayout notebookCard() {
         LinearLayout card = card();
@@ -622,6 +691,11 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams nrl = new LinearLayout.LayoutParams(-1, -2);
         nrl.bottomMargin = dp(20);
         card.addView(ntRow, nrl);
+
+        fxPicker(card, "Pencil ring style", "The look of the pencil circle you draw round text in a note (Insert tab, Pencil ring). "
+                + "Tap one to use it for new circles. Ones already drawn keep their look.", true);
+        fxPicker(card, "Scribble style", "The look of the scribble you draw over text (Insert tab, Scribble). "
+                + "Tap one to use it for new scribbles.", false);
 
         card.addView(text("Pinned notes", 16, Pal.ink, true));
         TextView sub = text("Pinned notes stay at the top of the notebook. Choose how many you can pin at once, "
