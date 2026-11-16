@@ -77,7 +77,7 @@ final class PaperTheme {
         final float d = c.getResources().getDisplayMetrics().density;
         View v = new View(c);
         v.setRotation(-3f);
-        v.setElevation(2 * d);
+        v.setElevation(12 * d); // above the card (its elevation is 4dp) so the tape sits on the note
         v.setBackground(new Drawable() {
             private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
             private final Paint dash = new Paint(Paint.ANTI_ALIAS_FLAG);

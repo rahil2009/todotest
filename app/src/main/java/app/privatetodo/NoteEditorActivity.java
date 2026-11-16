@@ -322,6 +322,7 @@ public class NoteEditorActivity extends Activity {
         });
         body.setTableBrushListener((t, r, c, first) -> brushCell(t, r, c, first));
         body.arrows.onChanged(this::changed);
+        body.arrows.inkPencil = getSharedPreferences("settings", MODE_PRIVATE).getInt("ink_pencil", 6);
         body.setZoomListener((f, done) -> {
             if (zoomLockValue() > 0) return; // this note's zoom is locked: pinching does nothing
             if (done) {
@@ -1147,7 +1148,9 @@ public class NoteEditorActivity extends Activity {
                         tool(ACT_BASE + 22, "\u25EF", Typeface.BOLD, "Pencil ring", "Draw round some text: a pencil circle"),
                         tool(ACT_BASE + 23, "\u301C", Typeface.BOLD, "Scribble", "Scribble over some text in pencil"),
                         tool(ACT_BASE + 24, "\u2197", Typeface.BOLD, "Arrow", "Drag from one text or shape to another to link them"),
-                        tool(ACT_BASE + 25, "\u2715", Typeface.BOLD, "Clear sketch", "Remove every shape and arrow in this note"));
+                        tool(ACT_BASE + 26, "\u270E", Typeface.BOLD, "Pencil draw", "Draw freehand on the note with one of 20 pencils"),
+                        tool(ACT_BASE + 27, "\u232B", Typeface.BOLD, "Erase pencil", "Rub out pencil strokes with your finger"),
+                        tool(ACT_BASE + 25, "\u2715", Typeface.BOLD, "Clear sketch", "Remove every shape, arrow and pencil stroke in this note"));
             case 3: {
                 Tool[] t = new Tool[CaseTools.NAMES.length];
                 for (int k = 0; k < t.length; k++) {
@@ -1296,6 +1299,34 @@ public class NoteEditorActivity extends Activity {
         LinearLayout v = new LinearLayout(this);
         v.setOrientation(LinearLayout.VERTICAL);
         v.setPadding(dp(12), dp(6), dp(8), dp(2));
+        if (cellSelActive()) { // table select mode: colours only, aimed at the cell or at its text
+            LinearLayout tg = new LinearLayout(this);
+            tg.setOrientation(LinearLayout.HORIZONTAL);
+            tg.setGravity(Gravity.CENTER_VERTICAL);
+            String[] names = {"Cell", "Text"};
+            for (int q = 0; q < 2; q++) {
+                final int which = q;
+                TextView b = new TextView(this);
+                b.setText(names[q]);
+                b.setTextSize(13);
+                b.setTypeface(Typeface.DEFAULT_BOLD);
+                b.setGravity(Gravity.CENTER);
+                b.setPadding(dp(18), 0, dp(18), 0);
+                GradientDrawable g = new GradientDrawable();
+                g.setCornerRadius(dp(16));
+                g.setColor(cellTarget == which ? Pal.accent : Pal.chip);
+                b.setBackground(g);
+                b.setTextColor(cellTarget == which ? Pal.onAccent : Pal.ink);
+                b.setOnClickListener(x -> { Hap.tick(x); cellTarget = which; showTab(4); });
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, dp(32));
+                lp.rightMargin = dp(8);
+                tg.addView(b, lp);
+            }
+            v.addView(tg);
+            v.addView(cellTarget == 0 ? colorLine("CELL", RichText.HL_COLORS, false)
+                    : colorLine("TEXT", RichText.FG_COLORS, true));
+            return v;
+        }
         v.addView(colorLine("TEXT", RichText.FG_COLORS, true));
         v.addView(colorLine("MARK", RichText.HL_COLORS, false));
         return v;
@@ -1723,6 +1754,27 @@ public class NoteEditorActivity extends Activity {
 
     /** 0 box, 1 squircle, 2 pencil ring, 3 scribble, 4 arrow, 5 clear. Tapping the active tool again turns it off. */
     private void linkTool(int which) {
+        if (which == 6 || which == 7) { // freehand pencil, and its eraser
+            if (which == 6 && body.arrows.mode == Arrows.MODE_INK && !body.arrows.inkErase) {
+                body.arrows.mode = Arrows.MODE_OFF;
+                body.invalidate();
+                return;
+            }
+            if (which == 7) {
+                body.arrows.inkErase = true;
+                body.arrows.mode = body.arrows.mode == Arrows.MODE_INK && body.arrows.inkErase && inkWasErase ? Arrows.MODE_OFF : Arrows.MODE_INK;
+                inkWasErase = body.arrows.mode == Arrows.MODE_INK;
+                body.arrows.onChanged(this::changed);
+                if (body.arrows.mode == Arrows.MODE_INK) {
+                    hideKeyboardNow();
+                    Toast.makeText(this, "Rub over pencil strokes to erase them. Tap the tool again to finish.", Toast.LENGTH_LONG).show();
+                }
+                body.invalidate();
+                return;
+            }
+            pickPencil();
+            return;
+        }
         if (which == 5) {
             body.arrows.clearAll();
             body.arrows.mode = Arrows.MODE_OFF;
@@ -1730,6 +1782,8 @@ public class NoteEditorActivity extends Activity {
             Toast.makeText(this, "Shapes and arrows cleared", Toast.LENGTH_SHORT).show();
             return;
         }
+        body.arrows.inkErase = false;
+        inkWasErase = false;
         int[] modes = {Arrows.MODE_BOX, Arrows.MODE_SQUIRCLE, Arrows.MODE_CIRCLE, Arrows.MODE_SCRIBBLE, Arrows.MODE_ARROW};
         int m = modes[which];
         body.arrows.mode = body.arrows.mode == m ? Arrows.MODE_OFF : m;
@@ -1742,6 +1796,83 @@ public class NoteEditorActivity extends Activity {
                     Toast.LENGTH_LONG).show();
         }
         body.invalidate();
+    }
+
+    private boolean inkWasErase;
+
+    private void hideKeyboardNow() {
+        android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
+        if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
+    }
+
+    /** 20 pencils, from 9H to 8B plus charcoal and colours; the choice is kept for next time. */
+    private void pickPencil() {
+        final int cur = getSharedPreferences("settings", MODE_PRIVATE).getInt("ink_pencil", 6);
+        ScrollView sv = new ScrollView(this);
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(dp(14), dp(4), dp(14), dp(4));
+        sv.addView(list);
+        final android.app.AlertDialog[] dlg = new android.app.AlertDialog[1];
+        for (int i = 0; i < PencilFx.PENCILS; i++) {
+            final int k = i;
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(dp(8), dp(4), dp(8), dp(4));
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(12));
+            g.setColor(k == cur ? Pal.chip : 0x00000000);
+            row.setBackground(g);
+            View prev = new View(this) {
+                @Override
+                protected void onDraw(android.graphics.Canvas c) {
+                    float dd = getResources().getDisplayMetrics().density;
+                    float w = getWidth(), h = getHeight();
+                    float[] xy = new float[2 * 24];
+                    for (int q = 0; q < 24; q++) {
+                        float tt = q / 23f;
+                        xy[q * 2] = 6 * dd + tt * (w - 12 * dd);
+                        xy[q * 2 + 1] = h / 2f + (float) Math.sin(tt * 9) * h * 0.22f;
+                    }
+                    PencilFx.ink(c, xy, k, dd, 5);
+                }
+            };
+            row.addView(prev, new LinearLayout.LayoutParams(dp(120), dp(36)));
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            TextView n1 = new TextView(this);
+            n1.setText(PencilFx.PENCIL_NAMES[k]);
+            n1.setTextColor(Pal.ink);
+            n1.setTextSize(15);
+            n1.setTypeface(Typeface.DEFAULT_BOLD);
+            TextView n2 = new TextView(this);
+            n2.setText(PencilFx.PENCIL_NOTES[k]);
+            n2.setTextColor(Pal.muted);
+            n2.setTextSize(12);
+            col.addView(n1);
+            col.addView(n2);
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(0, -2, 1f);
+            cl.leftMargin = dp(10);
+            row.addView(col, cl);
+            row.setOnClickListener(v -> {
+                Hap.tick(v);
+                getSharedPreferences("settings", MODE_PRIVATE).edit().putInt("ink_pencil", k).apply();
+                body.arrows.inkPencil = k;
+                body.arrows.inkErase = false;
+                inkWasErase = false;
+                body.arrows.mode = Arrows.MODE_INK;
+                body.arrows.onChanged(this::changed);
+                hideKeyboardNow();
+                body.invalidate();
+                if (dlg[0] != null) dlg[0].dismiss();
+                Toast.makeText(this, PencilFx.PENCIL_NAMES[k] + " pencil: draw on the note. Tap Pencil draw again to finish.",
+                        Toast.LENGTH_LONG).show();
+            });
+            list.addView(row, new LinearLayout.LayoutParams(-1, -2));
+        }
+        dlg[0] = new android.app.AlertDialog.Builder(this).setTitle("Pick a pencil").setView(sv)
+                .setNegativeButton("Cancel", null).show();
     }
 
     private void markdownAction(int n) {
@@ -1909,30 +2040,41 @@ public class NoteEditorActivity extends Activity {
     private float dragStartY;
     private float dragStartTop;
 
+    private int cellTarget; // colour tab in select mode: 0 = the cell, 1 = the text in it
+
     private void toggleCellSelect(RichText.Tbl t) {
         Hap.tick(body);
+        if (paintMode) {
+            Toast.makeText(this, "Finger mode is on: pick a style below, then swipe over the cells", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        boolean editing = cellOpen && curTbl == t;
         if (cellOpen) closeCell(true);
         android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
         if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
         if (selTbl != null && selTbl != t) {
             selTbl.selMode = false;
             selTbl.clearPicked();
+            RichText.refresh(body.getText(), selTbl);
         }
         if (t.selMode) {
             t.selMode = false;
             t.clearPicked();
             selTbl = null;
+        } else if (editing) {
+            selTbl = null; // the dot tapped again while a cell is open: just close the editing
         } else {
             t.selMode = true;
             selTbl = t;
-            Toast.makeText(this, "Tap cells or swipe across them, then use the style tools below. Tap the dot to finish.",
-                    Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Select mode: tap or swipe cells, then style them", Toast.LENGTH_SHORT).show();
         }
+        RichText.refresh(body.getText(), t);
         body.invalidate();
+        if (curTab == 4) showTab(4);
     }
 
     private boolean cellSelActive() {
-        return selTbl != null && selTbl.selMode;
+        return !paintMode && selTbl != null && selTbl.selMode;
     }
 
     private boolean isCellStyleKey(int key) {
@@ -2904,7 +3046,7 @@ public class NoteEditorActivity extends Activity {
         }
         if (key >= ACT_BASE && key < ACT_BASE + 100) {
             int n = key - ACT_BASE;
-            if (n >= 20 && n <= 25) {
+            if (n >= 20 && n <= 27) {
                 linkTool(n - 20);
                 return;
             }
@@ -3129,6 +3271,12 @@ public class NoteEditorActivity extends Activity {
     // ------------------------------------------------------- finger mode
 
     private void setPaintMode(boolean on) {
+        if (on && selTbl != null) {
+            selTbl.selMode = false;
+            selTbl.clearPicked();
+            RichText.refresh(body.getText(), selTbl);
+            selTbl = null;
+        }
         paintMode = on;
         brush = NO_BRUSH;
         styleFab();

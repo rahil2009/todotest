@@ -196,7 +196,7 @@ final class Prefs {
     /** Notebook sort: 0 edited newest, 1 edited oldest, 2 created (newest first), 3 title A-Z, 4 title Z-A. */
     /** Which of the 10 pencil-circle / scribble looks new ones are drawn in (Settings > Notebook). */
     static int circleStyle(Context c) {
-        return Math.max(0, Math.min(9, sp(c).getInt("circle_style", 0)));
+        return Math.max(0, Math.min(PencilFx.COUNT - 1, sp(c).getInt("circle_style", 0)));
     }
 
     static void setCircleStyle(Context c, int v) {
@@ -204,7 +204,7 @@ final class Prefs {
     }
 
     static int scribbleStyle(Context c) {
-        return Math.max(0, Math.min(9, sp(c).getInt("scribble_style", 0)));
+        return Math.max(0, Math.min(PencilFx.COUNT - 1, sp(c).getInt("scribble_style", 0)));
     }
 
     static void setScribbleStyle(Context c, int v) {

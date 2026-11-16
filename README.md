@@ -16,6 +16,13 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.68
+- Tables: picked cells now show a bold accent border (no tint, so colours stay readable); the dot lights up and grows the moment you tap it, and tapping it again closes select mode (or the cell editor). In select mode the Color tab shows only colours, with Cell / Text buttons choosing where they go. Bold, italic, etc. on picked cells now always render. Finger mode over a table now takes the style you pick (select mode and finger mode no longer fight).
+- Sketch: a held box/squircle/ring now carries its words with it and drops them where you let go; arrows pick their side from where the two pieces sit (top, bottom, left or right), snapping to a point only when you start or end next to one.
+- 30 pencil rings (20 new, pencil-only, hand-drawn and imperfect) and 30 scribbles (20 new: squiggle and zigzag underlines, scribble-out, black-out, X, stars, sunburst, tick, brackets, scallops, stitches, dots, margin bar, hearts, !!, arrow underline, corner marks, asterisk, rough marker, lightning).
+- Insert > Pencil draw: freehand drawing on a note with 20 pencils (9H to 8B, charcoal, 5 colours); Erase pencil rubs strokes out; strokes follow the text they started on and are saved with the note.
+- Shortcuts: each has its own icon. Pinned sticky notes: the tape now sits in front of the note.
+
 ### v3.67
 - App icon shortcuts (hold the icon): New task, New note, Notes, Habits, Focus timer, Plan.
 - Folder row (Notes and Shared): follows your finger live. Drag down to open all folders, keep holding, drag up to close, no need to lift.

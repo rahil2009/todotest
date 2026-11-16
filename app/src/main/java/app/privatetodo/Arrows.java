@@ -24,8 +24,8 @@ import java.util.List;
  * Everything hangs on inert spans, so it follows the words when the note is edited. Saved in the note's JSON.
  */
 final class Arrows {
-    static final int K_WORD = -1, K_BOX = 0, K_SQUIRCLE = 1, K_CIRCLE = 2, K_SCRIBBLE = 3;
-    static final int MODE_OFF = 0, MODE_BOX = 1, MODE_ARROW = 2, MODE_SQUIRCLE = 3, MODE_CIRCLE = 4, MODE_SCRIBBLE = 5;
+    static final int K_WORD = -1, K_BOX = 0, K_SQUIRCLE = 1, K_CIRCLE = 2, K_SCRIBBLE = 3, K_INK = 4;
+    static final int MODE_OFF = 0, MODE_BOX = 1, MODE_ARROW = 2, MODE_SQUIRCLE = 3, MODE_CIRCLE = 4, MODE_SCRIBBLE = 5, MODE_INK = 6;
     static final int TOP = 0, RIGHT = 1, BOTTOM = 2, LEFT = 3;
 
     /** A piece of text that can carry a shape and/or an arrow end. ox / oy: how far the shape was moved, in dp. */
@@ -34,6 +34,7 @@ final class Arrows {
         int kind = K_WORD;
         int style;
         float ox, oy;
+        float[] pts; // K_INK: the stroke, x,y pairs in dp from the anchor character's top-left
         final List<Out> out = new ArrayList<>();
     }
 
@@ -50,6 +51,8 @@ final class Arrows {
     private final RichEditText v;
     private final float d;
     int mode = MODE_OFF;
+    int inkPencil = 6; // HB
+    boolean inkErase;
     private Out selected;
     private final List<float[]> stroke = new ArrayList<>();
     private Anchor dragFrom;
@@ -142,6 +145,7 @@ final class Arrows {
     /** Where the thing is drawn: the text's rectangle, grown a little for shapes, then moved by the user's offset. */
     private RectF rectOf(Anchor a) {
         Editable e = text();
+        if (a.kind == K_INK) return inkBounds(a);
         RectF r = textRect(e.getSpanStart(a), e.getSpanEnd(a));
         if (r == null) return null;
         switch (a.kind) {
@@ -156,6 +160,34 @@ final class Arrows {
                 break;
         }
         r.offset(a.ox * d, a.oy * d);
+        return r;
+    }
+
+    /** Where an ink stroke's anchor character sits (content coordinates), or null. */
+    private float[] inkOrigin(Anchor a) {
+        Layout l = v.getLayout();
+        int s0 = text().getSpanStart(a);
+        if (l == null || s0 < 0 || s0 >= text().length()) return null;
+        int line = l.getLineForOffset(s0);
+        return new float[]{l.getPrimaryHorizontal(s0) + v.getTotalPaddingLeft(), l.getLineTop(line) + v.getTotalPaddingTop()};
+    }
+
+    private float[] inkPx(Anchor a) {
+        float[] o = inkOrigin(a);
+        if (o == null || a.pts == null) return null;
+        float[] xy = new float[a.pts.length];
+        for (int i = 0; i + 1 < xy.length; i += 2) {
+            xy[i] = o[0] + (a.pts[i] + a.ox) * d;
+            xy[i + 1] = o[1] + (a.pts[i + 1] + a.oy) * d;
+        }
+        return xy;
+    }
+
+    private RectF inkBounds(Anchor a) {
+        float[] xy = inkPx(a);
+        if (xy == null || xy.length < 2) return null;
+        RectF r = new RectF(xy[0], xy[1], xy[0], xy[1]);
+        for (int i = 0; i + 1 < xy.length; i += 2) r.union(xy[i], xy[i + 1]);
         return r;
     }
 
@@ -186,6 +218,27 @@ final class Arrows {
         return best;
     }
 
+    /** Which side an arrow leaves from when none was chosen: along the axis where the two pieces are furthest apart. */
+    private static int autoSide(RectF s, RectF t) {
+        float dx = t.centerX() - s.centerX(), dy = t.centerY() - s.centerY();
+        float gx = Math.abs(dx) - (s.width() + t.width()) / 2f;
+        float gy = Math.abs(dy) - (s.height() + t.height()) / 2f;
+        boolean horiz;
+        if (gx > 0 && gy > 0) horiz = gx >= gy;
+        else if (gx > 0) horiz = true;
+        else if (gy > 0) horiz = false;
+        else horiz = Math.abs(dx) / (s.width() + t.width()) >= Math.abs(dy) / (s.height() + t.height());
+        if (horiz) return dx >= 0 ? RIGHT : LEFT;
+        return dy >= 0 ? BOTTOM : TOP;
+    }
+
+    /** The connection point within reach of the touch, or -1 (then the side is picked from where the two pieces sit). */
+    private int snapSide(RectF r, float x, float y) {
+        int s = nearestSide(r, x, y);
+        float[] p = pt(r, s);
+        return dist(x, y, p[0], p[1]) <= 26 * d ? s : -1;
+    }
+
     private static boolean vertical(int side) {
         return side == TOP || side == BOTTOM;
     }
@@ -193,11 +246,7 @@ final class Arrows {
     /** Sides actually used (auto when none was chosen) and the elbow's coordinate. Returns {fs, ts, mid coord}. */
     private float[] sides(RectF s, RectF t, Out o) {
         int fs = o.fs, ts = o.ts;
-        if (fs < 0) {
-            float dx = t.centerX() - s.centerX(), dy = t.centerY() - s.centerY();
-            if (Math.abs(dx) >= Math.abs(dy)) fs = dx >= 0 ? RIGHT : LEFT;
-            else fs = dy >= 0 ? BOTTOM : TOP;
-        }
+        if (fs < 0) fs = autoSide(s, t);
         boolean vert = vertical(fs);
         if (ts < 0 || vertical(ts) != vert) {
             if (vert) ts = t.centerY() >= s.centerY() ? TOP : BOTTOM;
@@ -245,11 +294,36 @@ final class Arrows {
 
     // ------------------------------------------------------------ drawing
 
+    /** While a shape is carried its words come with it: drawn again where the shape is, over a patch of paper. */
+    private void ghost(Canvas c, Anchor a, RectF r) {
+        Editable e = text();
+        int s0 = e.getSpanStart(a), e0 = e.getSpanEnd(a);
+        if (s0 < 0 || e0 <= s0) return;
+        fill.setStyle(Paint.Style.FILL);
+        fill.setColor((Pal.card & 0x00FFFFFF) | 0xF2000000);
+        c.drawRoundRect(r, 8 * d, 8 * d, fill);
+        CharSequence seg = e.subSequence(s0, e0);
+        int w = (int) Math.max(40 * d, r.width() + 40 * d);
+        android.text.StaticLayout sl = android.text.StaticLayout.Builder
+                .obtain(seg, 0, seg.length(), v.getPaint(), w).build();
+        RectF base = textRect(s0, e0);
+        if (base == null) return;
+        c.save();
+        c.translate(r.centerX() - (base.width() / 2f), r.centerY() - sl.getHeight() / 2f);
+        sl.draw(c);
+        c.restore();
+    }
+
     void draw(Canvas c) {
         if (v.getLayout() == null) return;
         int accent = Pal.accent;
         List<Anchor> all = anchors();
-        for (Anchor a : all) { // shapes first
+        for (Anchor a : all) { // pencil strokes sit under everything else
+            if (a.kind != K_INK) continue;
+            PencilFx.ink(c, inkPx(a), a.style, d, a.id);
+        }
+        for (Anchor a : all) { // shapes next
+            if (a.kind == K_INK) continue;
             RectF r = rectOf(a);
             if (r == null) continue;
             line.setPathEffect(null);
@@ -257,6 +331,7 @@ final class Arrows {
             line.setStrokeCap(Paint.Cap.ROUND);
             line.setStrokeWidth(2f * d);
             line.setColor(accent);
+            if (a == movingShape) ghost(c, a, r);
             switch (a.kind) {
                 case K_BOX:
                     c.drawPath(PencilFx.superellipse(r), line);
@@ -314,7 +389,14 @@ final class Arrows {
                 }
             }
         }
-        if ((mode == MODE_BOX || mode == MODE_SQUIRCLE || mode == MODE_CIRCLE || mode == MODE_SCRIBBLE) && stroke.size() > 1) {
+        if (mode == MODE_INK && !inkErase && stroke.size() > 1) {
+            float[] xy = new float[stroke.size() * 2];
+            for (int i = 0; i < stroke.size(); i++) {
+                xy[i * 2] = stroke.get(i)[0];
+                xy[i * 2 + 1] = stroke.get(i)[1];
+            }
+            PencilFx.ink(c, xy, inkPencil, d, 1);
+        } else if ((mode == MODE_BOX || mode == MODE_SQUIRCLE || mode == MODE_CIRCLE || mode == MODE_SCRIBBLE) && stroke.size() > 1) {
             line.setStyle(Paint.Style.STROKE);
             line.setStrokeWidth(2f * d);
             line.setColor(accent);
@@ -396,7 +478,13 @@ final class Arrows {
                 movingShape.oy = shapeOy0 + (y - downY) / d;
                 v.invalidate();
             } else if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
+                Anchor dropped = movingShape;
                 movingShape = null;
+                if (act == MotionEvent.ACTION_UP) dropShape(dropped);
+                else {
+                    dropped.ox = shapeOx0;
+                    dropped.oy = shapeOy0;
+                }
                 v.invalidate();
                 notifyChanged();
             }
@@ -442,6 +530,8 @@ final class Arrows {
                 dragWord = dragFrom == null ? wordAt(x, y) : null;
                 dragX = x;
                 dragY = y;
+            } else if (mode == MODE_INK && inkErase) {
+                eraseAt(x, y);
             } else {
                 stroke.clear();
                 stroke.add(new float[]{x, y});
@@ -485,11 +575,20 @@ final class Arrows {
             }
             return true;
         }
+        if (mode == MODE_INK && inkErase) {
+            if (act == MotionEvent.ACTION_DOWN || act == MotionEvent.ACTION_MOVE || act == MotionEvent.ACTION_UP) eraseAt(x, y);
+            return true;
+        }
         if (act == MotionEvent.ACTION_MOVE) {
+            if (mode == MODE_INK) {
+                float[] last = stroke.get(stroke.size() - 1);
+                if (Math.hypot(x - last[0], y - last[1]) < 1.5f * d) return true;
+            }
             stroke.add(new float[]{x, y});
             v.invalidate();
         } else if (act == MotionEvent.ACTION_UP) {
-            finishShape();
+            if (mode == MODE_INK) finishInk();
+            else finishShape();
             stroke.clear();
             v.invalidate();
         } else if (act == MotionEvent.ACTION_CANCEL) {
@@ -497,6 +596,39 @@ final class Arrows {
             v.invalidate();
         }
         return true;
+    }
+
+    /** The shape was dropped: the words inside it move to where it now sits, and it goes back to hugging them. */
+    private void dropShape(Anchor a) {
+        if (a.kind == K_INK) return; // a stroke just stays where it was put down
+        Editable e = text();
+        Layout l = v.getLayout();
+        RectF r = rectOf(a);
+        int s0 = e.getSpanStart(a), e0 = e.getSpanEnd(a);
+        if (l == null || r == null || s0 < 0) return;
+        float ox = a.ox, oy = a.oy;
+        a.ox = 0;
+        a.oy = 0;
+        if (Math.abs(ox) < 6 && Math.abs(oy) < 6) return;
+        for (int i = s0; i < e0; i++) if (e.charAt(i) == RichText.TABLE_CHAR) return; // a table never travels
+        float cy = r.centerY() - v.getTotalPaddingTop();
+        int line = l.getLineForVertical((int) Math.max(0, cy));
+        int t = l.getOffsetForHorizontal(line, r.left - v.getTotalPaddingLeft() + 8 * d);
+        t = Math.max(0, Math.min(t, e.length()));
+        if (t >= s0 && t <= e0) return;
+        if (t < e.length() && e.charAt(t) == RichText.TABLE_CHAR) return;
+        while (t > 0 && !isGap(e.charAt(t - 1))) t--; // never into the middle of a word
+        if (t >= s0 && t <= e0) return;
+        android.text.SpannableStringBuilder seg = new android.text.SpannableStringBuilder(e.subSequence(s0, e0));
+        int len = e0 - s0;
+        if (t > e0) t -= len;
+        e.delete(s0, e0);
+        e.insert(t, seg);
+        if (t > 0 && !isGap(e.charAt(t - 1))) {
+            e.insert(t, " ");
+            t++;
+        }
+        if (t + len < e.length() && !isGap(e.charAt(t + len))) e.insert(t + len, " ");
     }
 
     /** Hold a shape for a moment and it picks up: drag to move it anywhere. */
@@ -603,6 +735,7 @@ final class Arrows {
         Anchor best = null;
         float bestA = Float.MAX_VALUE;
         for (Anchor a : anchors()) {
+            if (a.kind == K_INK) continue;
             RectF r = rectOf(a);
             if (r == null) continue;
             r.inset(-8 * d, -6 * d);
@@ -662,6 +795,67 @@ final class Arrows {
         notifyChanged();
     }
 
+    /** A finished freehand stroke becomes an anchor on the character it started over, so it follows the text. */
+    private void finishInk() {
+        if (stroke.isEmpty()) return;
+        Layout l = v.getLayout();
+        if (l == null) return;
+        Editable e = text();
+        if (e.length() == 0) e.insert(0, "\n");
+        float[] f = stroke.get(0);
+        int line = l.getLineForVertical((int) Math.max(0, f[1] - v.getTotalPaddingTop()));
+        int off = l.getOffsetForHorizontal(line, f[0] - v.getTotalPaddingLeft());
+        off = Math.max(0, Math.min(off, e.length() - 1));
+        if (e.charAt(off) == RichText.TABLE_CHAR) off = off > 0 ? off - 1 : Math.min(e.length() - 1, off + 1);
+        if (e.charAt(off) == RichText.TABLE_CHAR) return;
+        Anchor tmp = new Anchor();
+        e.setSpan(tmp, off, off + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        float[] o = inkOrigin(tmp);
+        e.removeSpan(tmp);
+        if (o == null) return;
+        List<Float> keep = new ArrayList<>();
+        float lx = Float.MAX_VALUE, ly = 0;
+        for (float[] q : stroke) {
+            if (Math.hypot(q[0] - lx, q[1] - ly) < 1.4f * d && lx != Float.MAX_VALUE) continue;
+            keep.add(Math.round((q[0] - o[0]) / d * 10f) / 10f);
+            keep.add(Math.round((q[1] - o[1]) / d * 10f) / 10f);
+            lx = q[0];
+            ly = q[1];
+        }
+        if (keep.size() < 4) { // a tap: a dot
+            keep.add(keep.get(0) + 0.2f);
+            keep.add(keep.get(1) + 0.2f);
+        }
+        float[] pts = new float[keep.size()];
+        for (int i = 0; i < pts.length; i++) pts[i] = keep.get(i);
+        Anchor n = make(off, off + 1, K_INK, inkPencil);
+        n.pts = pts;
+        Hap.tick(v);
+        notifyChanged();
+    }
+
+    /** Rubs out every stroke the finger passes over. */
+    private void eraseAt(float x, float y) {
+        boolean any = false;
+        for (Anchor a : anchors()) {
+            if (a.kind != K_INK) continue;
+            float[] xy = inkPx(a);
+            if (xy == null) continue;
+            for (int i = 0; i + 1 < xy.length; i += 2) {
+                if (Math.hypot(xy[i] - x, xy[i + 1] - y) < 12 * d) {
+                    text().removeSpan(a);
+                    any = true;
+                    break;
+                }
+            }
+        }
+        if (any) {
+            Hap.tick(v);
+            v.invalidate();
+            notifyChanged();
+        }
+    }
+
     private void finishArrow(float x, float y) {
         Anchor to = anchorAt(x, y);
         int[] tw = to == null ? wordAt(x, y) : null;
@@ -679,8 +873,8 @@ final class Arrows {
         o.to = target.id;
         RectF fr = rectOf(from), tr = rectOf(target);
         if (fr != null && tr != null) {
-            o.fs = nearestSide(fr, downX, downY);
-            o.ts = nearestSide(tr, x, y);
+            o.fs = snapSide(fr, downX, downY);
+            o.ts = snapSide(tr, x, y);
         }
         from.out.add(o);
         selected = o;
@@ -709,6 +903,11 @@ final class Arrows {
             JSONObject o = new JSONObject();
             o.put("i", a.id).put("s", s).put("e", e).put("k", a.kind).put("t", a.style);
             if (a.ox != 0 || a.oy != 0) o.put("x", (double) a.ox).put("y", (double) a.oy);
+            if (a.kind == K_INK && a.pts != null) {
+                JSONArray pa = new JSONArray();
+                for (float q : a.pts) pa.put((double) q);
+                o.put("p", pa);
+            }
             JSONArray outs = new JSONArray();
             for (Out t : a.out) {
                 outs.put(new JSONArray().put(t.to).put((double) t.mid).put(t.color).put(t.fs).put(t.ts));
@@ -732,6 +931,11 @@ final class Arrows {
             a.style = o.optInt("t");
             a.ox = (float) o.optDouble("x", 0);
             a.oy = (float) o.optDouble("y", 0);
+            JSONArray pa = o.optJSONArray("p");
+            if (pa != null && pa.length() >= 4) {
+                a.pts = new float[pa.length()];
+                for (int k = 0; k < a.pts.length; k++) a.pts[k] = (float) pa.optDouble(k, 0);
+            }
             JSONArray outs = o.optJSONArray("o");
             if (outs != null) {
                 for (int k = 0; k < outs.length(); k++) {

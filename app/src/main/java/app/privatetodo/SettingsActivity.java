@@ -575,7 +575,7 @@ public class SettingsActivity extends Activity {
         return card;
     }
 
-    /** Ten previews to choose from: tap one and new pencil rings (or scribbles) are drawn in that look. */
+    /** Thirty previews to choose from: tap one and new pencil rings (or scribbles) are drawn in that look. */
     private void fxPicker(LinearLayout card, String title, String sub, final boolean circle) {
         card.addView(text(title, 16, Pal.ink, true));
         TextView st = text(sub, 13, Pal.muted, false);
@@ -585,8 +585,8 @@ public class SettingsActivity extends Activity {
         hs.setHorizontalScrollBarEnabled(false);
         final LinearLayout row = new LinearLayout(this);
         final int cur = circle ? Prefs.circleStyle(this) : Prefs.scribbleStyle(this);
-        final View[] tiles = new View[10];
-        for (int i = 0; i < 10; i++) {
+        final View[] tiles = new View[PencilFx.COUNT];
+        for (int i = 0; i < PencilFx.COUNT; i++) {
             final int k = i;
             LinearLayout cell = new LinearLayout(this);
             cell.setOrientation(LinearLayout.VERTICAL);
@@ -621,7 +621,7 @@ public class SettingsActivity extends Activity {
                 Hap.tick(v);
                 if (circle) Prefs.setCircleStyle(this, k);
                 else Prefs.setScribbleStyle(this, k);
-                for (int q = 0; q < 10; q++) {
+                for (int q = 0; q < PencilFx.COUNT; q++) {
                     GradientDrawable gg = new GradientDrawable();
                     gg.setCornerRadius(dp(14));
                     gg.setColor(Pal.card);

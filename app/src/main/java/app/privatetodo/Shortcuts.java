@@ -40,10 +40,13 @@ final class Shortcuts {
     }
 
     private static ShortcutInfo one(Context c, String id, String shortLabel, String longLabel, Intent i) {
+        int res = id.equals("new_task") ? R.drawable.sc_task : id.equals("new_note") ? R.drawable.sc_note
+                : id.equals("notes") ? R.drawable.sc_notes : id.equals("habits") ? R.drawable.sc_habits
+                : id.equals("pomodoro") ? R.drawable.sc_focus : R.drawable.sc_plan;
         return new ShortcutInfo.Builder(c, id)
                 .setShortLabel(shortLabel)
                 .setLongLabel(longLabel)
-                .setIcon(Icon.createWithResource(c, R.mipmap.ic_launcher))
+                .setIcon(Icon.createWithResource(c, res))
                 .setIntent(i)
                 .build();
     }

@@ -1332,6 +1332,7 @@ final class RichText {
                 int lines = 1;
                 for (int k = 0; k < cols; k++) {
                     tp.setTypeface(faceFor(base, flOf(r, k), r == 0));
+                    tp.setFakeBoldText(r == 0 || (flOf(r, k) & F_BOLD) != 0);
                     String raw = cells[r][k] == null ? "" : cells[r][k].replace('\n', ' ');
                     if (r > 0 && counterOf(raw) != null) continue;
                     String cell = label(raw);
@@ -1520,7 +1521,7 @@ final class RichText {
         private void drawDot(Canvas c, float cx, float cy) {
             dotX = cx;
             dotY = cy;
-            float r = 9 * density;
+            float r = (selMode ? 11 : 9) * density;
             Paint dp = new Paint(Paint.ANTI_ALIAS_FLAG);
             dp.setStyle(Paint.Style.FILL);
             dp.setColor(selMode ? Pal.accent : Pal.raised | 0xFF000000);
@@ -1618,10 +1619,6 @@ final class RichText {
                         fill.setColor((bc & 0x00FFFFFF) | (Pal.dark ? 0x77000000 : 0x66000000));
                         c.drawRect(x + k * colW, t0 + tops[r], x + (k + 1) * colW, t0 + tops[r + 1], fill);
                     }
-                    if (selMode && isPicked(r, k)) {
-                        fill.setColor((Pal.accent & 0x00FFFFFF) | 0x55000000);
-                        c.drawRect(x + k * colW, t0 + tops[r], x + (k + 1) * colW, t0 + tops[r + 1], fill);
-                    }
                 }
             }
             c.restore();
@@ -1629,6 +1626,22 @@ final class RichText {
             for (int r = 1; r < rows; r++) c.drawLine(x, t0 + tops[r], x + w, t0 + tops[r], r == 1 ? line : sep);
             for (int k = 1; k < cols; k++) c.drawLine(x + k * colW, t0, x + k * colW, y, sep);
             c.drawRoundRect(box, rad, rad, line);
+            if (selMode) { // select mode: the table gets an accent outline, every picked cell a bold border (no tint, so colours stay readable)
+                Paint ob = new Paint(Paint.ANTI_ALIAS_FLAG);
+                ob.setStyle(Paint.Style.STROKE);
+                ob.setColor(Pal.accent);
+                ob.setStrokeWidth(density * 2f);
+                c.drawRoundRect(box, rad, rad, ob);
+                ob.setStrokeWidth(density * 3.5f);
+                ob.setStrokeJoin(Paint.Join.ROUND);
+                float in = density * 2.2f;
+                for (int r = 0; r < rows; r++) {
+                    for (int k = 0; k < cols; k++) {
+                        if (!isPicked(r, k)) continue;
+                        c.drawRect(x + k * colW + in, t0 + tops[r] + in, x + (k + 1) * colW - in, t0 + tops[r + 1] - in, ob);
+                    }
+                }
+            }
 
             android.text.TextPaint tp = new android.text.TextPaint(p);
             tp.setStyle(Paint.Style.FILL);
@@ -1654,6 +1667,7 @@ final class RichText {
                     String cell = label(raw);
                     int cfl = flOf(r, k);
                     tp.setTypeface(faceFor(oldFace, cfl, r == 0));
+                    tp.setFakeBoldText(r == 0 || (cfl & F_BOLD) != 0);
                     tp.setUnderlineText((cfl & F_UNDER) != 0);
                     float tx = x + k * colW + pad;
                     if (st > 0) { // tick box that fits inside the cell
