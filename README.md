@@ -16,6 +16,12 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.70
+- Notes open instantly again (v3.69 hid the page until it was placed; on long notes that meant seconds of blank).
+- Paper theme inside a note: the status bar matches the header and the gesture bar matches the toolbar.
+- New Insert > Diagram: an eraser.io-style canvas block in the note. Box, squircle, ellipse, diamond, text and sticky shapes, each with its own words; they snap to a grid, stay inside the canvas walls and never overlap (a 16 dp gap; a dragged shape slides along others). Arrows bind to a shape and one of its four rings and follow when shapes move; routes are found Excalidraw-style (sparse grid + A* with bend penalty) so they never cut through a shape. Tap an arrow: drag its ends to reconnect, drag its middle to route it through a spot; Dashed, Reverse, Auto route, colours. Pan with one finger on empty canvas, pinch to zoom, Undo. The note shows the diagram scaled to fit; tap it to edit.
+- Text sketch tools (box, ring, scribble, pencil) now stay with their words: holding them no longer drags them off the text. Old in-text arrows and shapes still show and can be selected or deleted.
+
 ### v3.69
 - Long notes: the "ghost overlay" that hid new lines at the bottom while typing is fixed at the root (the text view had a fixed height, so it never grew as you typed; it now sizes itself). The drawing window round the caret is also kept wide enough.
 - Full screen reading keeps the same line on screen going in and out; big notes no longer slide into place when opened (the page shows once it is placed).

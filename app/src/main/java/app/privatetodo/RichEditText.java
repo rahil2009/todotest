@@ -119,7 +119,8 @@ final class RichEditText extends EditText {
         setFilters(new android.text.InputFilter[]{(src, st, en, dst, ds, de) -> {
             if (allowTableDelete || de <= ds) return null;
             for (int i = ds; i < de && i < dst.length(); i++)
-                if (dst.charAt(i) == RichText.TABLE_CHAR && dst.getSpans(i, i + 1, RichText.Tbl.class).length > 0)
+                if (dst.charAt(i) == RichText.TABLE_CHAR && (dst.getSpans(i, i + 1, RichText.Tbl.class).length > 0
+                        || dst.getSpans(i, i + 1, DiagramSpan.class).length > 0))
                     return dst.subSequence(ds, de);
             return null;
         }});
@@ -345,6 +346,33 @@ final class RichEditText extends EditText {
     }
 
     private boolean tblPaint;
+
+    /** A tap on a diagram block. */
+    interface DiagramTapListener {
+        void onDiagramTap(DiagramSpan d, int at);
+    }
+
+    private DiagramTapListener diagramL;
+    private DiagramSpan dgDown;
+
+    void setDiagramTapListener(DiagramTapListener l) {
+        diagramL = l;
+    }
+
+    /** The diagram block under (x, y) (view coordinates), or null. */
+    private DiagramSpan diagramAt(float x, float y) {
+        android.text.Layout l = getLayout();
+        if (l == null) return null;
+        int line = l.getLineForVertical((int) (y - getTotalPaddingTop() + getScrollY()));
+        int ls = l.getLineStart(line);
+        if (ls >= length() || getText().charAt(ls) != RichText.TABLE_CHAR) return null;
+        DiagramSpan[] ds = getText().getSpans(ls, ls + 1, DiagramSpan.class);
+        if (ds.length == 0) return null;
+        DiagramSpan d = ds[0];
+        float yl = y - getTotalPaddingTop() + getScrollY();
+        float top = d.drawTop >= 0 ? d.drawTop : l.getLineTop(line);
+        return yl >= top && yl <= top + Math.max(d.drawH, l.getLineBottom(line) - l.getLineTop(line)) ? d : null;
+    }
 
     private boolean paintBrushOn() {
         return paintL != null;
@@ -947,6 +975,33 @@ final class RichEditText extends EditText {
                 holdEnd();
             }
             return true;
+        }
+        // A tap on a diagram block opens it in the diagram editor (no cursor, no keyboard).
+        if (diagramL != null) {
+            int actD = e.getActionMasked();
+            if (actD == MotionEvent.ACTION_DOWN) {
+                dgDown = diagramAt(e.getX(), e.getY());
+                if (dgDown != null) {
+                    downX = e.getX();
+                    downY = e.getY();
+                    return true;
+                }
+            } else if (dgDown != null) {
+                int slopD = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(e.getX() - downX) > slopD || Math.abs(e.getY() - downY) > slopD) {
+                    dgDown = null; // a scroll, not a tap
+                    return false;
+                }
+                if (actD == MotionEvent.ACTION_UP) {
+                    DiagramSpan ds = dgDown;
+                    dgDown = null;
+                    Editable t0 = getText();
+                    if (t0.getSpanStart(ds) >= 0) diagramL.onDiagramTap(ds, t0.getSpanStart(ds));
+                } else if (actD == MotionEvent.ACTION_CANCEL) {
+                    dgDown = null;
+                }
+                return true;
+            }
         }
         // A touch that starts on a table cell is ours too: no cursor, no keyboard from the note itself;
         // a tap hands the cell to the editor, which opens it for typing right there.

@@ -961,7 +961,9 @@ final class Arrows {
         Anchor best = null;
         float bestA = Float.MAX_VALUE;
         for (Anchor a : anchors()) {
-            if (a.kind == K_WORD) continue;
+            // Only pencil strokes and floating shapes are carried. A shape drawn round words stays with its words
+            // (dragging those out of the text is what broke them); movable boxes live in diagram blocks now.
+            if (a.kind == K_WORD || (a.ftext == null && a.kind != K_INK)) continue;
             RectF r = rectOf(a);
             if (r == null) continue;
             r.inset(-6 * d, -6 * d);

@@ -127,6 +127,7 @@ public class NoteEditorActivity extends Activity {
                 : getIntent().getLongExtra(EXTRA_ID, 0);
         if (noteId == 0) noteId = getIntent().getLongExtra(EXTRA_ID, 0);
         setContentView(build());
+        editorBars();
         Fonts.apply(getWindow().getDecorView());
         body.setTypeface(NoteFonts.face(NoteFonts.noteDefault(this)));
         body.setBaseStroke(NoteFonts.stroke(NoteFonts.noteDefault(this)));
@@ -181,6 +182,25 @@ public class NoteEditorActivity extends Activity {
         super.onResume();
         Lock.guard(this, Lock.NOTES);
         refreshBacklinks(); // coming back from a linked note: the list may have changed
+        if (!reading) editorBars();
+    }
+
+    /**
+     * Paper theme: the status bar takes the colour of the header under it, the gesture bar the colour of the toolbar
+     * above it, so neither shows as a different shade. (Full screen reading sets its own.)
+     */
+    private void editorBars() {
+        if (!PaperTheme.on) return;
+        android.view.Window w = getWindow();
+        w.setStatusBarColor(Pal.bg);
+        w.setNavigationBarColor(Pal.raised | 0xFF000000);
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            w.setNavigationBarContrastEnforced(false);
+            w.setStatusBarContrastEnforced(false);
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 28) w.setNavigationBarDividerColor(0);
+        int light = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        w.getDecorView().setSystemUiVisibility(w.getDecorView().getSystemUiVisibility() | light);
     }
 
     @Override
@@ -324,6 +344,7 @@ public class NoteEditorActivity extends Activity {
         body.arrows.onChanged(this::changed);
         body.arrows.inkPencil = getSharedPreferences("settings", MODE_PRIVATE).getInt("ink_pencil", 6);
         body.arrows.setFloatTap(this::editFloat);
+        body.setDiagramTapListener((ds, at) -> openDiagram(ds.d.toJson(), at));
         body.setZoomListener((f, done) -> {
             if (zoomLockValue() > 0) return; // this note's zoom is locked: pinching does nothing
             if (done) {
@@ -928,6 +949,50 @@ public class NoteEditorActivity extends Activity {
     private static final int IMPORT_FONT_KEY = -17;
     private static final int COUNTER_KEY = -18;
     private static final int REQ_FONT = 72;
+    private static final int REQ_DIAGRAM = 73;
+
+    /** Opens the diagram editor: for the block at `at`, or a new one (json null, at -1). */
+    private void openDiagram(String json, int at) {
+        commitNow();
+        if (cellOpen) closeCell(true);
+        startActivityForResult(new Intent(this, DiagramActivity.class)
+                .putExtra(DiagramActivity.EXTRA_JSON, json == null ? "" : json)
+                .putExtra(DiagramActivity.EXTRA_AT, at), REQ_DIAGRAM);
+    }
+
+    /** The editor came back: the block is updated, added or removed. */
+    private void diagramBack(android.content.Intent data) {
+        Editable e = body.getText();
+        int at = data.getIntExtra(DiagramActivity.EXTRA_AT, -1);
+        DiagramSpan[] have = at >= 0 && at < e.length() ? e.getSpans(at, at + 1, DiagramSpan.class) : new DiagramSpan[0];
+        busy = true;
+        try {
+            if (data.getBooleanExtra(DiagramActivity.EXTRA_DELETE, false)) {
+                if (have.length > 0) {
+                    int a = e.getSpanStart(have[0]);
+                    e.removeSpan(have[0]);
+                    body.allowTableDelete = true;
+                    int end = a + 1 < e.length() && e.charAt(a + 1) == '\n' ? a + 2 : a + 1;
+                    e.delete(a, end);
+                    body.allowTableDelete = false;
+                }
+            } else {
+                Diagram d = Diagram.fromJson(data.getStringExtra(DiagramActivity.EXTRA_JSON));
+                if (have.length > 0) {
+                    have[0].d = d;
+                    DiagramSpan.refresh(e, have[0]);
+                } else if (!d.nodes.isEmpty()) {
+                    int s0 = DiagramSpan.insert(e, selStart(), new DiagramSpan(d));
+                    body.setSelection(Math.min(e.length(), s0 + 2));
+                }
+            }
+        } finally {
+            body.allowTableDelete = false;
+            busy = false;
+        }
+        changed();
+        body.invalidate();
+    }
     private static final int FONT_BASE = 1000;
     private static final int CASE_BASE = 2000;
     private static final int ACT_BASE = 3000; // templates and Markdown actions
@@ -1147,11 +1212,10 @@ public class NoteEditorActivity extends Activity {
                         tool(DATE_KEY, "◷", Typeface.BOLD, "Date", "Insert today's date"),
                         tool(TIME_KEY, "⏱", Typeface.BOLD, "Time", "Insert the time"),
                         tool(DATETIME_KEY, "\uFFFC", Typeface.BOLD, "Date+time", "Insert date and time together"),
+                        tool(ACT_BASE + 28, "\u2B21", Typeface.BOLD, "Diagram", "A diagram block: boxes, squircles, shapes and arrows on their own canvas, like eraser.io"),
                         tool(ACT_BASE + 20, "\u25AD", Typeface.BOLD, "Sketch box", "Draw round some text with your finger: a box"),
-                        tool(ACT_BASE + 21, "\u2B2D", Typeface.BOLD, "Squircle", "Draw round some text: a squircle"),
                         tool(ACT_BASE + 22, "\u25EF", Typeface.BOLD, "Pencil ring", "Draw round some text: a pencil circle"),
                         tool(ACT_BASE + 23, "\u301C", Typeface.BOLD, "Scribble", "Scribble over some text in pencil"),
-                        tool(ACT_BASE + 24, "\u2197", Typeface.BOLD, "Arrow", "Drag from one text or shape to another to link them"),
                         tool(ACT_BASE + 26, "\u270E", Typeface.BOLD, "Pencil draw", "Draw freehand on the note with one of 20 pencils"),
                         tool(ACT_BASE + 27, "\u232B", Typeface.BOLD, "Erase pencil", "Rub out pencil strokes with your finger"),
                         tool(ACT_BASE + 25, "\u2715", Typeface.BOLD, "Clear sketch", "Remove every shape, arrow and pencil stroke in this note"));
@@ -1801,7 +1865,7 @@ public class NoteEditorActivity extends Activity {
             android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
             if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
             say(which == 4 ? "Drag from one shape or word to another. Start or end on a ring to pick that point."
-                    : "Draw round the text with your finger. Hold a shape to move it anywhere.", true);
+                    : "Draw round the text with your finger. For movable boxes and arrows use Insert > Diagram.", true);
         }
         body.invalidate();
     }
@@ -1961,6 +2025,10 @@ public class NoteEditorActivity extends Activity {
                 finish();
                 startActivity(new Intent(this, NoteEditorActivity.class).putExtra(EXTRA_ID, hid));
             }
+            return;
+        }
+        if (req == REQ_DIAGRAM) {
+            if (res == RESULT_OK && data != null) diagramBack(data);
             return;
         }
         if (req == REQ_FONT) {
@@ -2837,6 +2905,7 @@ public class NoteEditorActivity extends Activity {
         body.setCursorVisible(true);
         body.setShowSoftInputOnFocus(true);
         refreshToolbar();
+        editorBars(); // leaving full screen cleared the light-bar flags
         restoreSpot(spot);
     }
 
@@ -3056,16 +3125,18 @@ public class NoteEditorActivity extends Activity {
                 sv.scrollTo(0, Math.min(max, Math.max(0, y)));
             }
         };
-        // rich spans (tables, images) and the zoom settle over a few frames, so place it again as they do. The page
-        // stays hidden until the last placement, so you never see it slide into place.
-        body.setAlpha(0f);
-        noteScroll.post(go);
+        // Placed before the first frame is drawn, then nudged as spans settle. (v3.69 hid the page until the last
+        // placement: on a long note the main thread was busy, so that showed a blank page for seconds.)
+        noteScroll.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                noteScroll.getViewTreeObserver().removeOnPreDrawListener(this);
+                go.run();
+                return true;
+            }
+        });
         noteScroll.postDelayed(go, 120);
-        noteScroll.postDelayed(() -> {
-            go.run();
-            body.animate().alpha(1f).setDuration(110).start();
-        }, 320);
-        body.postDelayed(() -> body.setAlpha(1f), 900); // never left hidden
+        noteScroll.postDelayed(go, 320);
     }
 
     /** The first line on screen and how far into it, so a change of bars or padding can put it back exactly. */
@@ -3244,6 +3315,10 @@ public class NoteEditorActivity extends Activity {
         }
         if (key >= ACT_BASE && key < ACT_BASE + 100) {
             int n = key - ACT_BASE;
+            if (n == 28) {
+                openDiagram(null, -1);
+                return;
+            }
             if (n >= 20 && n <= 27) {
                 linkTool(n - 20);
                 return;

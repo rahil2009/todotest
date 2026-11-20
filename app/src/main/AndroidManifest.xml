@@ -212,6 +212,11 @@
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
+            android:name=".DiagramActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <activity
             android:name=".NoteHistoryActivity"
             android:exported="false"
             android:parentActivityName=".NotesActivity" />

@@ -44,6 +44,12 @@ final class Markdown {
         if (le > p && e.charAt(p) == RichText.TABLE_CHAR) {
             RichText.Tbl t = RichText.tableOnLine(e, p);
             if (t != null) return table(t);
+            DiagramSpan[] dg = e.getSpans(p, p + 1, DiagramSpan.class);
+            if (dg.length > 0) { // Markdown has no diagrams: list what the shapes say
+                StringBuilder sb = new StringBuilder("*Diagram:*");
+                for (Diagram.Node n : dg[0].d.nodes) if (!n.text.trim().isEmpty()) sb.append(" [").append(n.text.trim().replace('\n', ' ')).append(']');
+                return sb.toString();
+            }
         }
         if (le > p && e.charAt(p) == RichText.RULE_CHAR) return "---";
         int lvl = RichText.indentOf(e, p);

@@ -2747,6 +2747,13 @@ final class RichText {
             if (text instanceof Spanned) {
                 JSONArray an = Arrows.toJson((Spanned) text, end);
                 if (an.length() > 0) o.put("an", an);
+                JSONObject dg = new JSONObject(); // diagram blocks, keyed by where their character sits
+                Spanned sp = (Spanned) text;
+                for (DiagramSpan ds : sp.getSpans(0, sp.length(), DiagramSpan.class)) {
+                    int a = sp.getSpanStart(ds);
+                    if (a >= 0 && a < end) dg.put(String.valueOf(a), ds.d.toJson());
+                }
+                if (dg.length() > 0) o.put("dg", dg);
             }
             if (text instanceof Spanned) {
                 JSONObject tb = new JSONObject();
@@ -2809,6 +2816,21 @@ final class RichText {
             String t = o.getString("t");
             out.append(t);
             Arrows.fromJson(o.optJSONArray("an"), out, t.length());
+            JSONObject dg = o.optJSONObject("dg");
+            if (dg != null) {
+                java.util.Iterator<String> keys = dg.keys();
+                while (keys.hasNext()) {
+                    String k = keys.next();
+                    int at;
+                    try {
+                        at = Integer.parseInt(k);
+                    } catch (NumberFormatException nf) {
+                        continue;
+                    }
+                    if (at < 0 || at >= t.length() || t.charAt(at) != TABLE_CHAR) continue;
+                    out.setSpan(new DiagramSpan(Diagram.fromJson(dg.optString(k))), at, at + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                }
+            }
             JSONArray arr = o.optJSONArray("s");
             if (arr == null) return;
             for (int i = 0; i < arr.length(); i++) {
