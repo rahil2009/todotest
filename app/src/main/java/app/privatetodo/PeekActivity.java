@@ -50,6 +50,11 @@ public class PeekActivity extends Activity {
     /** Shows the current reminder for the chosen seconds, then the next waiting one, then fades to black. */
     private void scheduleRound() {
         h.removeCallbacksAndMessages(null);
+        if (Peek.seconds(this) == 0) { // stays until tapped twice; creeps a pixel every 10 s so nothing burns in
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            h.postDelayed(creep, 10_000L);
+            return;
+        }
         final int secs = Math.max(2, Peek.seconds(this));
         final boolean together = collideMode() == 1;
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -70,6 +75,61 @@ public class PeekActivity extends Activity {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
             h.postDelayed(this::finish, 25_000L); // never lingers if the screen never turns off
         }, secs * 1000L);
+    }
+
+    private float shiftX, shiftY;
+    private int dirX = 1, dirY = 1;
+    private TextView timeView;
+    private long lastTap;
+    private final java.util.Random rnd = new java.util.Random();
+
+    /** Burn-in guard: every 10 s the page moves one pixel (a slow wander inside a small box) and the clock is updated. */
+    private final Runnable creep = new Runnable() {
+        @Override
+        public void run() {
+            float lim = 14 * getResources().getDisplayMetrics().density;
+            if (rnd.nextInt(5) == 0) dirX = -dirX;
+            if (rnd.nextInt(5) == 0) dirY = -dirY;
+            shiftX += dirX;
+            shiftY += dirY;
+            if (Math.abs(shiftX) > lim) { dirX = -dirX; shiftX += 2 * dirX; }
+            if (Math.abs(shiftY) > lim) { dirY = -dirY; shiftY += 2 * dirY; }
+            if (content != null) {
+                content.setTranslationX(shiftX);
+                content.setTranslationY(shiftY);
+            }
+            if (timeView != null) {
+                boolean h24 = android.text.format.DateFormat.is24HourFormat(PeekActivity.this);
+                timeView.setText(new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.getDefault()).format(new Date()));
+            }
+            h.postDelayed(this, 10_000L);
+        }
+    };
+
+    /** In "until 2 taps" mode one tap does nothing (pocket-safe); a second within half a second closes or moves on. */
+    private void tapped() {
+        if (sheet != null && sheet.isOpen()) {
+            sheet.close();
+            return;
+        }
+        if (Peek.seconds(this) != 0 || test) {
+            finish();
+            return;
+        }
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastTap > 500) {
+            lastTap = now;
+            return;
+        }
+        lastTap = 0;
+        if (collideMode() != 1 && shown + 1 < items.size()) {
+            shown++;
+            pTitle = items.get(shown)[0];
+            pText = items.get(shown)[1];
+            rebuild();
+            return;
+        }
+        finish();
     }
 
     @Override
@@ -121,10 +181,10 @@ public class PeekActivity extends Activity {
             rebuild();
         });
         sheet.heading("Stays lit for");
-        final int[] secOpts = {3, 5, 8, 12};
+        final int[] secOpts = {3, 5, 8, 12, 0};
         int cur = 0;
         for (int i = 0; i < secOpts.length; i++) if (secOpts[i] == Peek.seconds(this)) cur = i;
-        sheet.chips(new String[]{"3 s", "5 s", "8 s", "12 s"}, cur, k -> Peek.setSeconds(this, secOpts[k]));
+        sheet.chips(new String[]{"3 s", "5 s", "8 s", "12 s", "Until 2 taps"}, cur, k -> Peek.setSeconds(this, secOpts[k]));
     }
 
     private void part(int bit, boolean on) {
@@ -201,9 +261,7 @@ public class PeekActivity extends Activity {
     private View build(String title, String text) {
         FrameLayout root = new FrameLayout(this);
         root.setBackgroundColor(Color.BLACK);
-        root.setOnClickListener(v -> {
-            if (sheet != null && sheet.isOpen()) sheet.close(); else finish();
-        });
+        root.setOnClickListener(v -> tapped());
         float d = getResources().getDisplayMetrics().density;
         float scale = Peek.sizePct(this) / 100f;
 
@@ -211,6 +269,8 @@ public class PeekActivity extends Activity {
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER_HORIZONTAL);
         content = col;
+        col.setTranslationX(shiftX);
+        col.setTranslationY(shiftY);
 
         boolean h24 = android.text.format.DateFormat.is24HourFormat(this);
         Date now = new Date();
@@ -221,6 +281,7 @@ public class PeekActivity extends Activity {
         time.setTextColor(0xE6FFFFFF);
         time.setIncludeFontPadding(false);
         time.setGravity(Gravity.CENTER);
+        timeView = time;
         col.addView(time, new LinearLayout.LayoutParams(-2, -2));
 
         TextView date = new TextView(this);

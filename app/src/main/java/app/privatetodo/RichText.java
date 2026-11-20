@@ -451,6 +451,7 @@ final class RichText {
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             Typeface oldFace = p.getTypeface();
+            drawFace = oldFace;
             boolean oldFake = p.isFakeBoldText();
             p.setStyle(Paint.Style.FILL);
             p.setFakeBoldText(false);
@@ -1269,6 +1270,7 @@ final class RichText {
         // these instead of the plain note paint.
         float drawX = -1;
         float drawTop = -1;
+        Typeface drawFace; // the face the table was last drawn in (a font span over the table counts)
         float drawSize;
         Typeface drawFace;
 
@@ -1590,6 +1592,7 @@ final class RichText {
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             Typeface oldFace = p.getTypeface();
+            drawFace = oldFace;
             boolean oldFake = p.isFakeBoldText();
 
             Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -1850,6 +1853,20 @@ final class RichText {
     }
 
     /** Re-sets the span so the layout re-measures it after its cells changed. */
+    /**
+     * Redraws a table whose look changed but not its size (picked cells, a cell colour or style). Re-setting the span
+     * is what makes Android drop its cached drawing of that line; a plain invalidate() keeps showing the old picture,
+     * which is why picks and finger-mode paint only appeared after the next real edit.
+     */
+    static void repaint(Spannable e, Tbl t) {
+        int a = e.getSpanStart(t);
+        int b = e.getSpanEnd(t);
+        if (a < 0) return;
+        int f = e.getSpanFlags(t);
+        e.removeSpan(t);
+        e.setSpan(t, a, b, f);
+    }
+
     static void refresh(Editable e, Tbl t) {
         int a = e.getSpanStart(t);
         int b = e.getSpanEnd(t);

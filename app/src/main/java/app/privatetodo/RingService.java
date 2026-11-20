@@ -16,6 +16,8 @@ import android.os.IBinder;
 public class RingService extends Service {
     private static final long MAX_MS = 10 * 60 * 1000L;
     private static volatile long ringingId = -1;
+    /** Bumped on every start. A sound that ends because a newer one replaced it must not stop the service. */
+    private static volatile int gen;
 
     static void start(Context c, long id) {
         start(c, id, false);
@@ -34,6 +36,11 @@ public class RingService extends Service {
     /** Stops the ringing if it belongs to this task. */
     static void stopFor(Context c, long id) {
         if (ringingId == id) c.stopService(new Intent(c, RingService.class));
+    }
+
+    /** Stops whatever is ringing (the volume key on the alarm screen, or the screen's time limit). */
+    static void stopAll(Context c) {
+        if (ringingId >= 0) c.stopService(new Intent(c, RingService.class));
     }
 
     @Override
@@ -72,10 +79,12 @@ public class RingService extends Service {
                                 .setUsage(android.media.AudioAttributes.USAGE_ALARM).build());
             }
         }
-        final long mine = id;
-        // If a second alarm takes over, the first one's "done" must not stop the service.
+        // Two alarms colliding used to go silent: starting the next one (or the same one again when the screen moved
+        // on to it) ended the sound that was playing, and that sound's "done" saw its own id still ringing and
+        // stopped the whole service, taking the new sound with it. Now only the latest sound may stop the service.
+        final int mine = ++gen;
         Sound.play(this, Prefs.ALARM, true, MAX_MS, () -> {
-            if (ringingId == mine) stopSelf();
+            if (gen == mine) stopSelf();
         }, t.sound, t.volume);
         return START_NOT_STICKY;
     }

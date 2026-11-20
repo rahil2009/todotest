@@ -124,6 +124,33 @@ final class PaperTheme {
         return (id % 2 == 0 ? -1f : 1f) * (0.9f + (Math.abs(id) % 3) * 0.4f);
     }
 
+    private static final int GRAIN = 0x66512F, EDGE = 0x785A28;
+    private static final float GRAIN_A = 10.5f / 255f; // the specks' average strength (alpha 0..21)
+
+    private static int mix(int a, int b, float t) {
+        int r = Math.round(((a >> 16) & 0xFF) * (1 - t) + ((b >> 16) & 0xFF) * t);
+        int g = Math.round(((a >> 8) & 0xFF) * (1 - t) + ((b >> 8) & 0xFF) * t);
+        int bl = Math.round((a & 0xFF) * (1 - t) + (b & 0xFF) * t);
+        return 0xFF000000 | (r << 16) | (g << 8) | bl;
+    }
+
+    /**
+     * The colour the paper really shows at the top (bottom = false) or bottom edge of the screen: the paper, its grain
+     * and the warm edge, averaged the way the eye sees them. The system bars take exactly this, so they match.
+     */
+    static int barColor(Context c, boolean bottom) {
+        android.util.DisplayMetrics dm = c.getResources().getDisplayMetrics();
+        float w = dm.widthPixels, h = dm.heightPixels;
+        int col = mix(PAPER_BG, GRAIN, GRAIN_A);
+        float r = Math.max(w, h) * 0.75f;
+        float dist = bottom ? h * 0.6f : h * 0.4f; // from the edge's middle to the glow's centre
+        float t = dist / r;
+        float a = 0;
+        if (t > 0.6f) a = Math.min(1f, (t - 0.6f) / 0.4f) * (0x29 / 255f);
+        a *= 0.8f; // the bar spans the whole width: the corners are darker, the middle lighter
+        return mix(col, EDGE, a);
+    }
+
     /** The paper itself: the colour, a fine grain and a soft warm edge. */
     static Drawable background(Context c) {
         return new Drawable() {

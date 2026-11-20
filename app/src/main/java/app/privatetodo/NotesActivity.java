@@ -70,8 +70,13 @@ public class NotesActivity extends Activity {
     private void paperBars() {
         if (!PaperTheme.on) return;
         android.view.Window w = getWindow();
-        w.setStatusBarColor(PaperTheme.PAPER_BG);
-        w.setNavigationBarColor(PaperTheme.PAPER_BG);
+        w.setStatusBarColor(PaperTheme.barColor(this, false)); // the paper as it really looks at that edge
+        w.setNavigationBarColor(PaperTheme.barColor(this, true));
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            w.setNavigationBarContrastEnforced(false); // no system scrim over the gesture bar
+            w.setStatusBarContrastEnforced(false);
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 28) w.setNavigationBarDividerColor(0);
         if (android.os.Build.VERSION.SDK_INT >= 30 && w.getInsetsController() != null) {
             w.getInsetsController().setSystemBarsAppearance(
                     android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
@@ -194,7 +199,7 @@ public class NotesActivity extends Activity {
         gd.setColor(Pal.muted);
         grab.setBackground(gd);
         grab.setAlpha(0.35f);
-        grab.setOnClickListener(v -> setFoldersWide(!Prefs.foldersExpanded(this)));
+        grab.setOnClickListener(v -> deck.toggle()); // slides, like the drag
         LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(dp(36), dp(4));
         gl.gravity = Gravity.CENTER_HORIZONTAL;
         gl.topMargin = dp(6);

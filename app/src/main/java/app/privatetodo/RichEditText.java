@@ -270,6 +270,25 @@ final class RichEditText extends EditText {
     private int lastBlocks;
 
     /** Puts a CircleSpan over the box character of every to-do line (and removes stale ones). */
+    private static final int[] MARKER_FREE = {RichText.BOLD, RichText.ITALIC, RichText.UNDER, RichText.STRIKE,
+            RichText.HILITE, RichText.FG, RichText.CODE};
+
+    /** A to-do circle, bullet, toggle or number never carries text styles (an underline running on from the line
+     *  above used to underline the circle itself). Only the marker loses them; the words keep theirs. */
+    private static void stripMarker(Editable e, int a, int b) {
+        for (int type : MARKER_FREE) {
+            boolean hit = false;
+            for (Object o : e.getSpans(a, b, Object.class)) {
+                if (RichText.typeOf(o) != type) continue;
+                if (e.getSpanEnd(o) > a && e.getSpanStart(o) < b) {
+                    hit = true;
+                    break;
+                }
+            }
+            if (hit) RichText.apply(e, type, a, b, 0, false);
+        }
+    }
+
     private static void syncCircles(Editable e, int lo, int hi) {
         int n = e.length();
         int from = Math.max(0, Math.min(lo, n));
@@ -289,6 +308,8 @@ final class RichEditText extends EditText {
                     e.setSpan(new CircleSpan(on), i, i + 1, Editable.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
             }
+            int ml = RichText.markerLen(e, i);
+            if (ml > 0 && i + ml <= n) stripMarker(e, i, i + ml);
             int j = i;
             while (j < n && e.charAt(j) != '\n') j++;
             i = j + 1;
@@ -990,6 +1011,7 @@ final class RichEditText extends EditText {
                         if (tblDown.selMode && !(brushL != null && paintBrushOn())) {
                             tblDown.pick(rc[0], rc[1], true);
                             tblDown.pick(tblR, tblC, true); // the cell the swipe started on counts too
+                            RichText.repaint(getText(), tblDown);
                             invalidate();
                         } else {
                             brushL.onBrush(tblDown, rc[0], rc[1], false);
@@ -1003,6 +1025,7 @@ final class RichEditText extends EditText {
                     tblDown = null;
                     if (!tblMoved && t.selMode && !(brushL != null && paintBrushOn())) {
                         t.pick(tblR, tblC, !t.isPicked(tblR, tblC));
+                        RichText.repaint(getText(), t);
                         invalidate();
                     } else if (!tblMoved && !held && !(brushL != null && paintBrushOn())) {
                         tableListener.onTableTap(t, tblR, tblC, tblTick, tblLeft, tblTop);
@@ -1093,15 +1116,16 @@ final class RichEditText extends EditText {
         // notes stutter. Scrolling past the recorded part triggers a fresh recording (see scrollWatch).
         boolean windowed = false;
         // only worth it (and only done) for tall notes; short ones are drawn whole, exactly as before
-        if (getHeight() > getResources().getDisplayMetrics().heightPixels * 6 && getLocalVisibleRect(visRect)) {
-            int m = Math.round(getResources().getDisplayMetrics().heightPixels * 2.5f);
+        if (getHeight() > getResources().getDisplayMetrics().heightPixels * 6 && visibleBand(visRect)) {
+            int scr = getResources().getDisplayMetrics().heightPixels;
+            int m = Math.round(scr * 2.5f);
             int lo = Math.max(0, visRect.top - m);
             int hi = Math.min(getHeight(), visRect.bottom + m);
             android.text.Layout wl = getLayout();
-            if (wl != null && length() > 0) { // the line being typed on is always inside the window
-                int cy = getExtendedPaddingTop() + wl.getLineTop(wl.getLineForOffset(Math.min(length(), Math.max(0, getSelectionEnd()))));
-                if (cy < lo && lo - cy < m * 2) lo = Math.max(0, cy - 8);
-                if (cy + 8 > hi && cy - hi < m * 2) hi = Math.min(getHeight(), cy + getLineHeight() * 3);
+            if (wl != null) { // the line being typed on, and a screen and a half round it, is always inside the window
+                int cy = caretY(wl);
+                lo = Math.max(0, Math.min(lo, cy - scr * 3 / 2));
+                hi = Math.min(getHeight(), Math.max(hi, cy + scr * 3 / 2));
             }
             recLo = lo;
             recHi = hi;
@@ -1138,6 +1162,43 @@ final class RichEditText extends EditText {
     }
 
     private final android.graphics.Rect visRect = new android.graphics.Rect();
+
+    private int caretY(android.text.Layout wl) {
+        int off = Math.min(length(), Math.max(0, getSelectionEnd()));
+        return getExtendedPaddingTop() + wl.getLineTop(wl.getLineForOffset(off));
+    }
+
+    /** The part of this view on screen, taken from the scroll view it sits in (and the window), whichever is wider. */
+    private boolean visibleBand(android.graphics.Rect out) {
+        boolean ok = getLocalVisibleRect(out);
+        android.view.View sv = null;
+        int off = 0;
+        android.view.View c = this;
+        while (c.getParent() instanceof android.view.View) {
+            off += c.getTop();
+            android.view.View par = (android.view.View) c.getParent();
+            if (par instanceof android.widget.ScrollView || par.getClass().getName().endsWith("NestedScrollView")) {
+                sv = par;
+                break;
+            }
+            c = par;
+        }
+        if (sv == null) return ok;
+        int top = sv.getScrollY() - off, bottom = top + sv.getHeight();
+        if (!ok) out.set(0, top, getWidth(), bottom);
+        else out.set(0, Math.min(out.top, top), getWidth(), Math.max(out.bottom, bottom));
+        return true;
+    }
+
+    /** Typing or moving the caret near the edge of the drawn window draws a fresh one straight away. */
+    private void checkWindow() {
+        if (recLo < 0) return;
+        android.text.Layout wl = getLayout();
+        if (wl == null) return;
+        int scr = getResources().getDisplayMetrics().heightPixels;
+        int cy = caretY(wl);
+        if ((recLo > 0 && cy < recLo + scr) || (recHi < getHeight() && cy > recHi - scr)) invalidate();
+    }
     private int recLo = -1;
     private int recHi = -1;
     private android.view.ViewTreeObserver.OnScrollChangedListener scrollWatch;
@@ -1146,7 +1207,7 @@ final class RichEditText extends EditText {
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
         scrollWatch = () -> {
-            if (recLo < 0 || !getLocalVisibleRect(visRect)) return;
+            if (recLo < 0 || !visibleBand(visRect)) return;
             int m = Math.round(getResources().getDisplayMetrics().heightPixels * 1.0f);
             if (recLo > 0 && visRect.top < recLo + m || recHi < getHeight() && visRect.bottom > recHi - m) invalidate();
         };
@@ -1357,6 +1418,7 @@ final class RichEditText extends EditText {
     @Override
     protected void onSelectionChanged(int selStart, int selEnd) {
         selChangedAt = android.os.SystemClock.uptimeMillis();
+        if (recLo >= 0) post(this::checkWindow);
         if (selStart == selEnd && !fixingTable) { // never leave the cursor on a table's own line: it would be the whole table
             Editable t = getText();
             int o = selStart;

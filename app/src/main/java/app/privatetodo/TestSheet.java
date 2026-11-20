@@ -30,6 +30,7 @@ final class TestSheet {
     private final LinearLayout body;
     private final ScrollView scroll;
     private final View dot;
+    private final View scrim;
     private boolean open;
 
     private TestSheet(FrameLayout host) {
@@ -51,9 +52,38 @@ final class TestSheet {
         host.addView(hit, hl);
         dot.setTag(hit);
 
+        scrim = new View(c); // tap anywhere above the open panel to close it
+        scrim.setBackgroundColor(0x66000000);
+        scrim.setVisibility(View.GONE);
+        scrim.setOnClickListener(v -> close());
+        host.addView(scrim, new FrameLayout.LayoutParams(-1, -1));
+
         body = new LinearLayout(c);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(px(18), px(8), px(18), px(24));
+        // the panel's own close bar: a handle and a Close button, always at the top of the panel
+        LinearLayout bar = new LinearLayout(c);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        TextView ttl = new TextView(c);
+        ttl.setText("Test options");
+        ttl.setTextColor(0xFF8F95A0);
+        ttl.setTextSize(13);
+        bar.addView(ttl, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView x = new TextView(c);
+        x.setText("Close  \u2715");
+        x.setTextColor(0xFF101114);
+        x.setTextSize(14);
+        x.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+        x.setGravity(Gravity.CENTER);
+        x.setPadding(px(16), 0, px(16), 0);
+        GradientDrawable xg = new GradientDrawable();
+        xg.setCornerRadius(px(18));
+        xg.setColor(0xFFFFFFFF);
+        x.setBackground(xg);
+        x.setOnClickListener(v -> close());
+        bar.addView(x, new LinearLayout.LayoutParams(-2, px(36)));
+        body.addView(bar, new LinearLayout.LayoutParams(-1, -2));
         scroll = new ScrollView(c);
         scroll.addView(body, new ViewGroup.LayoutParams(-1, -2));
         GradientDrawable sg = new GradientDrawable();
@@ -90,6 +120,9 @@ final class TestSheet {
     void open() {
         if (open) return;
         open = true;
+        scrim.setVisibility(View.VISIBLE);
+        scrim.bringToFront();
+        scroll.bringToFront();
         scroll.setVisibility(View.VISIBLE);
         scroll.setTranslationY(scroll.getLayoutParams().height);
         scroll.animate().translationY(0).setDuration(260).start();
@@ -99,6 +132,8 @@ final class TestSheet {
     void close() {
         if (!open) return;
         open = false;
+        scrim.setVisibility(View.GONE);
+        ((View) dot.getTag()).bringToFront();
         scroll.animate().translationY(scroll.getHeight()).setDuration(220).withEndAction(() -> scroll.setVisibility(View.INVISIBLE)).start();
         ((View) dot.getTag()).animate().alpha(1f).setDuration(200).start();
     }

@@ -141,6 +141,15 @@ final class Prefs {
     }
 
     /** Which AlertFx style plays behind the full-screen alert (0 = off). Starts from the old glow switch. */
+    /** Full-screen alert: the longest it stays on screen, in minutes (0 = until you act on it). */
+    static int alertMaxMin(Context c) {
+        return Math.max(0, Math.min(60, sp(c).getInt("alert_max_min", 0)));
+    }
+
+    static void setAlertMaxMin(Context c, int v) {
+        sp(c).edit().putInt("alert_max_min", Math.max(0, Math.min(60, v))).apply();
+    }
+
     static int alertAnim(Context c) {
         SharedPreferences s = sp(c);
         if (s.contains("alert_fx")) return s.getInt("alert_fx", AlertFx.EDGE);

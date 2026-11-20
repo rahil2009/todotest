@@ -100,7 +100,33 @@ public class AlarmActivity extends Activity {
         show();
     }
 
+    private final android.os.Handler limitH = new android.os.Handler(android.os.Looper.getMainLooper());
+
+    /** Settings > Full-screen alert > Show for at most: the screen goes and the ringing stops, the reminder stays in the shade. */
+    private final Runnable timeUp = () -> {
+        RingService.stopAll(this);
+        android.app.NotificationManager nm = getSystemService(android.app.NotificationManager.class);
+        TaskDb db = new TaskDb(this);
+        try {
+            for (long p : new java.util.ArrayList<>(pend)) {
+                Task t = db.get(p);
+                if (t == null || t.done || nm == null) continue;
+                nm.notify((int) p, Reminders.build(this, t, db.subs(p), true)); // a quiet entry to act on later
+            }
+        } finally {
+            db.close();
+        }
+        finish();
+    };
+
+    private void armLimit() {
+        limitH.removeCallbacks(timeUp);
+        int min = Prefs.alertMaxMin(this);
+        if (min > 0 && !getIntent().getBooleanExtra(EXTRA_TEST, false)) limitH.postDelayed(timeUp, min * 60_000L);
+    }
+
     private void show() {
+        armLimit();
         // the full-screen screen replaces the banner: drop any heads-up/stale shade entries so none sits on top
         // (a looping alarm keeps its notification, the ring service needs it)
         if (!RingService.isRinging()) {
@@ -365,7 +391,7 @@ public class AlarmActivity extends Activity {
             Toast.makeText(this, "Snoozed until "
                     + Reminders.when(this, System.currentTimeMillis() + minutes * 60_000L),
                     Toast.LENGTH_LONG).show();
-            finish();
+            advance(); // the next alarm still waiting comes up (it used to close the screen on it)
         });
 
         LinearLayout panel = new LinearLayout(this);
@@ -380,6 +406,7 @@ public class AlarmActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        limitH.removeCallbacks(timeUp);
         // the Settings test button makes a throw-away task; remove it once its alert is closed
         long[] pv = getIntent().getLongArrayExtra(EXTRA_PREVIEW);
         if (isFinishing() && pv != null) { // the throw-away reminders of a Settings preview
@@ -421,6 +448,10 @@ public class AlarmActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (sheet != null && sheet.isOpen()) { // test mode: Back closes the options panel first
+            sheet.close();
+            return;
+        }
         dismiss();
     }
 
@@ -429,7 +460,7 @@ public class AlarmActivity extends Activity {
     public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
         if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP && RingService.isRinging()) {
             if (event.getRepeatCount() == 0) {
-                RingService.stopFor(this, id);
+                RingService.stopAll(this); // whichever alarm is the one making the sound
                 android.widget.Toast.makeText(this, "Silenced", android.widget.Toast.LENGTH_SHORT).show();
             }
             return true;

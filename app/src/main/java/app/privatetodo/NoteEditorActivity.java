@@ -323,6 +323,7 @@ public class NoteEditorActivity extends Activity {
         body.setTableBrushListener((t, r, c, first) -> brushCell(t, r, c, first));
         body.arrows.onChanged(this::changed);
         body.arrows.inkPencil = getSharedPreferences("settings", MODE_PRIVATE).getInt("ink_pencil", 6);
+        body.arrows.setFloatTap(this::editFloat);
         body.setZoomListener((f, done) -> {
             if (zoomLockValue() > 0) return; // this note's zoom is locked: pinching does nothing
             if (done) {
@@ -399,7 +400,10 @@ public class NoteEditorActivity extends Activity {
         scroll.setFillViewport(true);
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        col.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
+        // wrap_content, not 0 + weight: TextView only grows itself while typing when its height is wrap_content. With a
+        // fixed height new lines at the bottom of a long note were drawn past its edge (the "ghost overlay") until
+        // some other change forced a layout. The weight still stretches a short note to fill the screen.
+        col.addView(body, new LinearLayout.LayoutParams(-1, -2, 1f));
         backBox = new LinearLayout(this);
         backBox.setOrientation(LinearLayout.VERTICAL);
         backBox.setVisibility(View.GONE);
@@ -592,10 +596,10 @@ public class NoteEditorActivity extends Activity {
         android.content.SharedPreferences.Editor ed = getSharedPreferences("settings", MODE_PRIVATE).edit();
         if (zoomLockValue() > 0) {
             ed.remove("zoom_lock_" + noteId);
-            Toast.makeText(this, "Zoom unlocked", Toast.LENGTH_SHORT).show();
+            say("Zoom unlocked", false);
         } else {
             ed.putFloat("zoom_lock_" + noteId, scale);
-            Toast.makeText(this, "Zoom locked at this size", Toast.LENGTH_SHORT).show();
+            say("Zoom locked at this size", false);
         }
         ed.apply();
     }
@@ -705,7 +709,7 @@ public class NoteEditorActivity extends Activity {
                             setTextSize(cur == custom[0] ? 0 : custom[0], selStart(), selEnd());
                             paintSizeChips();
                         } else {
-                            Toast.makeText(NoteEditorActivity.this, "Double tap to type a size", Toast.LENGTH_SHORT).show();
+                            say("Double tap to type a size", false);
                         }
                         return true;
                     }
@@ -1736,7 +1740,7 @@ public class NoteEditorActivity extends Activity {
         if (i == 4) {
             md = getSharedPreferences("settings", MODE_PRIVATE).getString("my_template", "");
             if (md.isEmpty()) {
-                Toast.makeText(this, "Nothing saved yet: write a note, then tap Save as mine", Toast.LENGTH_LONG).show();
+                say("Nothing saved yet: write a note, then tap Save as mine", true);
                 return;
             }
         } else {
@@ -1754,6 +1758,11 @@ public class NoteEditorActivity extends Activity {
 
     /** 0 box, 1 squircle, 2 pencil ring, 3 scribble, 4 arrow, 5 clear. Tapping the active tool again turns it off. */
     private void linkTool(int which) {
+        linkToolImpl(which);
+        syncSketchChip();
+    }
+
+    private void linkToolImpl(int which) {
         if (which == 6 || which == 7) { // freehand pencil, and its eraser
             if (which == 6 && body.arrows.mode == Arrows.MODE_INK && !body.arrows.inkErase) {
                 body.arrows.mode = Arrows.MODE_OFF;
@@ -1767,7 +1776,7 @@ public class NoteEditorActivity extends Activity {
                 body.arrows.onChanged(this::changed);
                 if (body.arrows.mode == Arrows.MODE_INK) {
                     hideKeyboardNow();
-                    Toast.makeText(this, "Rub over pencil strokes to erase them. Tap the tool again to finish.", Toast.LENGTH_LONG).show();
+                    say("Rub over pencil strokes to erase them. Tap the tool again to finish.", true);
                 }
                 body.invalidate();
                 return;
@@ -1779,7 +1788,7 @@ public class NoteEditorActivity extends Activity {
             body.arrows.clearAll();
             body.arrows.mode = Arrows.MODE_OFF;
             changed();
-            Toast.makeText(this, "Shapes and arrows cleared", Toast.LENGTH_SHORT).show();
+            say("Shapes and arrows cleared", false);
             return;
         }
         body.arrows.inkErase = false;
@@ -1791,9 +1800,8 @@ public class NoteEditorActivity extends Activity {
         if (body.arrows.mode != Arrows.MODE_OFF) {
             android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
             if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
-            Toast.makeText(this, which == 4 ? "Drag from one text or shape to another. Tap Arrow again to finish."
-                    : "Draw round the text with your finger. Tap the tool again to finish. Hold a shape to move it.",
-                    Toast.LENGTH_LONG).show();
+            say(which == 4 ? "Drag from one shape or word to another. Start or end on a ring to pick that point."
+                    : "Draw round the text with your finger. Hold a shape to move it anywhere.", true);
         }
         body.invalidate();
     }
@@ -1866,8 +1874,8 @@ public class NoteEditorActivity extends Activity {
                 hideKeyboardNow();
                 body.invalidate();
                 if (dlg[0] != null) dlg[0].dismiss();
-                Toast.makeText(this, PencilFx.PENCIL_NAMES[k] + " pencil: draw on the note. Tap Pencil draw again to finish.",
-                        Toast.LENGTH_LONG).show();
+                syncSketchChip();
+                say(PencilFx.PENCIL_NAMES[k] + " pencil: draw on the note.", true);
             });
             list.addView(row, new LinearLayout.LayoutParams(-1, -2));
         }
@@ -1883,7 +1891,7 @@ public class NoteEditorActivity extends Activity {
                 CharSequence clip = cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0
                         ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
                 if (clip == null || clip.length() == 0) {
-                    Toast.makeText(this, "The clipboard is empty", Toast.LENGTH_SHORT).show();
+                    say("The clipboard is empty", false);
                     return;
                 }
                 commitNow();
@@ -1898,7 +1906,7 @@ public class NoteEditorActivity extends Activity {
                 android.content.ClipboardManager cm = getSystemService(android.content.ClipboardManager.class);
                 cm.setPrimaryClip(android.content.ClipData.newPlainText("Markdown",
                         Markdown.export(e, title.getText().toString())));
-                Toast.makeText(this, "Copied as Markdown", Toast.LENGTH_SHORT).show();
+                say("Copied as Markdown", false);
                 break;
             }
             case 2: {
@@ -1916,7 +1924,7 @@ public class NoteEditorActivity extends Activity {
                 int s = selStart();
                 int en = selEnd();
                 if (s == en) {
-                    Toast.makeText(this, "Select the Markdown text first", Toast.LENGTH_SHORT).show();
+                    say("Select the Markdown text first", false);
                     return;
                 }
                 commitNow();
@@ -1959,9 +1967,9 @@ public class NoteEditorActivity extends Activity {
             if (res == RESULT_OK && data != null && data.getData() != null) {
                 String nm = NoteFonts.importFont(this, data.getData());
                 if (nm == null) {
-                    Toast.makeText(this, "That file is not a usable font (use .ttf or .otf)", Toast.LENGTH_LONG).show();
+                    say("That file is not a usable font (use .ttf or .otf)", true);
                 } else {
-                    Toast.makeText(this, nm + " added. Pick it in the Font tab.", Toast.LENGTH_LONG).show();
+                    say(nm + " added. Pick it in the Font tab.", true);
                     showTab(5);
                 }
             }
@@ -1970,9 +1978,9 @@ public class NoteEditorActivity extends Activity {
         if (req != REQ_MD || res != RESULT_OK || data == null || data.getData() == null) return;
         try (java.io.OutputStream out = getContentResolver().openOutputStream(data.getData())) {
             out.write(Markdown.export(body.getText(), title.getText().toString()).getBytes("UTF-8"));
-            Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show();
+            say("Saved", false);
         } catch (Exception ex) {
-            Toast.makeText(this, "Could not save the file", Toast.LENGTH_LONG).show();
+            say("Could not save the file", true);
         }
     }
 
@@ -1986,6 +1994,115 @@ public class NoteEditorActivity extends Activity {
     private boolean cellBusy;
     private FrameLayout areaView;
     private View tableBarView;
+
+    private TextView sayPill;
+    private TextView sketchChip;
+
+    /**
+     * The editor's own little messages: a pill just above the toolbar, so nothing ever covers the tools (a system
+     * toast sat on top of them). Falls back to a toast when the screen is closing.
+     */
+    private void say(CharSequence msg, boolean longer) {
+        if (areaView == null || isFinishing()) {
+            Toast.makeText(getApplicationContext(), msg, longer ? Toast.LENGTH_LONG : Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (sayPill == null) {
+            sayPill = new TextView(this);
+            sayPill.setTag("keepfont");
+            sayPill.setTextSize(13.5f);
+            sayPill.setTextColor(Pal.dark ? 0xFF111111 : 0xFFFFFFFF);
+            sayPill.setGravity(Gravity.CENTER);
+            sayPill.setPadding(dp(16), dp(10), dp(16), dp(10));
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(20));
+            g.setColor(Pal.dark ? 0xF2EDEDED : 0xF2222222);
+            sayPill.setBackground(g);
+            sayPill.setElevation(dp(6));
+            sayPill.setOnClickListener(v -> sayPill.setVisibility(View.GONE));
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+            lp.bottomMargin = dp(14);
+            lp.leftMargin = dp(20);
+            lp.rightMargin = dp(20);
+            areaView.addView(sayPill, lp);
+        }
+        sayPill.setText(msg);
+        sayPill.removeCallbacks(hideSay);
+        sayPill.animate().cancel();
+        sayPill.setAlpha(0f);
+        sayPill.setVisibility(View.VISIBLE);
+        sayPill.bringToFront();
+        sayPill.animate().alpha(1f).setDuration(140).start();
+        sayPill.postDelayed(hideSay, longer ? 3500 : 2000);
+    }
+
+    private final Runnable hideSay = () -> {
+        if (sayPill != null) sayPill.animate().alpha(0f).setDuration(180).withEndAction(() -> sayPill.setVisibility(View.GONE)).start();
+    };
+
+    /** While a sketch tool is on, a chip at the top says which, and tapping it (or Back) turns the tool off. */
+    private void syncSketchChip() {
+        if (areaView == null || body == null) return;
+        int m = body.arrows.mode;
+        if (m == Arrows.MODE_OFF) {
+            if (sketchChip != null) sketchChip.setVisibility(View.GONE);
+            return;
+        }
+        if (sketchChip == null) {
+            sketchChip = new TextView(this);
+            sketchChip.setTag("keepfont");
+            sketchChip.setTextSize(13);
+            sketchChip.setTypeface(Typeface.DEFAULT_BOLD);
+            sketchChip.setTextColor(Pal.onAccent);
+            sketchChip.setPadding(dp(14), dp(8), dp(14), dp(8));
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(dp(18));
+            g.setColor(Pal.accent);
+            sketchChip.setBackground(g);
+            sketchChip.setElevation(dp(6));
+            sketchChip.setOnClickListener(v -> {
+                Hap.tick(v);
+                stopSketch();
+            });
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+            lp.topMargin = dp(10);
+            areaView.addView(sketchChip, lp);
+        }
+        String what = m == Arrows.MODE_BOX ? "Sketch box" : m == Arrows.MODE_SQUIRCLE ? "Squircle"
+                : m == Arrows.MODE_CIRCLE ? "Pencil ring" : m == Arrows.MODE_SCRIBBLE ? "Scribble"
+                : m == Arrows.MODE_ARROW ? "Arrow" : body.arrows.inkErase ? "Erase pencil"
+                : PencilFx.PENCIL_NAMES[Math.max(0, Math.min(PencilFx.PENCILS - 1, body.arrows.inkPencil))] + " pencil";
+        sketchChip.setText(what + "  \u00b7  tap here to finish  \u2715");
+        sketchChip.setVisibility(View.VISIBLE);
+        sketchChip.bringToFront();
+    }
+
+    private void stopSketch() {
+        body.arrows.mode = Arrows.MODE_OFF;
+        body.arrows.inkErase = false;
+        inkWasErase = false;
+        body.invalidate();
+        syncSketchChip();
+        refreshToolbar();
+    }
+
+    /** A moved (floating) shape was tapped: edit its words, put them back into the text, or delete it. */
+    private void editFloat(Arrows.Anchor a) {
+        final EditText ed = new EditText(this);
+        ed.setText(a.ftext == null ? "" : a.ftext.trim());
+        ed.setSelection(ed.getText().length());
+        ed.setTextColor(Pal.ink);
+        ed.setMinLines(1);
+        ed.setMaxLines(6);
+        LinearLayout box = new LinearLayout(this);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        box.addView(ed, new LinearLayout.LayoutParams(-1, -2));
+        new Dlg.Builder(this).setTitle("Shape text").setView(box)
+                .setPositiveButton("Save", (dd, w) -> body.arrows.editFloat(a, ed.getText().toString(), false))
+                .setNeutralButton("Back into text", (dd, w) -> body.arrows.editFloat(a, ed.getText().toString(), true))
+                .setNegativeButton("Delete", (dd, w) -> body.arrows.editFloat(a, null, false))
+                .show();
+    }
 
     private void buildCellEdit(FrameLayout area) {
         areaView = area;
@@ -2045,7 +2162,7 @@ public class NoteEditorActivity extends Activity {
     private void toggleCellSelect(RichText.Tbl t) {
         Hap.tick(body);
         if (paintMode) {
-            Toast.makeText(this, "Finger mode is on: pick a style below, then swipe over the cells", Toast.LENGTH_SHORT).show();
+            say("Finger mode is on: pick a style below, then swipe over the cells", false);
             return;
         }
         boolean editing = cellOpen && curTbl == t;
@@ -2066,7 +2183,7 @@ public class NoteEditorActivity extends Activity {
         } else {
             t.selMode = true;
             selTbl = t;
-            Toast.makeText(this, "Select mode: tap or swipe cells, then style them", Toast.LENGTH_SHORT).show();
+            say("Select mode: tap or swipe cells, then style them", false);
         }
         RichText.refresh(body.getText(), t);
         body.invalidate();
@@ -2087,7 +2204,7 @@ public class NoteEditorActivity extends Activity {
         RichText.Tbl t = selTbl;
         if (t == null) return;
         if (t.pickedCount() == 0) {
-            Toast.makeText(this, "Pick some cells first (tap them or swipe across)", Toast.LENGTH_SHORT).show();
+            say("Pick some cells first (tap them or swipe across)", false);
             return;
         }
         for (int r = 0; r < t.rows(); r++) {
@@ -2122,6 +2239,7 @@ public class NoteEditorActivity extends Activity {
                 t.setFg(r, k, 0);
                 t.setFl(r, k, 0);
         }
+        if (cellOpen && curTbl == t && curR == r && curC == k) styleCellEditor(t, r, k);
     }
 
     private int flagOf(int key) {
@@ -2154,7 +2272,7 @@ public class NoteEditorActivity extends Activity {
     /** Finger mode over a table: the chosen brush goes onto each cell the finger crosses. */
     private void brushCell(RichText.Tbl t, int r, int k, boolean first) {
         if (brush == NO_BRUSH) {
-            if (first) Toast.makeText(this, "Pick a style first, then swipe over the cells", Toast.LENGTH_SHORT).show();
+            if (first) say("Pick a style first, then swipe over the cells", false);
             return;
         }
         int fl = t.flOf(r, k);
@@ -2169,6 +2287,7 @@ public class NoteEditorActivity extends Activity {
         else if (brush == CLEAR_KEY) applyCell(t, r, k, 4, 0, true);
         else if (brush == RichText.CODE) return;
         else applyCell(t, r, k, 2, flagOf(brush), !cellBrushErase);
+        RichText.repaint(body.getText(), t); // without this the painted cell only showed after the next edit
         changed();
         body.invalidate();
     }
@@ -2214,32 +2333,50 @@ public class NoteEditorActivity extends Activity {
     }
 
     private boolean hopDown(Editable e, RichText.Tbl t, int a) {
-        int tEnd = RichText.lineEnd(e, a); // the newline after the table
-        if (tEnd >= e.length()) return false;
-        int ns = tEnd + 1;
-        int ne = RichText.lineEnd(e, ns);
-        if (ne >= e.length()) return false;
-        if (e.subSequence(ns, ne).toString().indexOf(RichText.TABLE_CHAR) >= 0) return false;
-        CharSequence seg = new android.text.SpannableStringBuilder(e.subSequence(ns, ne + 1));
-        busy = true;
-        e.insert(a, seg);
-        e.delete(ns + seg.length(), ne + 1 + seg.length());
-        busy = false;
-        return true;
+        return moveTableLine(e, t, a, true);
     }
 
     private boolean hopUp(Editable e, RichText.Tbl t, int a) {
-        if (a == 0) return false;
-        int pe = a - 1; // the newline before the table
-        int ps = RichText.lineStart(e, pe);
-        if (e.subSequence(ps, pe).toString().indexOf(RichText.TABLE_CHAR) >= 0) return false;
-        CharSequence seg = new android.text.SpannableStringBuilder(e.subSequence(ps, pe + 1));
-        int tEnd = RichText.lineEnd(e, a);
+        return moveTableLine(e, t, a, false);
+    }
+
+    private static final int[] TABLE_LINE_FREE = {RichText.BOLD, RichText.ITALIC, RichText.UNDER, RichText.STRIKE,
+            RichText.HILITE, RichText.FG, RichText.CODE, RichText.SIZE, RichText.FONT};
+
+    /**
+     * Moves the table's own line (one character carrying the table) past the line below or above it, which may be
+     * another table. The neighbouring line is never touched, so its fonts, colours, counters, links and shapes stay
+     * exactly as they were (copying that line used to pull its spans off the lines around it).
+     */
+    private boolean moveTableLine(Editable e, RichText.Tbl t, int a, boolean down) {
+        int tEnd = RichText.lineEnd(e, a); // the newline after the table
         if (tEnd >= e.length()) return false;
+        int len = tEnd + 1 - a;
+        int flags = e.getSpanFlags(t);
+        int at;
+        if (down) {
+            int ns = tEnd + 1;
+            int ne = RichText.lineEnd(e, ns);
+            if (ne >= e.length()) return false;
+            at = ne + 1;
+        } else {
+            if (a == 0) return false;
+            at = RichText.lineStart(e, a - 1);
+        }
         busy = true;
-        e.insert(tEnd + 1, seg);
-        e.delete(ps, pe + 1);
-        busy = false;
+        body.allowTableDelete = true;
+        try {
+            android.text.SpannableStringBuilder seg = new android.text.SpannableStringBuilder(RichText.TABLE_CHAR + "\n");
+            e.insert(at, seg);
+            e.setSpan(t, at, at + 1, flags); // the same table object: its cells and cell styles come along untouched
+            for (int type : TABLE_LINE_FREE) RichText.apply(e, type, at, at + 2, 0, false); // nothing bleeds onto it
+            int old = down ? a : a + 2;
+            e.delete(old, old + len);
+        } finally {
+            body.allowTableDelete = false;
+            busy = false;
+        }
+        RichText.refresh(e, t);
         return true;
     }
 
@@ -2297,8 +2434,7 @@ public class NoteEditorActivity extends Activity {
         g.setColor(r == 0 ? blend(Pal.bg, Pal.accent, Pal.dark ? 0.22f : 0.18f) : Pal.card);
         g.setStroke(dp(2), Pal.accent);
         cellEdit.setBackground(g);
-        Typeface base = body.getTypeface() == null ? Typeface.DEFAULT : body.getTypeface();
-        cellEdit.setTypeface(r == 0 ? Typeface.create(base, Typeface.BOLD) : base);
+        styleCellEditor(t, r, c);
         cellEdit.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, curTbl != null ? curTbl.sized(body.getPaint()).getTextSize() : body.getTextSize());
         cellEdit.setHint(r == 0 ? "Header" : "");
         cellEdit.setHintTextColor(Pal.muted);
@@ -2315,6 +2451,21 @@ public class NoteEditorActivity extends Activity {
         tableBarView.setVisibility(View.VISIBLE);
         ensureCellVisible();
         cellEdit.postDelayed(this::ensureCellVisible, 320);
+    }
+
+    /** The cell editor wears the cell's own look (its font, bold/italic, colour, underline, strike) from the first frame. */
+    private void styleCellEditor(RichText.Tbl t, int r, int c) {
+        Typeface base = t.drawFace != null ? t.drawFace : body.getTypeface() == null ? Typeface.DEFAULT : body.getTypeface();
+        int fl = t.flOf(r, c);
+        cellEdit.setTypeface(RichText.Tbl.faceFor(base, fl, r == 0));
+        int fg = t.fgOf(r, c);
+        cellEdit.setTextColor(fg != 0 ? fg : Pal.ink);
+        int pf = cellEdit.getPaintFlags() & ~(android.graphics.Paint.UNDERLINE_TEXT_FLAG
+                | android.graphics.Paint.STRIKE_THRU_TEXT_FLAG | android.graphics.Paint.FAKE_BOLD_TEXT_FLAG);
+        if ((fl & RichText.Tbl.F_UNDER) != 0) pf |= android.graphics.Paint.UNDERLINE_TEXT_FLAG;
+        if ((fl & RichText.Tbl.F_STRIKE) != 0) pf |= android.graphics.Paint.STRIKE_THRU_TEXT_FLAG;
+        if (r == 0 || (fl & RichText.Tbl.F_BOLD) != 0) pf |= android.graphics.Paint.FAKE_BOLD_TEXT_FLAG;
+        cellEdit.setPaintFlags(pf);
     }
 
     /** Pixel geometry of the open cell inside the editor area: {x, y, w, h, paddingLeft}. */
@@ -2507,22 +2658,21 @@ public class NoteEditorActivity extends Activity {
                 break;
             case 3:
                 if (r == 0 || !t.delRow(r)) {
-                    Toast.makeText(this, r == 0 ? "The header row stays" : "A table keeps its header and one row",
-                            Toast.LENGTH_SHORT).show();
+                    say(r == 0 ? "The header row stays" : "A table keeps its header and one row", false);
                     return;
                 }
                 r = Math.min(r, t.rows() - 1);
                 break;
             case 4:
                 if (!t.delCol(c)) {
-                    Toast.makeText(this, "A table keeps at least two columns", Toast.LENGTH_SHORT).show();
+                    say("A table keeps at least two columns", false);
                     return;
                 }
                 c = Math.min(c, t.cols() - 1);
                 break;
             case 5:
                 if (r == 0) {
-                    Toast.makeText(this, "Header cells have no tick", Toast.LENGTH_SHORT).show();
+                    say("Header cells have no tick", false);
                     return;
                 }
                 t.cycleTick(r, c);
@@ -2532,7 +2682,7 @@ public class NoteEditorActivity extends Activity {
                 int nc = c + (op == 6 ? -1 : op == 7 ? 1 : 0);
                 boolean ok = nr >= 0 && nc >= 0 && nr < t.rows() && nc < t.cols() && (r == 0) == (nr == 0);
                 if (!ok) {
-                    Toast.makeText(this, "Nowhere to move it", Toast.LENGTH_SHORT).show();
+                    say("Nowhere to move it", false);
                     return;
                 }
                 t.swap(r, c, nr, nc);
@@ -2542,7 +2692,7 @@ public class NoteEditorActivity extends Activity {
             }
             case 10:
                 if (r == 0) {
-                    Toast.makeText(this, "Header cells are text; put a counter in a row below", Toast.LENGTH_SHORT).show();
+                    say("Header cells are text; put a counter in a row below", false);
                     return;
                 }
                 dropCell();
@@ -2550,7 +2700,7 @@ public class NoteEditorActivity extends Activity {
                 return;
             case 11:
                 RichClip.copyTable(this, e, t);
-                Toast.makeText(this, "Table copied. Paste it in any note.", Toast.LENGTH_SHORT).show();
+                say("Table copied. Paste it in any note.", false);
                 return;
             default: {
                 int a = e.getSpanStart(t);
@@ -2589,6 +2739,7 @@ public class NoteEditorActivity extends Activity {
         if (cellOpen) closeCell(true);
         commitNow();
         saveNow();
+        final int[] spot = captureSpot();
         reading = true;
         if (paintMode) setPaintMode(false);
         android.view.inputmethod.InputMethodManager im = (android.view.inputmethod.InputMethodManager)
@@ -2636,6 +2787,7 @@ public class NoteEditorActivity extends Activity {
         body.setPadding(dp(18), t.isEmpty() ? topGap : dp(4), dp(18), dp(24));
         readTitle.setPadding(dp(18), topGap, dp(64), dp(2));
         keepAwakeFor();
+        restoreSpot(spot); // the bars going away must not scroll the note
     }
 
     /** Full screen reading: the X floats over the whole screen, just under the camera, where you last put it. */
@@ -2661,6 +2813,7 @@ public class NoteEditorActivity extends Activity {
 
     private void exitReading() {
         if (!reading) return;
+        final int[] spot = captureSpot();
         reading = false;
         body.removeCallbacks(sleepAgain);
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -2684,6 +2837,7 @@ public class NoteEditorActivity extends Activity {
         body.setCursorVisible(true);
         body.setShowSoftInputOnFocus(true);
         refreshToolbar();
+        restoreSpot(spot);
     }
 
     /** Keeps the screen on while you read, and lets it sleep again after two minutes without a touch. */
@@ -2852,6 +3006,10 @@ public class NoteEditorActivity extends Activity {
             closeCell(true);
             return;
         }
+        if (body != null && body.arrows.mode != Arrows.MODE_OFF) {
+            stopSketch();
+            return;
+        }
         super.onBackPressed();
     }
 
@@ -2898,10 +3056,50 @@ public class NoteEditorActivity extends Activity {
                 sv.scrollTo(0, Math.min(max, Math.max(0, y)));
             }
         };
-        // rich spans (tables, images) settle over a few frames, so place it again as they do
+        // rich spans (tables, images) and the zoom settle over a few frames, so place it again as they do. The page
+        // stays hidden until the last placement, so you never see it slide into place.
+        body.setAlpha(0f);
         noteScroll.post(go);
         noteScroll.postDelayed(go, 120);
-        noteScroll.postDelayed(go, 320);
+        noteScroll.postDelayed(() -> {
+            go.run();
+            body.animate().alpha(1f).setDuration(110).start();
+        }, 320);
+        body.postDelayed(() -> body.setAlpha(1f), 900); // never left hidden
+    }
+
+    /** The first line on screen and how far into it, so a change of bars or padding can put it back exactly. */
+    private int[] captureSpot() {
+        android.text.Layout l = body.getLayout();
+        if (l == null || noteScroll == null) return null;
+        int y = Math.max(0, noteScroll.getScrollY() - body.getTop() - body.getTotalPaddingTop());
+        int line = l.getLineForVertical(y);
+        return new int[]{l.getLineStart(line), y - l.getLineTop(line), noteScroll.getScrollY()};
+    }
+
+    private void restoreSpot(final int[] spot) {
+        if (spot == null || noteScroll == null) return;
+        final Runnable back = () -> {
+            android.text.Layout l = body.getLayout();
+            if (l == null) return;
+            if (spot[2] == 0) { // it was at the very top: stay at the very top
+                noteScroll.scrollTo(0, 0);
+                return;
+            }
+            int ln = l.getLineForOffset(Math.min(spot[0], body.length()));
+            int within = Math.min(spot[1], l.getLineBottom(ln) - l.getLineTop(ln));
+            noteScroll.scrollTo(0, Math.max(0, body.getTop() + body.getTotalPaddingTop() + l.getLineTop(ln) + within));
+        };
+        noteScroll.getViewTreeObserver().addOnPreDrawListener(new android.view.ViewTreeObserver.OnPreDrawListener() {
+            @Override
+            public boolean onPreDraw() {
+                noteScroll.getViewTreeObserver().removeOnPreDrawListener(this);
+                back.run();
+                return true;
+            }
+        });
+        noteScroll.postDelayed(back, 80);
+        noteScroll.postDelayed(back, 220);
     }
 
     /** Remembers the first line on screen, for "where I left off". */
@@ -3055,7 +3253,7 @@ public class NoteEditorActivity extends Activity {
                     flushCell();
                     getSharedPreferences("settings", MODE_PRIVATE).edit()
                             .putString("my_template", Markdown.export(body.getText(), "")).apply();
-                    Toast.makeText(this, "Saved as your template", Toast.LENGTH_SHORT).show();
+                    say("Saved as your template", false);
                 } else {
                     insertTemplate(n);
                 }
@@ -3177,7 +3375,7 @@ public class NoteEditorActivity extends Activity {
             return;
         }
         if (key == RichText.CODE && RichText.inBlock(e, s, en)) { // a code block is monospace already
-            Toast.makeText(this, "Inline code isn't used inside a code block", Toast.LENGTH_SHORT).show();
+            say("Inline code isn't used inside a code block", false);
             return;
         }
         boolean lineType = key == RichText.HEAD;
@@ -3404,7 +3602,7 @@ public class NoteEditorActivity extends Activity {
     /** A tap in finger mode paints the word under the finger. */
     private void paintWordAt(int off) {
         if (brush == NO_BRUSH) {
-            Toast.makeText(this, "Pick a style first, then swipe over text", Toast.LENGTH_SHORT).show();
+            say("Pick a style first, then swipe over text", false);
             return;
         }
         Editable e = body.getText();
@@ -3730,7 +3928,7 @@ public class NoteEditorActivity extends Activity {
         final java.util.ArrayList<Note> list = new java.util.ArrayList<>();
         for (Note n : db.notes("", 0, -1)) if (n.id != noteId) list.add(n);
         if (list.isEmpty()) {
-            Toast.makeText(this, "No other notes to link to yet", Toast.LENGTH_SHORT).show();
+            say("No other notes to link to yet", false);
             return;
         }
         final int selS = selStart();
@@ -3874,11 +4072,11 @@ public class NoteEditorActivity extends Activity {
         commitNow();
         saveNow();
         if (db.deletedAt(id) > 0) {
-            Toast.makeText(this, "That note is in the Bin", Toast.LENGTH_SHORT).show();
+            say("That note is in the Bin", false);
             return;
         }
         if (db.note(id) == null) {
-            Toast.makeText(this, "That note no longer exists", Toast.LENGTH_SHORT).show();
+            say("That note no longer exists", false);
             return;
         }
         Intent i = new Intent(this, NoteEditorActivity.class);
@@ -3996,7 +4194,7 @@ public class NoteEditorActivity extends Activity {
         commitNow();
         saveNow();
         if (noteId <= 0) {
-            Toast.makeText(this, "Nothing saved yet", Toast.LENGTH_SHORT).show();
+            say("Nothing saved yet", false);
             return;
         }
         startActivityForResult(new Intent(this, NoteHistoryActivity.class)

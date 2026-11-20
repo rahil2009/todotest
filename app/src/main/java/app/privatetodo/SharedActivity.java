@@ -117,7 +117,7 @@ public class SharedActivity extends Activity {
         gd.setColor(Pal.muted);
         grab.setBackground(gd);
         grab.setAlpha(0.35f);
-        grab.setOnClickListener(v -> setWide(!Prefs.foldersExpanded(this)));
+        grab.setOnClickListener(v -> deck.toggle()); // slides, like the drag
         LinearLayout.LayoutParams gl = new LinearLayout.LayoutParams(dp(36), dp(4));
         gl.gravity = Gravity.CENTER_HORIZONTAL;
         gl.bottomMargin = dp(6);

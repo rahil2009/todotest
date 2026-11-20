@@ -16,6 +16,18 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.69
+- Long notes: the "ghost overlay" that hid new lines at the bottom while typing is fixed at the root (the text view had a fixed height, so it never grew as you typed; it now sizes itself). The drawing window round the caret is also kept wide enough.
+- Full screen reading keeps the same line on screen going in and out; big notes no longer slide into place when opened (the page shows once it is placed).
+- To-do circles, bullets, toggles and numbers never carry text styles (an underline from the line above no longer underlines the circle).
+- Tables: dragging the dot moves the table past other tables too, and moving it no longer strips fonts, counters or styles from the lines it passes (the table's own line moves; the others are never copied). Picked cells and finger-mode paint show instantly (Android was showing a cached picture of the table line). The cell editor opens in the cell's own font, colour and style.
+- Shapes: hold and move a shape and it floats freely anywhere, carrying its words (they leave the text). Tap a floating shape to edit its words, put them back into the text, or delete it. It never picks up another shape's style.
+- Arrows: routed like a diagram tool (tries every point pair and L / Z / detour routes, never through either piece). Tap an arrow and drag either end to the point you want, or onto another shape or word to reconnect it. Connection points show as rings while drawing arrows.
+- Sketch tools: a chip at the top says which tool is on; tap it (or Back) to finish. Editor messages appear just above the toolbar instead of over it.
+- Notebook: the folder deck slides open and shut under your finger (both ways, one touch) and settles with an animation; the handle slides it too. Paper theme: status and gesture bars take the paper's real edge colour.
+- Full-screen alert: new "Grid (black)" animation (the grid on true black); "Show for at most" No limit / 1 / 2 / 3 min / custom; the test panel has a Close button, tap above it or Back to close. Two alarms ringing together no longer silence each other (and a water alarm waits instead of cutting a task alarm off). Custom snooze moves on to the next waiting alarm.
+- Lock-screen peek: new "Until 2 taps" option; it creeps one pixel every 10 s (and keeps the clock current) so nothing burns in.
+
 ### v3.68
 - Tables: picked cells now show a bold accent border (no tint, so colours stay readable); the dot lights up and grows the moment you tap it, and tapping it again closes select mode (or the cell editor). In select mode the Color tab shows only colours, with Cell / Text buttons choosing where they go. Bold, italic, etc. on picked cells now always render. Finger mode over a table now takes the style you pick (select mode and finger mode no longer fight).
 - Sketch: a held box/squircle/ring now carries its words with it and drops them where you let go; arrows pick their side from where the two pieces sit (top, bottom, left or right), snapping to a point only when you start or end next to one.

@@ -19,7 +19,7 @@ import android.view.View;
 import java.util.Random;
 
 /**
- * Animated backdrops for the full-screen alert. Ten styles (pick one in Settings): edge glow, aurora, waves,
+ * Animated backdrops for the full-screen alert. Eleven styles (pick one in Settings): edge glow, aurora, waves,
  * mesh, liquid, beams, warp, grid, ribbons and orbit. All time-based and drawn with plain canvas calls, so they run smoothly and
  * stop the moment the screen closes. They never take touches.
  */
@@ -35,14 +35,15 @@ final class AlertFx extends View {
     static final int GRID = 8;
     static final int RIBBONS = 9;
     static final int ORBIT = 10;
+    static final int GRID_BLACK = 11; // the grid on pure black, for AMOLED screens
 
     static final String[] NAMES = {"Off", "Edge glow", "Aurora", "Waves", "Mesh", "Liquid", "Beams", "Warp",
-            "Grid", "Ribbons", "Orbit"};
+            "Grid", "Ribbons", "Orbit", "Grid (black)"};
 
     /** The view for a style, or null for Off. */
     static View create(Context c, int mode) {
         if (mode == EDGE) return new GlowView(c);
-        if (mode >= AURORA && mode <= ORBIT) return new AlertFx(c, mode);
+        if (mode >= AURORA && mode <= GRID_BLACK) return new AlertFx(c, mode);
         return null;
     }
 
@@ -125,6 +126,10 @@ final class AlertFx extends View {
                 warp(c, t);
                 break;
             case GRID:
+                grid(c, t);
+                break;
+            case GRID_BLACK:
+                c.drawColor(0xFF000000); // true black under it: the pixels between the dots stay off
                 grid(c, t);
                 break;
             case RIBBONS:

@@ -1186,6 +1186,61 @@ public class SettingsActivity extends Activity {
         frlp.topMargin = dp(10);
         alertCard.addView(fxRow, frlp);
 
+        // ---- how long the alert may stay on screen
+        TextView mxt = text("Show for at most", 16, Pal.ink, true);
+        mxt.setPadding(0, dp(18), 0, 0);
+        alertCard.addView(mxt);
+        alertCard.addView(text("After this the alarm screen closes and the ringing stops. The reminder stays in the notification shade.",
+                13, Pal.muted, false));
+        final int[] mxOpts = {0, 1, 2, 3, -1}; // -1 = custom
+        final String[] mxNames = {"No limit", "1 min", "2 min", "3 min", "Custom"};
+        final TextView[] mxChips = new TextView[mxOpts.length];
+        final Runnable paintMx = () -> {
+            int cur = Prefs.alertMaxMin(this);
+            boolean preset = cur == 0 || cur == 1 || cur == 2 || cur == 3;
+            for (int i = 0; i < mxOpts.length; i++) {
+                boolean on = mxOpts[i] == -1 ? !preset : mxOpts[i] == cur;
+                mxChips[i].setText(mxOpts[i] == -1 && !preset ? cur + " min" : mxNames[i]);
+                mxChips[i].setTextColor(on ? Pal.onSel : Pal.muted);
+                GradientDrawable cg = new GradientDrawable();
+                cg.setCornerRadius(dp(18));
+                cg.setColor(on ? Pal.sel : Pal.chip);
+                mxChips[i].setBackground(cg);
+            }
+        };
+        FlowLayout mxRow = new FlowLayout(this, dp(6), dp(6));
+        for (int i = 0; i < mxOpts.length; i++) {
+            final int val = mxOpts[i];
+            TextView chip = text(mxNames[i], 14, Pal.muted, true);
+            chip.setGravity(Gravity.CENTER);
+            chip.setPadding(dp(14), 0, dp(14), 0);
+            chip.setMinHeight(dp(40));
+            chip.setOnClickListener(v -> {
+                Hap.tick(v);
+                if (val >= 0) {
+                    Prefs.setAlertMaxMin(this, val);
+                    paintMx.run();
+                    return;
+                }
+                final android.widget.NumberPicker np = new android.widget.NumberPicker(this);
+                np.setMinValue(1);
+                np.setMaxValue(60);
+                np.setValue(Math.max(1, Prefs.alertMaxMin(this) > 0 ? Prefs.alertMaxMin(this) : 5));
+                new Dlg.Builder(this).setTitle("Minutes on screen").setView(np)
+                        .setPositiveButton("Set", (dd, w) -> {
+                            Prefs.setAlertMaxMin(this, np.getValue());
+                            paintMx.run();
+                        })
+                        .setNegativeButton("Cancel", null).show();
+            });
+            mxChips[i] = chip;
+            mxRow.addView(chip, new android.view.ViewGroup.LayoutParams(-2, dp(40)));
+        }
+        paintMx.run();
+        LinearLayout.LayoutParams mxl = new LinearLayout.LayoutParams(-1, -2);
+        mxl.topMargin = dp(10);
+        alertCard.addView(mxRow, mxl);
+
         // ---- clock face
         TextView cft = text("Clock face", 16, Pal.ink, true);
         cft.setPadding(0, dp(18), 0, 0);
@@ -1361,7 +1416,7 @@ public class SettingsActivity extends Activity {
         alertCard.addView(toggleRow("Show the peek", "Off = only the normal notification.",
                 Peek.enabled(this), on -> Peek.setEnabled(this, on)));
         alertCard.addView(text("Stays lit for", 14, Pal.ink, true));
-        final int[] secOpts = {3, 5, 8, 12};
+        final int[] secOpts = {3, 5, 8, 12, 0}; // 0 = until you tap it twice (it creeps a pixel now and then: no burn-in)
         final TextView[] secChips = new TextView[secOpts.length];
         final Runnable paintSecs = () -> {
             for (int i = 0; i < secOpts.length; i++) {
@@ -1376,7 +1431,7 @@ public class SettingsActivity extends Activity {
         LinearLayout secRow = new LinearLayout(this);
         for (int i = 0; i < secOpts.length; i++) {
             final int sv = secOpts[i];
-            TextView chip = text(sv + " s", 14, Pal.muted, true);
+            TextView chip = text(sv == 0 ? "2 taps" : sv + " s", 14, Pal.muted, true);
             chip.setGravity(Gravity.CENTER);
             chip.setMinHeight(dp(40));
             chip.setOnClickListener(v -> {

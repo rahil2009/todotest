@@ -68,6 +68,10 @@ public class WaterRingService extends Service {
             finishRinging();
             return;
         }
+        if (RingService.isRinging()) { // a task alarm is sounding: never cut it off (both used to go silent); wait
+            main.postDelayed(() -> ring(left, my), 4000);
+            return;
+        }
         Sound.play(this, Prefs.ALARM, false, 30_000L, () -> main.postDelayed(() -> ring(left - 1, my), 900));
     }
 
