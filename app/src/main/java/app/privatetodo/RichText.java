@@ -451,7 +451,6 @@ final class RichText {
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             Typeface oldFace = p.getTypeface();
-            drawFace = oldFace;
             boolean oldFake = p.isFakeBoldText();
             p.setStyle(Paint.Style.FILL);
             p.setFakeBoldText(false);
@@ -1270,7 +1269,6 @@ final class RichText {
         // these instead of the plain note paint.
         float drawX = -1;
         float drawTop = -1;
-        Typeface drawFace; // the face the table was last drawn in (a font span over the table counts)
         float drawSize;
         Typeface drawFace;
 
@@ -1592,7 +1590,6 @@ final class RichText {
             int oldColor = p.getColor();
             Paint.Style oldStyle = p.getStyle();
             Typeface oldFace = p.getTypeface();
-            drawFace = oldFace;
             boolean oldFake = p.isFakeBoldText();
 
             Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);

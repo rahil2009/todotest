@@ -404,7 +404,7 @@ final class Arrows {
         if (Math.abs(x1 - x2) < 0.5f) { // vertical
             return x1 > r.left && x1 < r.right && Math.max(y1, y2) > r.top && Math.min(y1, y2) < r.bottom;
         }
-        return RectF.intersects(r, Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2));
+        return r.intersects(Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2));
     }
 
     /** Drops repeated points and points in the middle of a straight run. */
