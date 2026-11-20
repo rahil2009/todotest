@@ -421,10 +421,9 @@ public class NoteEditorActivity extends Activity {
         scroll.setFillViewport(true);
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
-        // wrap_content, not 0 + weight: TextView only grows itself while typing when its height is wrap_content. With a
-        // fixed height new lines at the bottom of a long note were drawn past its edge (the "ghost overlay") until
-        // some other change forced a layout. The weight still stretches a short note to fill the screen.
-        col.addView(body, new LinearLayout.LayoutParams(-1, -2, 1f));
+        // 0 + weight, as before v3.69 (wrap_content made long notes take seconds to open). The "ghost overlay" that
+        // fixed height caused is handled in RichEditText.growCheck(): the view asks for a new size as its text grows.
+        col.addView(body, new LinearLayout.LayoutParams(-1, 0, 1f));
         backBox = new LinearLayout(this);
         backBox.setOrientation(LinearLayout.VERTICAL);
         backBox.setVisibility(View.GONE);
@@ -1214,6 +1213,8 @@ public class NoteEditorActivity extends Activity {
                         tool(DATETIME_KEY, "\uFFFC", Typeface.BOLD, "Date+time", "Insert date and time together"),
                         tool(ACT_BASE + 28, "\u2B21", Typeface.BOLD, "Diagram", "A diagram block: boxes, squircles, shapes and arrows on their own canvas, like eraser.io"),
                         tool(ACT_BASE + 20, "\u25AD", Typeface.BOLD, "Sketch box", "Draw round some text with your finger: a box"),
+                        tool(ACT_BASE + 21, "\u2B2D", Typeface.BOLD, "Squircle", "Draw round some text: a squircle"),
+                        tool(ACT_BASE + 24, "\u2197", Typeface.BOLD, "Arrow", "Drag from one text or shape to another to link them"),
                         tool(ACT_BASE + 22, "\u25EF", Typeface.BOLD, "Pencil ring", "Draw round some text: a pencil circle"),
                         tool(ACT_BASE + 23, "\u301C", Typeface.BOLD, "Scribble", "Scribble over some text in pencil"),
                         tool(ACT_BASE + 26, "\u270E", Typeface.BOLD, "Pencil draw", "Draw freehand on the note with one of 20 pencils"),
@@ -1865,7 +1866,7 @@ public class NoteEditorActivity extends Activity {
             android.view.inputmethod.InputMethodManager imm = getSystemService(android.view.inputmethod.InputMethodManager.class);
             if (imm != null) imm.hideSoftInputFromWindow(body.getWindowToken(), 0);
             say(which == 4 ? "Drag from one shape or word to another. Start or end on a ring to pick that point."
-                    : "Draw round the text with your finger. For movable boxes and arrows use Insert > Diagram.", true);
+                    : "Draw round the text with your finger. Hold a shape to move it anywhere.", true);
         }
         body.invalidate();
     }

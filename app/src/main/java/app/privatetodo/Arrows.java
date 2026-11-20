@@ -36,6 +36,7 @@ final class Arrows {
         float ox, oy;
         float[] pts; // K_INK: the stroke, x,y pairs in dp from the anchor character's top-left
         String ftext; // a shape that was moved: it floats freely and carries its own words (null = it hugs the text)
+        android.text.Spannable frich; // those words with their own fonts, sizes, colours and styles
         android.text.StaticLayout fl; // cached layout of ftext
         String flFor;
         float flSize;
@@ -48,6 +49,7 @@ final class Arrows {
         float mid = 0.5f;
         int color = 0xFFD2452B;
         int fs = -1, ts = -1;
+        float wx = Float.NaN, wy = Float.NaN; // a point the line is dragged through, dp from the source shape's top-left
     }
 
     private static final int[] PALETTE = {0xFFD2452B, 0xFF2E7DE0, 0xFF2FA866, 0xFFE9B800, 0xFF8B5CD6, 0xFF444B55};
@@ -192,11 +194,12 @@ final class Arrows {
         if (a.fl == null || !a.ftext.equals(a.flFor) || a.flSize != sz) {
             android.text.TextPaint tp = new android.text.TextPaint(v.getPaint());
             tp.setColor(Pal.ink);
+            CharSequence src = a.frich != null && a.frich.toString().equals(a.ftext) ? a.frich : a.ftext;
             int maxW = Math.max((int) (80 * d), v.getWidth() - v.getTotalPaddingLeft() - v.getTotalPaddingRight() - (int) (24 * d));
-            float want = 0;
-            for (String ln : a.ftext.split("\n", -1)) want = Math.max(want, tp.measureText(ln));
+            float want = Layout.getDesiredWidth(src, tp); // with its own fonts and sizes, so the box fits exactly
             int w = (int) Math.min(maxW, Math.max(12 * d, Math.ceil(want) + 2));
-            a.fl = android.text.StaticLayout.Builder.obtain(a.ftext, 0, a.ftext.length(), tp, w).build();
+            a.fl = android.text.StaticLayout.Builder.obtain(src, 0, src.length(), tp, w)
+                    .setLineSpacing(v.getLineSpacingExtra(), v.getLineSpacingMultiplier()).build();
             a.flFor = a.ftext;
             a.flSize = sz;
         }
@@ -317,7 +320,13 @@ final class Arrows {
                 float mx = a1[0] + (b1[0] - a1[0]) * o.mid, my = a1[1] + (b1[1] - a1[1]) * o.mid;
                 float top = Math.min(s.top, t.top) - g, bot = Math.max(s.bottom, t.bottom) + g;
                 float lef = Math.min(s.left, t.left) - g, rig = Math.max(s.right, t.right) + g;
-                float[][] cands = {
+                boolean via = !Float.isNaN(o.wx);
+                float wx = s.left + (via ? o.wx : 0) * d, wy = s.top + (via ? o.wy : 0) * d;
+                float[][] cands = via ? new float[][]{ // dragged through a point: every right-angled way through it
+                        {wx, a1[1], wx, wy, b1[0], wy},
+                        {wx, a1[1], wx, wy, wx, b1[1]},
+                        {a1[0], wy, wx, wy, b1[0], wy},
+                        {a1[0], wy, wx, wy, wx, b1[1]}} : new float[][]{
                         {b1[0], a1[1]},
                         {a1[0], b1[1]},
                         {mx, a1[1], mx, b1[1]},
@@ -369,6 +378,10 @@ final class Arrows {
                 hy = (y1 + y2) / 2f;
             }
         }
+        if (!Float.isNaN(o.wx)) {
+            hx = s.left + o.wx * d;
+            hy = s.top + o.wy * d;
+        }
         return new float[]{hx, hy, b[0], b[1], a[0], a[1]};
     }
 
@@ -380,6 +393,11 @@ final class Arrows {
         double len = 0;
         int bends = 0, bad = 0;
         int n = poly.length / 2;
+        float wl = 3 * d, wr = v.getWidth() - 3 * d;
+        for (int i = 0; i < n; i++) { // never past the page's edges
+            float px = poly[i * 2], py = poly[i * 2 + 1];
+            if (px < wl || px > wr || py < 0) bad++;
+        }
         for (int i = 0; i < n - 1; i++) {
             float x1 = poly[i * 2], y1 = poly[i * 2 + 1], x2 = poly[i * 2 + 2], y2 = poly[i * 2 + 3];
             len += Math.abs(x2 - x1) + Math.abs(y2 - y1);
@@ -669,8 +687,7 @@ final class Arrows {
         int act = e.getActionMasked();
         if (movingShape != null) { // a shape that was held is following the finger
             if (act == MotionEvent.ACTION_MOVE) {
-                movingShape.ox = shapeOx0 + (x - downX) / d;
-                movingShape.oy = shapeOy0 + (y - downY) / d;
+                moveShapeTo(movingShape, shapeOx0 + (x - downX) / d, shapeOy0 + (y - downY) / d);
                 v.invalidate();
             } else if (act == MotionEvent.ACTION_UP || act == MotionEvent.ACTION_CANCEL) {
                 Anchor dropped = movingShape;
@@ -864,7 +881,14 @@ final class Arrows {
                     return;
                 }
             }
-            a.ftext = e.subSequence(s0, e0).toString();
+            android.text.SpannableStringBuilder seg = new android.text.SpannableStringBuilder(e.subSequence(s0, e0));
+            for (Object o : seg.getSpans(0, seg.length(), Object.class)) { // shapes, ticks, blocks stay out of it
+                if (o instanceof Anchor || o instanceof RichText.Tbl || o instanceof DiagramSpan
+                        || o.getClass().getSimpleName().equals("CircleSpan")) seg.removeSpan(o);
+            }
+            a.frich = seg; // the words keep their own fonts and styles
+            a.ftext = seg.toString();
+            a.fl = null;
             int ds = s0, de = e0;
             boolean lineStart = ds == 0 || e.charAt(ds - 1) == '\n';
             boolean lineEnd = de >= e.length() || e.charAt(de) == '\n';
@@ -889,6 +913,50 @@ final class Arrows {
         a.oy = (r.top - o[1]) / d;
     }
 
+    /**
+     * Moves a carried shape toward (ox, oy) dp: never past the page's edges, and never into another shape (it keeps
+     * a 12 dp gap and slides along the other one instead).
+     */
+    private void moveShapeTo(Anchor a, float ox, float oy) {
+        float px = a.ox, py = a.oy;
+        a.ox = ox;
+        a.oy = oy;
+        RectF r = rectOf(a);
+        if (r == null) {
+            a.ox = px;
+            a.oy = py;
+            return;
+        }
+        float lo = 4 * d, hi = v.getWidth() - 4 * d, top = 4 * d;
+        if (r.width() >= hi - lo) a.ox += (lo - r.left) / d;
+        else if (r.left < lo) a.ox += (lo - r.left) / d;
+        else if (r.right > hi) a.ox -= (r.right - hi) / d;
+        if (r.top < top) a.oy += (top - r.top) / d;
+        if (a.kind == K_INK) return;
+        float cx = a.ox, cy = a.oy;
+        if (!overlaps(a)) return;
+        a.ox = cx;
+        a.oy = py; // slide sideways only
+        if (!overlaps(a)) return;
+        a.ox = px;
+        a.oy = cy; // or up / down only
+        if (!overlaps(a)) return;
+        a.ox = px;
+        a.oy = py; // blocked: stay
+    }
+
+    private boolean overlaps(Anchor a) {
+        RectF r = rectOf(a);
+        if (r == null) return false;
+        r.inset(-12 * d, -12 * d);
+        for (Anchor o : anchors()) {
+            if (o == a || o.kind == K_WORD || o.kind == K_INK || o.kind == K_SCRIBBLE) continue;
+            RectF q = rectOf(o);
+            if (q != null && RectF.intersects(r, q)) return true;
+        }
+        return false;
+    }
+
     /** A floating shape under the finger, or null. */
     private Anchor floatAt(float x, float y) {
         for (Anchor a : anchors()) {
@@ -907,16 +975,21 @@ final class Arrows {
             e.removeSpan(a);
         } else if (back) {
             int at = e.getSpanStart(a);
-            String w = text.isEmpty() ? " " : text;
+            CharSequence w = a.frich != null && text.equals(a.ftext) ? a.frich : (text.isEmpty() ? " " : text);
             e.removeSpan(a);
-            e.insert(at, w + "\n");
+            e.insert(at, "\n");
+            e.insert(at, w); // styled words go back styled
+            int len = w.length();
             a.ftext = null;
+            a.frich = null;
             a.fl = null;
             a.ox = 0;
             a.oy = 0;
-            e.setSpan(a, at, at + w.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            e.setSpan(a, at, at + len, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         } else {
+            if (!text.equals(a.ftext)) a.frich = null; // retyped: plain words now
             a.ftext = text.isEmpty() ? " " : text;
+            a.fl = null;
         }
         v.invalidate();
         notifyChanged();
@@ -941,6 +1014,8 @@ final class Arrows {
         if (hit == null) return;
         RectF hr = rectOf(hit);
         int side = hr == null ? -1 : nearestSide(hr, x, y);
+        o.wx = Float.NaN; // a reconnected arrow finds its own way again
+        o.wy = Float.NaN;
         if (endDrag == 3) { // the arrow's head
             if (hit == from) return;
             if (hit != to) o.to = hit.id;
@@ -961,9 +1036,7 @@ final class Arrows {
         Anchor best = null;
         float bestA = Float.MAX_VALUE;
         for (Anchor a : anchors()) {
-            // Only pencil strokes and floating shapes are carried. A shape drawn round words stays with its words
-            // (dragging those out of the text is what broke them); movable boxes live in diagram blocks now.
-            if (a.kind == K_WORD || (a.ftext == null && a.kind != K_INK)) continue;
+            if (a.kind == K_WORD) continue;
             RectF r = rectOf(a);
             if (r == null) continue;
             r.inset(-6 * d, -6 * d);
@@ -1029,21 +1102,20 @@ final class Arrows {
         return (float) Math.hypot(x1 - x2, y1 - y2);
     }
 
-    /** Dragging the middle handle slides the elbow of a Z-shaped arrow along between its two ends. */
+    /** Dragging the middle handle: the line is routed through the finger, any way it likes (kept within the page). */
     private void setMid(Anchor from, Out o, float x, float y) {
         Anchor t = byId(o.to);
         RectF s = rectOf(from), tr = t == null ? null : rectOf(t);
         if (s == null || tr == null) return;
-        route(s, tr, o, new Path());
-        o.fs = rFs; // the person is shaping this arrow now: keep the points it uses
-        o.ts = rTs;
-        boolean useY = vertical(rFs) && vertical(rTs);
-        boolean useX = !vertical(rFs) && !vertical(rTs);
-        if (!useX && !useY) return;
-        float from0 = useY ? rA1[1] : rA1[0], to0 = useY ? rB1[1] : rB1[0];
-        float m = useY ? y : x;
-        if (Math.abs(to0 - from0) < 1f) return;
-        o.mid = Math.max(-3f, Math.min(4f, (m - from0) / (to0 - from0)));
+        if (Float.isNaN(o.wx)) { // first drag: keep the points it uses now, so only the middle moves
+            route(s, tr, o, new Path());
+            o.fs = rFs;
+            o.ts = rTs;
+        }
+        float cx = Math.max(4 * d, Math.min(v.getWidth() - 4 * d, x));
+        float cy = Math.max(4 * d, y);
+        o.wx = (cx - s.left) / d;
+        o.wy = (cy - s.top) / d;
     }
 
     private void removeOut(Anchor a, Out o) {
@@ -1230,6 +1302,7 @@ final class Arrows {
             o.put("i", a.id).put("s", s).put("e", e).put("k", a.kind).put("t", a.style);
             if (a.ox != 0 || a.oy != 0) o.put("x", (double) a.ox).put("y", (double) a.oy);
             if (a.ftext != null) o.put("f", a.ftext);
+            if (a.frich != null && a.frich.toString().equals(a.ftext)) o.put("fr", RichText.toJson(a.frich));
             if (a.kind == K_INK && a.pts != null) {
                 JSONArray pa = new JSONArray();
                 for (float q : a.pts) pa.put((double) q);
@@ -1237,7 +1310,9 @@ final class Arrows {
             }
             JSONArray outs = new JSONArray();
             for (Out t : a.out) {
-                outs.put(new JSONArray().put(t.to).put((double) t.mid).put(t.color).put(t.fs).put(t.ts));
+                JSONArray oa = new JSONArray().put(t.to).put((double) t.mid).put(t.color).put(t.fs).put(t.ts);
+                if (!Float.isNaN(t.wx)) oa.put((double) t.wx).put((double) t.wy);
+                outs.put(oa);
             }
             if (outs.length() > 0) o.put("o", outs);
             arr.put(o);
@@ -1260,6 +1335,11 @@ final class Arrows {
             a.ox = (float) o.optDouble("x", 0);
             a.oy = (float) o.optDouble("y", 0);
             if (o.has("f")) a.ftext = o.optString("f");
+            if (o.has("fr")) {
+                android.text.SpannableStringBuilder sb = new android.text.SpannableStringBuilder();
+                RichText.fromJson(o.optString("fr"), sb);
+                if (sb.toString().equals(a.ftext)) a.frich = sb;
+            }
             JSONArray pa = o.optJSONArray("p");
             if (pa != null && pa.length() >= 4) {
                 a.pts = new float[pa.length()];
@@ -1276,6 +1356,10 @@ final class Arrows {
                     x.color = t.optInt(2, 0xFFD2452B);
                     x.fs = t.optInt(3, -1);
                     x.ts = t.optInt(4, -1);
+                    if (t.length() > 6) {
+                        x.wx = (float) t.optDouble(5, Double.NaN);
+                        x.wy = (float) t.optDouble(6, Double.NaN);
+                    }
                     a.out.add(x);
                 }
             }

@@ -16,6 +16,12 @@ Offline to-do app for Android with real reminders. Add, edit, check off, delete,
 - Popups sit at the bottom of the screen for one-handed use and ride up with the keyboard.
 - Font: Figtree (bundled, SIL Open Font License; see FONT-LICENSE-Figtree-OFL.txt).
 
+### v3.71
+- Long notes open as fast as before v3.69 again (the editor's height is back to the old weighted layout; the "ghost overlay" fix now asks for a new size only when the text outgrows the view).
+- Insert tab: Sketch box, Squircle and Arrow are back next to Diagram.
+- Hold a box / squircle / ring to move it anywhere again. Its words keep their fonts, sizes and styles (they used to fall back to plain text), it can never leave the page's edges, and it never overlaps another box (12 dp gap; it slides along instead).
+- Arrows: drag the middle handle to route the line through any point (kept inside the page); reconnecting an end resets the route. Routes never run past the page's edges.
+
 ### v3.70
 - Notes open instantly again (v3.69 hid the page until it was placed; on long notes that meant seconds of blank).
 - Paper theme inside a note: the status bar matches the header and the gesture bar matches the toolbar.

@@ -144,6 +144,7 @@ final class RichEditText extends EditText {
                 dirtyHi = Math.max(dirtyHi, a + d);
             }
             @Override public void afterTextChanged(Editable e) {
+                growCheck();
                 if (sel != null) sel.onTextChanged();
                 int lo = dirtyLo;
                 int hi = dirtyHi;
@@ -277,17 +278,15 @@ final class RichEditText extends EditText {
     /** A to-do circle, bullet, toggle or number never carries text styles (an underline running on from the line
      *  above used to underline the circle itself). Only the marker loses them; the words keep theirs. */
     private static void stripMarker(Editable e, int a, int b) {
-        for (int type : MARKER_FREE) {
-            boolean hit = false;
-            for (Object o : e.getSpans(a, b, Object.class)) {
-                if (RichText.typeOf(o) != type) continue;
-                if (e.getSpanEnd(o) > a && e.getSpanStart(o) < b) {
-                    hit = true;
-                    break;
-                }
-            }
-            if (hit) RichText.apply(e, type, a, b, 0, false);
+        Object[] all = e.getSpans(a, b, Object.class); // one look, then only the styles really there are removed
+        if (all.length == 0) return;
+        int found = 0;
+        for (Object o : all) {
+            int t = RichText.typeOf(o);
+            if (t < 0 || e.getSpanEnd(o) <= a || e.getSpanStart(o) >= b) continue;
+            for (int k = 0; k < MARKER_FREE.length; k++) if (MARKER_FREE[k] == t) found |= 1 << k;
         }
+        for (int k = 0; k < MARKER_FREE.length; k++) if ((found & (1 << k)) != 0) RichText.apply(e, MARKER_FREE[k], a, b, 0, false);
     }
 
     private static void syncCircles(Editable e, int lo, int hi) {
@@ -346,6 +345,17 @@ final class RichEditText extends EditText {
     }
 
     private boolean tblPaint;
+
+    /**
+     * The editor's height is set by its parent (weight), so TextView never grows itself as lines are added. When the
+     * text gets taller than the view, ask for a new size, or new lines are drawn past the bottom edge (the "ghost").
+     */
+    private void growCheck() {
+        android.text.Layout l = getLayout();
+        if (l == null) return;
+        int need = l.getHeight() + getCompoundPaddingTop() + getCompoundPaddingBottom();
+        if (need > getHeight() && !isLayoutRequested()) requestLayout();
+    }
 
     /** A tap on a diagram block. */
     interface DiagramTapListener {
